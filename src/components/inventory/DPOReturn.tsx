@@ -58,7 +58,6 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface DPOReturnItem {
     id: string;
@@ -174,7 +173,7 @@ export const DPOReturn = () => {
                 toast.error(response.error);
                 return;
             }
-            toast.success("DPO Return approved and completed. Inventory and accounting updated.");
+            toast.success("LPO Return approved and completed. Inventory and accounting updated.");
             fetchReturns();
             setApproveDialogOpen(false);
         } catch (error: any) {
@@ -192,7 +191,7 @@ export const DPOReturn = () => {
                 toast.error(response.error);
                 return;
             }
-            toast.success("DPO Return rejected");
+            toast.success("LPO Return rejected");
             fetchReturns();
             setRejectDialogOpen(false);
             setRejectionReason("");
@@ -211,7 +210,7 @@ export const DPOReturn = () => {
                 toast.error(response.error);
                 return;
             }
-            toast.success("DPO Return deleted");
+            toast.success("LPO Return deleted");
             fetchReturns();
             setDeleteDialogOpen(false);
         } catch (error: any) {
@@ -236,7 +235,7 @@ export const DPOReturn = () => {
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">DPO Returns</h2>
+                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">LPO Returns</h2>
                     <p className="text-muted-foreground">Manage and track items returned to suppliers from Local Purchase Orders</p>
                 </div>
             </div>
@@ -247,7 +246,7 @@ export const DPOReturn = () => {
                         <div className="relative flex-1 max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <Input
-                                placeholder="Search returns or DPOs..."
+                                placeholder="Search returns or LPOs..."
                                 className="pl-9 bg-background/50 border-muted focus-visible:ring-primary"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -276,7 +275,7 @@ export const DPOReturn = () => {
                         <TableRow className="hover:bg-transparent">
                             <ListNumberHeader />
                             <TableHead className="w-[150px]">Return No.</TableHead>
-                            <TableHead className="w-[150px]">DPO No.</TableHead>
+                            <TableHead className="w-[150px]">LPO No.</TableHead>
                             <TableHead>Supplier</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead className="text-right">Amount</TableHead>
@@ -308,7 +307,10 @@ export const DPOReturn = () => {
                                 <TableRow key={ret.id} className="group hover:bg-muted/30 transition-colors">
                                     <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={totalRecords} />
                                     <TableCell className="font-mono font-medium">{ret.returnNumber}</TableCell>
-                                    <TableCell>{ret.dpoNumber}</TableCell>
+                                    <TableCell>
+                                      {String(ret.dpoNumber || "")
+                                        .replace(/^DPO-\d{4}-/i, "") || ret.dpoNumber}
+                                    </TableCell>
                                     <TableCell className="max-w-[200px] truncate">{ret.supplierName}</TableCell>
                                     <TableCell>{ret.returnDate}</TableCell>
                                     <TableCell className="text-right font-semibold">Rs. {ret.totalAmount.toLocaleString()}</TableCell>
@@ -391,10 +393,10 @@ export const DPOReturn = () => {
 
             {/* View Details Dialog */}
             <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 border-none shadow-premium">
+                <DialogContent className="max-w-3xl max-h-[90vh] h-[min(720px,90vh)] overflow-hidden flex flex-col gap-0 p-0 border-none shadow-premium">
                     {selectedReturn && (
                         <>
-                            <DialogHeader className="p-6 bg-muted/30 border-b border-border">
+                            <DialogHeader className="p-6 bg-muted/30 border-b border-border shrink-0">
                                 <div className="flex items-center justify-between pr-8">
                                     <div>
                                         <div className="flex items-center gap-3">
@@ -402,7 +404,12 @@ export const DPOReturn = () => {
                                             {getStatusBadge(selectedReturn.status)}
                                         </div>
                                         <DialogDescription className="mt-1">
-                                            Return for DPO: <span className="text-foreground font-medium">{selectedReturn.dpoNumber}</span>
+                                            Return for LPO:{" "}
+                                            <span className="text-foreground font-medium">
+                                              {String(selectedReturn.dpoNumber || "")
+                                                .replace(/^DPO-\d{4}-/i, "") ||
+                                                selectedReturn.dpoNumber}
+                                            </span>
                                         </DialogDescription>
                                     </div>
                                     <div className="text-right">
@@ -412,7 +419,7 @@ export const DPOReturn = () => {
                                 </div>
                             </DialogHeader>
 
-                            <ScrollArea className="flex-1 p-6">
+                            <div className="min-h-0 flex-1 overflow-y-auto p-6">
                                 <div className="grid grid-cols-2 gap-8 mb-8">
                                     <div className="space-y-4">
                                         <div>
@@ -462,10 +469,10 @@ export const DPOReturn = () => {
                                         </Table>
                                     </div>
                                 </div>
-                            </ScrollArea>
+                            </div>
 
                             {selectedReturn.status === "pending" && (canApprove || canStatus) && (
-                                <DialogFooter className="p-4 bg-muted/30 border-t border-border gap-2">
+                                <DialogFooter className="p-4 bg-muted/30 border-t border-border gap-2 shrink-0">
                                     {canStatus && (
                                         <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => {
                                             setReturnToReject(selectedReturn.id);
@@ -493,7 +500,7 @@ export const DPOReturn = () => {
             <AlertDialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
                 <AlertDialogContent className="shadow-premium border-none">
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="text-xl font-bold">Approve DPO Return?</AlertDialogTitle>
+                        <AlertDialogTitle className="text-xl font-bold">Approve LPO Return?</AlertDialogTitle>
                         <AlertDialogDescription className="text-base">
                             Approving this return will:
                             <ul className="list-disc list-inside mt-2 space-y-1">
@@ -521,7 +528,7 @@ export const DPOReturn = () => {
             <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
                 <DialogContent className="shadow-premium border-none">
                     <DialogHeader>
-                        <DialogTitle className="text-xl font-bold">Reject DPO Return</DialogTitle>
+                        <DialogTitle className="text-xl font-bold">Reject LPO Return</DialogTitle>
                         <DialogDescription>
                             Please provide a reason for rejecting this return.
                         </DialogDescription>
@@ -552,7 +559,7 @@ export const DPOReturn = () => {
             <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogContent className="shadow-premium border-none">
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="text-xl font-bold text-red-600">Delete DPO Return?</AlertDialogTitle>
+                        <AlertDialogTitle className="text-xl font-bold text-red-600">Delete LPO Return?</AlertDialogTitle>
                         <AlertDialogDescription className="text-base text-foreground/80">
                             Are you sure you want to delete this pending return? All entered data will be permanently removed.
                         </AlertDialogDescription>

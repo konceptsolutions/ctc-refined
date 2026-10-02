@@ -1,3 +1,4 @@
+import { PRINT_BUTTON_CLASS, PRINT_ICON_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { formatUiDate } from "@/utils/dateUtils";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
@@ -76,7 +77,6 @@ import {
 } from "@/lib/branch-accounts";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface DirectPurchaseOrderItem {
@@ -113,8 +113,19 @@ interface DirectPurchaseOrder {
   /** Sum of DPO expense rows (added to grand total) */
   totalExpenses?: number;
   status: "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled" | "Received";
+  /** Store user who received this local PO */
+  receivedBy?: string;
+  receivedAt?: string;
   items: DirectPurchaseOrderItem[];
   account: string;
+}
+
+/** List display: strip stored prefix e.g. DPO-2026-008 → 008 */
+function formatLocalPurchaseListNo(dpoNo?: string | null): string {
+  const raw = String(dpoNo || "").trim();
+  if (!raw) return "-";
+  const stripped = raw.replace(/^DPO-\d{4}-/i, "");
+  return stripped || raw;
 }
 
 // Expense types are fetched from API - only user-created expense types will be shown
@@ -286,7 +297,7 @@ const DPO_VARIANT_LABELS: Record<
     updatedToast: "Local Purchase Order updated successfully",
     deletedToast: "Local Purchase Order deleted successfully",
     numberPrefix: "DPO",
-    orderNumberLabel: "DPO No.",
+    orderNumberLabel: "LPO No.",
     partyColumnLabel: "Supplier",
     partyFieldLabel: "Supplier",
   },
@@ -510,6 +521,7 @@ export const DirectPurchaseOrder = ({
         grandTotal: o.total_amount || 0,
         discount: Number(o.discount) || 0,
         status: o.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
+        receivedBy: String(o.received_by ?? o.receivedBy ?? "").trim(),
         items: [],
         account: o.account || "",
       })));
@@ -1077,6 +1089,14 @@ export const DirectPurchaseOrder = ({
       0,
     ),
     status: dpo.status as "Draft" | "Order Receivable Pending" | "Completed" | "Cancelled",
+    receivedBy: String(
+      dpo.received_by ?? dpo.receivedBy ?? "",
+    ).trim(),
+    receivedAt: dpo.received_at
+      ? formatUiDate(dpo.received_at) || ""
+      : dpo.receivedAt
+        ? formatUiDate(dpo.receivedAt) || ""
+        : "",
     account: dpo.account || "",
     items: (dpo.items || []).map((item: any) => ({
       id: item.id,
@@ -1118,7 +1138,7 @@ export const DirectPurchaseOrder = ({
         return;
       }
 
-      let mapped = mapDpoToViewOrder(response);
+      let mapped = mapDpoToViewOrder(response?.data || response);
 
       const enrichedItems = await Promise.all(
         mapped.items.map(async (item) => {
@@ -2002,7 +2022,7 @@ export const DirectPurchaseOrder = ({
       if (showViewDialog && selectedOrder) {
         const updatedOrder = await apiClient.getDirectPurchaseOrder(selectedOrder.id) as any;
         if (!updatedOrder.error) {
-          setSelectedOrder(mapDpoToViewOrder(updatedOrder));
+          setSelectedOrder(mapDpoToViewOrder(updatedOrder?.data || updatedOrder));
         }
       }
     } catch (error: any) {
@@ -2043,7 +2063,7 @@ export const DirectPurchaseOrder = ({
       if (showViewDialog && selectedOrder) {
         const updatedOrder = await apiClient.getDirectPurchaseOrder(order.id) as any;
         if (!updatedOrder.error) {
-          setSelectedOrder(mapDpoToViewOrder(updatedOrder));
+          setSelectedOrder(mapDpoToViewOrder(updatedOrder?.data || updatedOrder));
         }
       }
     } catch (error: any) {
@@ -2093,7 +2113,7 @@ export const DirectPurchaseOrder = ({
         toast.error(response.error);
         return;
       }
-      handlePrintDocument(mapDpoToViewOrder(response));
+      handlePrintDocument(mapDpoToViewOrder(response?.data || response));
     } catch (error: any) {
       toast.error(error?.message || "Failed to load order for print");
     } finally {
@@ -2278,8 +2298,25 @@ export const DirectPurchaseOrder = ({
         });
       });
 
+      const partIds = (dpo.items || []).map((item: any) => item.part_id).filter(Boolean);
+      const stockByPart: Record<string, number> = {};
+      await Promise.all(
+        partIds.map(async (partId: string) => {
+          try {
+            const balanceRes: any = await apiClient.getStockBalance(partId);
+            const balanceData = balanceRes?.data || balanceRes;
+            stockByPart[partId] = Number(
+              balanceData?.current_stock ?? balanceData?.currentStock ?? 0,
+            );
+          } catch {
+            stockByPart[partId] = 0;
+          }
+        }),
+      );
+
       setReturnItems((dpo.items || []).map((item: any) => {
         const alreadyReturned = returnedQtys[item.part_id] || 0;
+        const currentStock = stockByPart[item.part_id] ?? 0;
         return {
           partId: item.part_id,
           partNo: item.part_no,
@@ -2289,6 +2326,7 @@ export const DirectPurchaseOrder = ({
           purchasedQty: item.quantity,
           alreadyReturned,
           availableToReturn: item.quantity - alreadyReturned,
+          currentStock,
           purchasePrice: item.purchase_price,
           returnQty: 0,
           total: 0,
@@ -2308,6 +2346,16 @@ export const DirectPurchaseOrder = ({
     const itemsToReturn = returnItems.filter(item => item.returnQty > 0);
     if (itemsToReturn.length === 0) {
       toast.error("Please enter return quantity for at least one item");
+      return;
+    }
+
+    const overStock = itemsToReturn.find(
+      (item) => item.returnQty > Number(item.currentStock ?? 0),
+    );
+    if (overStock) {
+      toast.error(
+        `Return qty for ${overStock.partNo} (${overStock.returnQty}) exceeds item stock (${overStock.currentStock ?? 0})`,
+      );
       return;
     }
 
@@ -2331,7 +2379,15 @@ export const DirectPurchaseOrder = ({
         return;
       }
 
-      toast.success("DPO Return and Voucher created successfully");
+      toast.success(
+        response.jvVoucherNumber
+          ? response.rvVoucherNumber
+            ? `LPO Return created — ${response.jvVoucherNumber}, ${response.rvVoucherNumber}`
+            : `LPO Return created — ${response.jvVoucherNumber}`
+          : returnAccount
+            ? "LPO Return created with JV and receipt voucher"
+            : "LPO Return created with JV (supplier payable / inventory)",
+      );
       setShowReturnDialog(false);
       navigate("/inventory/dpo-return");
     } catch (error: any) {
@@ -2342,17 +2398,38 @@ export const DirectPurchaseOrder = ({
   };
 
   const updateReturnQty = (partId: string, qty: number) => {
-    setReturnItems(prev => prev.map(item => {
-      if (item.partId === partId) {
-        const finalQty = Math.min(Math.max(0, qty), item.availableToReturn);
-        return {
-          ...item,
-          returnQty: finalQty,
-          total: finalQty * item.purchasePrice,
-        };
-      }
-      return item;
-    }));
+    const target = returnItems.find((item) => item.partId === partId);
+    if (!target) return;
+
+    const stock = Number(target.currentStock ?? 0);
+    const maxAllowed = Math.min(target.availableToReturn, stock);
+    let finalQty = Math.max(0, qty);
+
+    if (qty > stock) {
+      toast.error(
+        `Return quantity cannot exceed item stock (${stock}) for ${target.partNo}`,
+      );
+      finalQty = maxAllowed;
+    } else if (qty > target.availableToReturn) {
+      toast.error(
+        `Return quantity cannot exceed remaining qty (${target.availableToReturn}) for ${target.partNo}`,
+      );
+      finalQty = maxAllowed;
+    } else {
+      finalQty = Math.min(finalQty, maxAllowed);
+    }
+
+    setReturnItems((prev) =>
+      prev.map((item) =>
+        item.partId === partId
+          ? {
+              ...item,
+              returnQty: finalQty,
+              total: finalQty * item.purchasePrice,
+            }
+          : item,
+      ),
+    );
   };
 
   const totalReturnAmount = useMemo(() => {
@@ -2441,6 +2518,9 @@ export const DirectPurchaseOrder = ({
                       <TableHead className="min-w-[110px]">Request Date</TableHead>
                       <TableHead className="min-w-[150px]">Remarks</TableHead>
                       <TableHead className="text-right min-w-[120px]">Grand Total</TableHead>
+                      {!isTransferIn ? (
+                        <TableHead className="min-w-[140px]">Receiver</TableHead>
+                      ) : null}
                       <TableHead className="min-w-[140px]">Status</TableHead>
                       <TableHead className="text-center min-w-[120px]">Actions</TableHead>
                     </TableRow>
@@ -2454,7 +2534,11 @@ export const DirectPurchaseOrder = ({
                           pageSize={itemsPerPage}
                           total={totalRecords}
                         />
-                        <TableCell className="font-medium">{order.dpoNo}</TableCell>
+                        <TableCell className="font-medium">
+                          {isTransferIn
+                            ? order.dpoNo
+                            : formatLocalPurchaseListNo(order.dpoNo)}
+                        </TableCell>
                         <TableCell>{order.invoiceNo || "-"}</TableCell>
                         <TableCell>{order.invoiceDate || "-"}</TableCell>
                         <TableCell>{order.supplier || "-"}</TableCell>
@@ -2463,6 +2547,11 @@ export const DirectPurchaseOrder = ({
                         <TableCell className="text-right font-medium">
                           {order.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
                         </TableCell>
+                        {!isTransferIn ? (
+                          <TableCell>
+                            {order.receivedBy?.trim() || "-"}
+                          </TableCell>
+                        ) : null}
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-1">
@@ -2478,10 +2567,10 @@ export const DirectPurchaseOrder = ({
                             </ActionButtonTooltip>
                             <ActionButtonTooltip label="Print" variant="view">
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="icon"
                                 onClick={() => void handlePrintOrderFromList(order)}
-                                className="h-8 w-8"
+                                className={PRINT_ICON_BUTTON_CLASS}
                                 disabled={loading}
                               >
                                 <Printer className="h-4 w-4" />
@@ -3683,6 +3772,10 @@ export const DirectPurchaseOrder = ({
                     <Label className="text-muted-foreground">Status</Label>
                     <div>{getStatusBadge(selectedOrder.status)}</div>
                   </div>
+                  <div>
+                    <Label className="text-muted-foreground">Receiver</Label>
+                    <p className="font-medium">{selectedOrder.receivedBy || "-"}</p>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -3952,7 +4045,7 @@ export const DirectPurchaseOrder = ({
         <DialogFooter className="shrink-0 border-t bg-background p-4">
           <div className="flex gap-2">
             {selectedOrder && (
-              <Button
+              <Button className={PRINT_BUTTON_CLASS}
                 type="button"
                 variant="outline"
                 onClick={() => handlePrintDocument(selectedOrder)}
@@ -3974,7 +4067,7 @@ export const DirectPurchaseOrder = ({
                 )}
                 {selectedOrder.status === "Order Receivable Pending" &&
                   (canPrint || canStatus) && (
-                  <Button onClick={() => handlePrint(selectedOrder)} className="bg-primary hover:bg-primary/90">
+                  <Button className={PRINT_BUTTON_CLASS} variant="outline" onClick={() => handlePrint(selectedOrder)} >
                     <Printer className="w-4 h-4 mr-2" />
                     Print & Complete
                   </Button>
@@ -3993,7 +4086,7 @@ export const DirectPurchaseOrder = ({
   // Render return dialog
   const renderReturnDialog = () => (
     <Dialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
-      <DialogContent className="max-w-6xl max-h-[95vh] h-[850px] overflow-hidden flex flex-col p-0">
+      <DialogContent className="max-w-6xl max-h-[95vh] h-[min(850px,95vh)] overflow-hidden flex flex-col gap-0 p-0">
         <DialogHeader className="p-4 border-b bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
             <Edit className="w-5 h-5 text-primary" />
@@ -4001,17 +4094,30 @@ export const DirectPurchaseOrder = ({
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1">
-          <div className="p-6 space-y-6 pb-20">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="p-6 space-y-6">
             {/* Header Info */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground uppercase font-semibold">PO NO</Label>
-                <Input value={returnDpoData?.dpo_no || ""} disabled className="bg-muted/50 border-muted" />
+                <Label className="text-xs text-muted-foreground uppercase font-semibold">LPO No</Label>
+                <Input
+                  value={
+                    String(returnDpoData?.dpo_no || "")
+                      .replace(/^DPO-\d{4}-/i, "") ||
+                    returnDpoData?.dpo_no ||
+                    ""
+                  }
+                  disabled
+                  className="bg-muted/50 border-muted"
+                />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground uppercase font-semibold">Store</Label>
-                <Input value={returnDpoData?.store_name || ""} disabled className="bg-muted/50 border-muted" />
+                <Label className="text-xs text-muted-foreground uppercase font-semibold">Supplier Name</Label>
+                <Input
+                  value={returnDpoData?.supplier_name || ""}
+                  disabled
+                  className="bg-muted/50 border-muted"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground uppercase font-semibold">Return Date</Label>
@@ -4090,6 +4196,11 @@ export const DirectPurchaseOrder = ({
                             <div className="text-muted-foreground">Purchased Qty: {item.purchasedQty}</div>
                             <div className="text-primary">Returned Qty: {item.alreadyReturned}</div>
                             <div className="text-emerald-600">Remaining Qty: {item.availableToReturn}</div>
+                            <div className={cn(
+                              Number(item.currentStock ?? 0) <= 0 ? "text-red-600" : "text-sky-600",
+                            )}>
+                              Item Stock: {item.currentStock ?? 0}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -4148,18 +4259,20 @@ export const DirectPurchaseOrder = ({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-muted-foreground">Account</Label>
+                <Label className="text-xs font-bold text-muted-foreground">
+                  Cash/Bank (Receipt Voucher — optional)
+                </Label>
                 <SearchableSelect
                   options={bankCashAccounts}
                   value={returnAccount}
                   onValueChange={setReturnAccount}
-                  placeholder="Select account..."
+                  placeholder="Select cash/bank for refund..."
                   className="h-10"
                 />
               </div>
             </div>
           </div>
-        </ScrollArea>
+        </div>
 
         <div className="p-4 border-t bg-muted/30 shrink-0 flex items-center justify-between">
           <div className="flex gap-2">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Fragment } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,15 @@ import { apiClient } from "@/lib/api";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { printDailyClosing } from "@/utils/printDailyClosingPdf";
 import { Badge } from "@/components/ui/badge";
-import { ChevronsUpDown, Loader2, RefreshCw, TrendingUp } from "lucide-react";
+import {
+  ChevronsUpDown,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  Loader2,
+  RefreshCw,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { usePageActions } from "@/permissions/pageActions";
@@ -31,6 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SaleProfitReport } from "@/components/sales/SaleProfitReport";
+import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
 
 type DailyClosingColumn = {
   id: string;
@@ -41,8 +50,12 @@ type DailyClosingColumn = {
 
 type DailyClosingMatrixRow = {
   serialNo: number;
+  voucherId?: string;
   voucherNumber: string;
   description: string;
+  partyName?: string;
+  receivedFrom?: string;
+  paidTo?: string;
   amounts: Record<string, number>;
 };
 
@@ -54,18 +67,41 @@ type DailyClosingAccountOption = {
   subgroupName: string;
 };
 
+type DailyClosingCreditInvoiceItem = {
+  id: string;
+  partNo: string;
+  description: string;
+  brand: string;
+  origin: string;
+  grade: string;
+  orderedQty: number;
+  deliveredQty: number;
+  pendingQty: number;
+  unitPrice: number;
+  discount: number;
+  lineTotal: number;
+};
+
 type DailyClosingCreditInvoice = {
   id: string;
   invoiceNo: string;
   invoiceDate: string;
   customerName: string;
   customerType: string;
+  salesPerson?: string | null;
   term: string;
+  remarks?: string | null;
+  subtotal?: number;
+  overallDiscount?: number;
+  freightCharges?: number;
+  tax?: number;
+  taxPercentage?: number | null;
   grandTotal: number;
   paidAmount: number;
   balance: number;
   paymentStatus: string;
   status: string;
+  items?: DailyClosingCreditInvoiceItem[];
 };
 
 type DailyClosingData = {
@@ -124,6 +160,7 @@ const balanceRow = (
   <TableRow className={cn(bold && "bg-muted/30 font-semibold")}>
     <TableCell />
     <TableCell />
+    <TableCell />
     <TableCell className={cn("whitespace-nowrap", bold && "font-semibold")}>{label}</TableCell>
     {columns.map((column) => {
       const value = Number(values[column.id] || 0);
@@ -144,7 +181,7 @@ const balanceRow = (
 
 const sectionHeaderRow = (columns: DailyClosingColumn[], title: string) => (
   <TableRow className="bg-slate-100 dark:bg-slate-800">
-    <TableCell colSpan={3 + columns.length} className="font-bold text-center">
+    <TableCell colSpan={4 + columns.length} className="font-bold text-center">
       {title}
     </TableCell>
   </TableRow>
@@ -172,6 +209,120 @@ export const DailyClosingTab = ({
   const [data, setData] = useState<DailyClosingData | null>(null);
   const [loading, setLoading] = useState(false);
   const [saleProfitOpen, setSaleProfitOpen] = useState(false);
+  const [expandedInvoiceIds, setExpandedInvoiceIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [loadingInvoiceDetailIds, setLoadingInvoiceDetailIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [viewingVoucher, setViewingVoucher] = useState<{
+    id?: string;
+    number: string;
+  } | null>(null);
+  const loadingInvoiceDetailIdsRef = useRef<Set<string>>(new Set());
+  const creditInvoicesRef = useRef<DailyClosingCreditInvoice[]>([]);
+
+  const mapSalesInvoiceDetailItems = (
+    rawItems: any[] | null | undefined,
+  ): DailyClosingCreditInvoiceItem[] => {
+    if (!Array.isArray(rawItems)) return [];
+    return rawItems.map((item: any, index: number) => ({
+      id: String(item.id || `${index}`),
+      partNo: String(
+        item.partNo ||
+          item.Part?.MasterPart?.masterPartNo ||
+          item.Part?.partNo ||
+          "",
+      ),
+      description: String(item.description || item.Part?.description || ""),
+      brand: String(item.brand || item.Part?.Brand?.name || ""),
+      origin: String(item.origin || ""),
+      grade: String(item.grade || ""),
+      orderedQty: Number(item.orderedQty || 0),
+      deliveredQty: Number(item.deliveredQty || 0),
+      pendingQty: Number(item.pendingQty || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      discount: Number(item.discount || 0),
+      lineTotal: Number(item.lineTotal || 0),
+    }));
+  };
+
+  const ensureInvoiceDetailsLoaded = useCallback(async (invoiceId: string) => {
+    if (!invoiceId) return;
+
+    const current = creditInvoicesRef.current.find(
+      (row) => row.id === invoiceId,
+    );
+    if (current && (current.items || []).length > 0) return;
+    if (loadingInvoiceDetailIdsRef.current.has(invoiceId)) return;
+
+    loadingInvoiceDetailIdsRef.current.add(invoiceId);
+    setLoadingInvoiceDetailIds(new Set(loadingInvoiceDetailIdsRef.current));
+
+    try {
+      const result = await apiClient.getSalesInvoice(invoiceId);
+      const detail = ((result as any)?.data || result) as any;
+      const items = mapSalesInvoiceDetailItems(
+        detail?.SalesInvoiceItem || detail?.items || [],
+      );
+      const itemsSubtotal = items.reduce(
+        (sum, item) => sum + Number(item.lineTotal || 0),
+        0,
+      );
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextInvoices = (prev.creditInvoices || []).map((row) => {
+          if (row.id !== invoiceId) return row;
+          const headerSubtotal = Number(row.subtotal || 0);
+          return {
+            ...row,
+            salesPerson: row.salesPerson || detail?.salesPerson || null,
+            remarks: row.remarks || detail?.remarks || null,
+            subtotal:
+              headerSubtotal > 0
+                ? headerSubtotal
+                : Number(detail?.subtotal || 0) || itemsSubtotal,
+            overallDiscount:
+              Number(row.overallDiscount || 0) ||
+              Number(detail?.overallDiscount || 0),
+            freightCharges:
+              Number(row.freightCharges || 0) ||
+              Number(detail?.freightCharges || 0),
+            tax: Number(row.tax || 0) || Number(detail?.tax || 0),
+            taxPercentage:
+              row.taxPercentage ??
+              (detail?.taxPercentage == null
+                ? null
+                : Number(detail.taxPercentage)),
+            items,
+          };
+        });
+        creditInvoicesRef.current = nextInvoices;
+        return {
+          ...prev,
+          creditInvoices: nextInvoices,
+        };
+      });
+    } catch {
+      toast.error("Failed to load invoice line items");
+    } finally {
+      loadingInvoiceDetailIdsRef.current.delete(invoiceId);
+      setLoadingInvoiceDetailIds(new Set(loadingInvoiceDetailIdsRef.current));
+    }
+  }, []);
+
+  const toggleInvoiceExpanded = (invoiceId: string) => {
+    setExpandedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(invoiceId)) {
+        next.delete(invoiceId);
+      } else {
+        next.add(invoiceId);
+        void ensureInvoiceDetailsLoaded(invoiceId);
+      }
+      return next;
+    });
+  };
 
   const accountFilterLabel = (() => {
     if (selectedAccountIds.length === 0) return "All accounts";
@@ -226,12 +377,19 @@ export const DailyClosingTab = ({
       if (result.error) {
         toast.error(result.error || "Failed to load daily closing");
         setData(null);
+        creditInvoicesRef.current = [];
+        setExpandedInvoiceIds(new Set());
         return;
       }
       setData((result.data || null) as DailyClosingData | null);
+      creditInvoicesRef.current =
+        ((result.data as DailyClosingData | null)?.creditInvoices || []);
+      setExpandedInvoiceIds(new Set());
     } catch {
       toast.error("Failed to load daily closing");
       setData(null);
+      creditInvoicesRef.current = [];
+      setExpandedInvoiceIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -418,6 +576,7 @@ export const DailyClosingTab = ({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10" />
                       <ListNumberHeader />
                       <TableHead>Invoice No</TableHead>
                       <TableHead>Date</TableHead>
@@ -434,58 +593,268 @@ export const DailyClosingTab = ({
                     {(data.creditInvoices || []).length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={10}
+                          colSpan={11}
                           className="text-center text-muted-foreground py-6"
                         >
                           No outstanding credit invoices.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      (data.creditInvoices || []).map((invoice, index) => (
-                        <TableRow key={invoice.id}>
-                          <ListNumberCell
-                            index={index}
-                            total={(data.creditInvoices || []).length}
-                          />
-                          <TableCell className="font-mono text-xs whitespace-nowrap">
-                            {invoice.invoiceNo}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {formatUiDate(invoice.invoiceDate) || "-"}
-                          </TableCell>
-                          <TableCell>{invoice.customerName || "-"}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {invoice.term && invoice.term !== "-"
-                              ? `${invoice.term} days`
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatMoney(invoice.grandTotal)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatMoney(invoice.paidAmount)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums font-medium text-amber-700">
-                            {formatMoney(invoice.balance)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                "capitalize",
-                                String(invoice.paymentStatus).toLowerCase() === "partial"
-                                  ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
-                                  : "bg-rose-100 text-rose-800 hover:bg-rose-100",
-                              )}
+                      (data.creditInvoices || []).map((invoice, index) => {
+                        const expanded = expandedInvoiceIds.has(invoice.id);
+                        const items = invoice.items || [];
+                        return (
+                          <Fragment key={invoice.id}>
+                            <TableRow
+                              className="cursor-pointer hover:bg-muted/40"
+                              onClick={() => toggleInvoiceExpanded(invoice.id)}
                             >
-                              {invoice.paymentStatus}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="capitalize text-xs">
-                            {String(invoice.status || "-").replace(/_/g, " ")}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              <TableCell className="w-10 px-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  aria-label={
+                                    expanded
+                                      ? "Collapse invoice details"
+                                      : "Expand invoice details"
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleInvoiceExpanded(invoice.id);
+                                  }}
+                                >
+                                  {expanded ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TableCell>
+                              <ListNumberCell
+                                index={index}
+                                total={(data.creditInvoices || []).length}
+                              />
+                              <TableCell className="font-mono text-xs whitespace-nowrap">
+                                {invoice.invoiceNo}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {formatUiDate(invoice.invoiceDate) || "-"}
+                              </TableCell>
+                              <TableCell>{invoice.customerName || "-"}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {invoice.term && invoice.term !== "-"
+                                  ? `${invoice.term} days`
+                                  : "-"}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatMoney(invoice.grandTotal)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {formatMoney(invoice.paidAmount)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums font-medium text-amber-700">
+                                {formatMoney(invoice.balance)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    "capitalize",
+                                    String(invoice.paymentStatus).toLowerCase() ===
+                                      "partial"
+                                      ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                                      : "bg-rose-100 text-rose-800 hover:bg-rose-100",
+                                  )}
+                                >
+                                  {invoice.paymentStatus}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="capitalize text-xs">
+                                {String(invoice.status || "-").replace(/_/g, " ")}
+                              </TableCell>
+                            </TableRow>
+                            {expanded ? (
+                              <TableRow className="bg-muted/20 hover:bg-muted/20">
+                                <TableCell colSpan={11} className="p-3">
+                                  <div className="space-y-3">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Customer type
+                                        </p>
+                                        <p className="font-medium capitalize">
+                                          {invoice.customerType || "-"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Sales person
+                                        </p>
+                                        <p className="font-medium">
+                                          {invoice.salesPerson || "-"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Subtotal
+                                        </p>
+                                        <p className="font-medium tabular-nums">
+                                          {formatMoney(invoice.subtotal || 0)}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Discount
+                                        </p>
+                                        <p className="font-medium tabular-nums">
+                                          {formatMoney(
+                                            invoice.overallDiscount || 0,
+                                          )}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Freight
+                                        </p>
+                                        <p className="font-medium tabular-nums">
+                                          {formatMoney(
+                                            invoice.freightCharges || 0,
+                                          )}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Tax
+                                          {invoice.taxPercentage != null
+                                            ? ` (${invoice.taxPercentage}%)`
+                                            : ""}
+                                        </p>
+                                        <p className="font-medium tabular-nums">
+                                          {formatMoney(invoice.tax || 0)}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Grand total
+                                        </p>
+                                        <p className="font-medium tabular-nums">
+                                          {formatMoney(invoice.grandTotal)}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-muted-foreground">
+                                          Balance due
+                                        </p>
+                                        <p className="font-medium tabular-nums text-amber-700">
+                                          {formatMoney(invoice.balance)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    {invoice.remarks ? (
+                                      <p className="text-xs text-muted-foreground">
+                                        <span className="font-medium text-foreground">
+                                          Remarks:{" "}
+                                        </span>
+                                        {invoice.remarks}
+                                      </p>
+                                    ) : null}
+                                    <div className="rounded-md border overflow-x-auto bg-background">
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead className="w-10">#</TableHead>
+                                            <TableHead>Part No</TableHead>
+                                            <TableHead>Description</TableHead>
+                                            <TableHead>Brand</TableHead>
+                                            <TableHead className="text-right">
+                                              Qty
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                              Rate
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                              Disc
+                                            </TableHead>
+                                            <TableHead className="text-right">
+                                              Line total
+                                            </TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {loadingInvoiceDetailIds.has(
+                                            invoice.id,
+                                          ) ? (
+                                            <TableRow>
+                                              <TableCell
+                                                colSpan={8}
+                                                className="text-center text-muted-foreground py-4"
+                                              >
+                                                <span className="inline-flex items-center gap-2">
+                                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                                  Loading line items...
+                                                </span>
+                                              </TableCell>
+                                            </TableRow>
+                                          ) : items.length === 0 ? (
+                                            <TableRow>
+                                              <TableCell
+                                                colSpan={8}
+                                                className="text-center text-muted-foreground py-4"
+                                              >
+                                                No line items on this invoice.
+                                              </TableCell>
+                                            </TableRow>
+                                          ) : (
+                                            items.map((item, itemIndex) => (
+                                              <TableRow key={item.id}>
+                                                <TableCell className="text-muted-foreground tabular-nums">
+                                                  {itemIndex + 1}
+                                                </TableCell>
+                                                <TableCell className="font-mono text-xs whitespace-nowrap">
+                                                  {item.partNo || "-"}
+                                                </TableCell>
+                                                <TableCell className="min-w-[160px]">
+                                                  <div className="text-sm">
+                                                    {item.description || "-"}
+                                                  </div>
+                                                  {(item.origin || item.grade) && (
+                                                    <div className="text-[11px] text-muted-foreground">
+                                                      {[item.origin, item.grade]
+                                                        .filter(Boolean)
+                                                        .join(" · ")}
+                                                    </div>
+                                                  )}
+                                                </TableCell>
+                                                <TableCell>
+                                                  {item.brand || "-"}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                  {item.orderedQty}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                  {formatMoney(item.unitPrice)}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                  {formatMoney(item.discount)}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums font-medium">
+                                                  {formatMoney(item.lineTotal)}
+                                                </TableCell>
+                                              </TableRow>
+                                            ))
+                                          )}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ) : null}
+                          </Fragment>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -506,7 +875,10 @@ export const DailyClosingTab = ({
             <TableHeader>
               <TableRow className="bg-[#1e3a8a] hover:bg-[#1e3a8a]">
                 <ListNumberHeader className="text-white" />
-                <TableHead className="text-white w-20">V no</TableHead>
+                <TableHead className="text-white w-28">V no</TableHead>
+                <TableHead className="text-white min-w-[160px]">
+                  Received From / Paid To
+                </TableHead>
                 <TableHead className="text-white min-w-[220px]">Desc</TableHead>
                 {columns.map((column) => (
                   <TableHead
@@ -524,7 +896,7 @@ export const DailyClosingTab = ({
               {sectionHeaderRow(columns, "Receipts")}
               {data.receipts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
                     No receipts for this date
                   </TableCell>
                 </TableRow>
@@ -533,7 +905,32 @@ export const DailyClosingTab = ({
                   <TableRow key={`r-${row.serialNo}-${row.voucherNumber}`}>
                     <ListNumberCell index={index} total={data.receipts.length} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {row.voucherNumber}
+                      <div className="flex items-center gap-1">
+                        <span>{row.voucherNumber}</span>
+                        {row.voucherNumber ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary"
+                            title="View voucher"
+                            onClick={() =>
+                              setViewingVoucher({
+                                id: row.voucherId,
+                                number: row.voucherNumber,
+                              })
+                            }
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {row.receivedFrom ||
+                        row.partyName ||
+                        row.description?.replace(/^Receipt from\s+/i, "") ||
+                        "-"}
                     </TableCell>
                     <TableCell className="text-sm">{row.description}</TableCell>
                     {amountCell(columns, row.amounts)}
@@ -545,7 +942,7 @@ export const DailyClosingTab = ({
               {sectionHeaderRow(columns, "Payments")}
               {data.payments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3 + columns.length} className="text-center text-muted-foreground">
+                  <TableCell colSpan={4 + columns.length} className="text-center text-muted-foreground">
                     No payments for this date
                   </TableCell>
                 </TableRow>
@@ -554,7 +951,32 @@ export const DailyClosingTab = ({
                   <TableRow key={`p-${row.serialNo}-${row.voucherNumber}`}>
                     <ListNumberCell index={index} total={data.payments.length} />
                     <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {row.voucherNumber}
+                      <div className="flex items-center gap-1">
+                        <span>{row.voucherNumber}</span>
+                        {row.voucherNumber ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-primary"
+                            title="View voucher"
+                            onClick={() =>
+                              setViewingVoucher({
+                                id: row.voucherId,
+                                number: row.voucherNumber,
+                              })
+                            }
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {row.paidTo ||
+                        row.partyName ||
+                        row.description?.replace(/^Payment to\s+/i, "") ||
+                        "-"}
                     </TableCell>
                     <TableCell className="text-sm">{row.description}</TableCell>
                     {amountCell(columns, row.amounts)}
@@ -586,6 +1008,15 @@ export const DailyClosingTab = ({
           </DialogContent>
         </Dialog>
       )}
+
+      <VoucherViewDialog
+        open={Boolean(viewingVoucher)}
+        onOpenChange={(open) => {
+          if (!open) setViewingVoucher(null);
+        }}
+        voucherId={viewingVoucher?.id}
+        voucherNumber={viewingVoucher?.number}
+      />
     </div>
   );
 };

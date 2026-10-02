@@ -70,7 +70,7 @@ const tabs: TabConfig[] = [
   { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock", permission: "page.inventory.stock-analysis" },
   { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries", permission: "page.inventory.local-inquiry" },
   { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders", permission: "page.inventory.direct-purchase-order" },
-  { id: "dpo-return", label: "DPO Return", icon: Undo2, description: "Manage DPO returns", permission: "page.inventory.dpo-return" },
+  { id: "dpo-return", label: "LPO Return", icon: Undo2, description: "Manage LPO returns", permission: "page.inventory.dpo-return" },
 ];
 
 const Inventory = () => {

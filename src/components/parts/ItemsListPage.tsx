@@ -17,7 +17,7 @@ export const ItemsListPage = ({
   const [items, setItems] = useState<Item[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsPage, setItemsPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(100);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalItems, setTotalItems] = useState(0);
   const [categoryOptions, setCategoryOptions] = useState<
     { value: string; label: string }[]
@@ -90,18 +90,15 @@ export const ItemsListPage = ({
     }
   };
 
-  // Fetch dropdown options (not restricted by selection)
+  // Fetch lightweight filter dropdowns after first paint (don't block list load)
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const [cats, subs, apps, brands, mParts, partNos, partsForDescriptions] = await Promise.all([
+        const [cats, subs, apps, brands] = await Promise.all([
           apiClient.getAllCategories?.(),
           apiClient.getAllSubcategories?.(undefined, "all"),
           apiClient.getAllApplications?.(),
           apiClient.getAllBrands?.(),
-          apiClient.getMasterParts?.(),
-          apiClient.getPartNos?.(),
-          apiClient.getPartEntryList?.({ limit: "all", page: 1 }),
         ]);
 
         const catData = Array.isArray(cats?.data) ? cats.data : Array.isArray(cats) ? cats : [];
@@ -143,8 +140,13 @@ export const ItemsListPage = ({
         });
         setBrandOptions(Array.from(uniqueBrands).map((b) => ({ value: b, label: b })));
 
-        // Master Part No filter options = DB part_no values
-        // Part No filter options = DB master_part_no values
+        // Heavier distinct-value filters load after the main attribute dropdowns
+        const [mParts, partNos, descriptions] = await Promise.all([
+          apiClient.getMasterParts?.(),
+          apiClient.getPartNos?.(),
+          apiClient.getPartDescriptions?.(),
+        ]);
+
         const partNosData = Array.isArray((partNos as any)?.data)
           ? (partNos as any).data
           : Array.isArray(partNos)
@@ -173,12 +175,14 @@ export const ItemsListPage = ({
             .map((pn) => ({ value: pn, label: pn })),
         );
 
-        const partRows = Array.isArray((partsForDescriptions as any)?.data)
-          ? (partsForDescriptions as any).data
-          : [];
+        const descRows = Array.isArray((descriptions as any)?.data)
+          ? (descriptions as any).data
+          : Array.isArray(descriptions)
+            ? descriptions
+            : [];
         const uniqueDescriptions = new Set<string>();
-        partRows.forEach((p: any) => {
-          const desc = String(p?.description || "").trim();
+        descRows.forEach((d: any) => {
+          const desc = String(typeof d === "string" ? d : d?.description || "").trim();
           if (desc && desc !== "null" && desc !== "undefined") {
             uniqueDescriptions.add(desc);
           }
@@ -188,8 +192,11 @@ export const ItemsListPage = ({
         );
       } catch (err) { }
     };
-    fetchDropdowns();
-    cleanupOldPriceUpdates(); // Clean up old entries on mount
+    const timer = window.setTimeout(() => {
+      fetchDropdowns();
+    }, 0);
+    cleanupOldPriceUpdates();
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Sync priceUpdated flag from localStorage when items are loaded or localStorage changes
@@ -509,6 +516,8 @@ export const ItemsListPage = ({
         page: effectivePage,
         limit: effectiveLimit,
         include_locations: "false",
+        include_history: "false",
+        include_images: "false",
       };
 
       // Add search filters - use activeFilters, not the stale filters parameter
@@ -585,6 +594,53 @@ export const ItemsListPage = ({
         // Set items immediately for faster display
         if (latestRequestIdRef.current === requestId) {
           setItems(transformedItems);
+        }
+
+        // Hydrate images in background (list API skips image blobs for speed)
+        const idsNeedingImages = partsData
+          .filter((p: any) => p?.has_image_p1 || p?.has_image_p2)
+          .map((p: any) => p.id)
+          .filter(Boolean);
+        if (idsNeedingImages.length > 0) {
+          apiClient
+            .getPartBatchImages(idsNeedingImages)
+            .then((imgRes: any) => {
+              if (latestRequestIdRef.current !== requestId) return;
+              const rows = Array.isArray(imgRes?.data)
+                ? imgRes.data
+                : Array.isArray(imgRes)
+                  ? imgRes
+                  : [];
+              const byId = new Map<string, string[]>();
+              rows.forEach((row: any) => {
+                const imgs = [
+                  row.image_p1
+                    ? row.image_p1.startsWith("data:") ||
+                      row.image_p1.startsWith("/") ||
+                      row.image_p1.startsWith("http")
+                      ? row.image_p1
+                      : `data:image/jpeg;base64,${row.image_p1}`
+                    : null,
+                  row.image_p2
+                    ? row.image_p2.startsWith("data:") ||
+                      row.image_p2.startsWith("/") ||
+                      row.image_p2.startsWith("http")
+                      ? row.image_p2
+                      : `data:image/jpeg;base64,${row.image_p2}`
+                    : null,
+                ].filter((img) => img && String(img).trim() !== "") as string[];
+                if (imgs.length > 0) byId.set(row.id, imgs);
+              });
+              if (byId.size === 0) return;
+              setItems((prev) =>
+                prev.map((item) =>
+                  byId.has(item.id)
+                    ? { ...item, images: byId.get(item.id) || item.images }
+                    : item,
+                ),
+              );
+            })
+            .catch(() => {});
         }
 
         // FIXED: Load reserved quantities from localStorage instead of broken backend API

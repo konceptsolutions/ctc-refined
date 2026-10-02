@@ -12,7 +12,8 @@ export async function syncSalesInvoiceReturnStatus(
     include: {
       SalesInvoiceItem: true,
       SalesReturn: {
-        where: { status: 'completed' },
+        // Approved = finance posted, awaiting store stock-in; completed = stock received
+        where: { status: { in: ['approved', 'completed'] } },
         include: { SalesReturnItem: true },
       },
     },

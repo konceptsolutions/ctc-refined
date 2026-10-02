@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { UI_DATE_PLACEHOLDER, formatUiDate } from "@/utils/dateUtils";
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -267,7 +269,7 @@ const CustomerReceivableTab = () => {
             </Button>
             {rows.length > 0 && (
               <>
-                <Button variant="outline" onClick={handlePrint}>
+                <Button className={PRINT_BUTTON_CLASS} variant="outline" onClick={handlePrint}>
                   <Printer className="w-4 h-4 mr-2" /> Print
                 </Button>
                 <Button variant="outline" onClick={handleExport}>
@@ -425,7 +427,7 @@ const CustomerReceivableTab = () => {
             />
           ) : null}
           <div className="flex justify-end">
-            <Button size="sm" variant="outline" onClick={handlePrintLedger} disabled={ledger.loading}>
+            <Button className={PRINT_BUTTON_CLASS} size="sm" variant="outline" onClick={handlePrintLedger} disabled={ledger.loading}>
               <Printer className="w-3.5 h-3.5 mr-1" /> Print
             </Button>
           </div>

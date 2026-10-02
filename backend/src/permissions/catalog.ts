@@ -104,7 +104,7 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
       page("inventory.direct-purchase-order", "Local Purchase", "/inventory/direct-purchase-order", "direct-purchase-order", [
         { key: "field.inventory.direct-purchase-order.price", label: "Purchase Price", kind: "field" },
       ]),
-      page("inventory.dpo-return", "DPO Return", "/inventory/dpo-return", "dpo-return"),
+      page("inventory.dpo-return", "LPO Return", "/inventory/dpo-return", "dpo-return"),
     ],
   },
   {

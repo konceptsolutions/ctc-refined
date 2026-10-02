@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -132,7 +134,7 @@ interface SalesReturn {
   items: ReturnItem[];
   originalInvoiceNo?: string;
   isDirectReturn?: boolean;
-  /** Server status: pending | completed | rejected */
+  /** Server status: pending | approved | completed | rejected */
   status?: string;
 }
 
@@ -931,8 +933,8 @@ export const SalesReturns = () => {
         description:
           res?.message ||
           (editingDirectReturnId
-            ? "Changes saved. Approve when ready to post stock and accounts."
-            : "Return saved as pending. Approve it from this list to post stock and accounts."),
+            ? "Changes saved. Approve when ready to post accounts (stock-in is done in Store)."
+            : "Return saved as pending. Approve it from this list to post accounts; stock-in is done in Store → Invoice Return Receive."),
       });
       setIsDirectReturnOpen(false);
       resetDirectReturnForm();
@@ -1098,10 +1100,10 @@ export const SalesReturns = () => {
         title: "Return approved",
         description:
           res?.message ||
-          `Return ${label} completed. Stock and vouchers have been posted.`,
+          `Return ${label} approved. Accounts posted — stock-in from Store → Invoice Return Receive.`,
       });
       setSelectedReturn((prev) =>
-        prev?.id === id ? { ...prev, status: "completed" } : prev,
+        prev?.id === id ? { ...prev, status: "approved" } : prev,
       );
       await loadReturns();
     } catch (error: any) {
@@ -1722,9 +1724,9 @@ export const SalesReturns = () => {
                   )}
                 </>
               )}
-              <Button
+              <Button variant="outline"
                 onClick={handlePrint}
-                className="gap-2 bg-primary text-primary-foreground text-xs"
+                className={cn("gap-2", PRINT_BUTTON_CLASS)}
               >
                 <Printer className="w-4 h-4" />
                 PRINT
@@ -1967,9 +1969,9 @@ export const SalesReturns = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Approve sales return?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will post stock movements, restore rack/shelf quantities where
-              applicable, and create the accounting vouchers for return{" "}
+              This will create the accounting vouchers for return{" "}
               <span className="font-semibold">{returnToApprove?.invoiceNo}</span>.
+              Stock-in is done later from Store → Invoice Return Receive.
               This cannot be undone from this screen.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2060,8 +2062,8 @@ export const SalesReturns = () => {
             </DialogTitle>
             <p className="text-xs text-muted-foreground">
               {editingDirectReturnId
-                ? `Update pending return ${editingDirectReturnNo || ""} before approval. Stock and accounts post only when you approve.`
-                : "Use when the original sale was in the older system and there is no invoice in this app. Stock and accounts are posted when you approve the return from the list."}
+                ? `Update pending return ${editingDirectReturnNo || ""} before approval. Accounts post on approve; stock-in is done in Store → Invoice Return Receive.`
+                : "Use when the original sale was in the older system and there is no invoice in this app. Accounts post when you approve; stock-in is done in Store → Invoice Return Receive."}
             </p>
           </DialogHeader>
 

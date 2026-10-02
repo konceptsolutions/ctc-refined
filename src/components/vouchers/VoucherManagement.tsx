@@ -616,6 +616,8 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.paidTo || "",
         cashBankAccount: data.crAccount,
+        chequeNumber: data.chequeNumber || undefined,
+        chequeDate: data.chequeDate || undefined,
         ...(voucherCategory === "international_supplier"
           ? { conversionRate: Number(data.conversionRate || 1) }
           : {}),
@@ -686,6 +688,8 @@ export const VoucherManagement = () => {
         date: voucherDate,
         narration: data.receivedFrom || "",
         cashBankAccount: data.drAccount,
+        chequeNumber: data.chequeNumber || undefined,
+        chequeDate: data.chequeDate || undefined,
         entries,
         totalDebit: voucherTotal,
         totalCredit: voucherTotal,
@@ -953,14 +957,31 @@ export const VoucherManagement = () => {
         narration: updatedVoucher.narration,
         cashBankAccount: updatedVoucher.cashBankAccount,
         status: updatedVoucher.status,
-        chequeNumber: updatedVoucher.chequeNumber || null,
-        chequeDate: updatedVoucher.chequeDate ? convertDateToISO(updatedVoucher.chequeDate) : null,
-        checkClearDate: updatedVoucher.checkClearDate ? convertDateToISO(updatedVoucher.checkClearDate) : null,
-        isCleared: (updatedVoucher.isCleared !== undefined && updatedVoucher.isCleared !== null) ? parseInt(String(updatedVoucher.isCleared)) : null,
         ...(updatedVoucher.conversionRate !== undefined && updatedVoucher.conversionRate !== null
           ? { conversionRate: Number(updatedVoucher.conversionRate) }
           : {}),
       };
+
+      // Only touch cheque fields when the caller provided them (avoids wiping on status-only updates)
+      if (updatedVoucher.chequeNumber !== undefined) {
+        updateData.chequeNumber = updatedVoucher.chequeNumber || null;
+      }
+      if (updatedVoucher.chequeDate !== undefined) {
+        updateData.chequeDate = updatedVoucher.chequeDate
+          ? convertDateToISO(updatedVoucher.chequeDate)
+          : null;
+      }
+      if (updatedVoucher.checkClearDate !== undefined) {
+        updateData.checkClearDate = updatedVoucher.checkClearDate
+          ? convertDateToISO(updatedVoucher.checkClearDate)
+          : null;
+      }
+      if (updatedVoucher.isCleared !== undefined) {
+        updateData.isCleared =
+          updatedVoucher.isCleared !== null
+            ? parseInt(String(updatedVoucher.isCleared))
+            : null;
+      }
 
       // ONLY include entries if they exist and are not empty
       // This prevents "simple" status updates from accidentally wiping entries if they weren't loaded

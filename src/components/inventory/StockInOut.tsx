@@ -648,7 +648,7 @@ export const StockInOut = () => {
                 ? "Reserved for DPO"
                 : type === "in"
                   ? "Stock In by DPO"
-                  : "Stock Out by DPO Return";
+                  : "Stock Out by LPO Return";
             } else if (
               referenceType.includes("invoice") ||
               referenceType.includes("sale")

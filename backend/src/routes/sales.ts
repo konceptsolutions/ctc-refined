@@ -2270,7 +2270,7 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
           accountId: receivableEntry.accountId,
           Voucher: {
             status: "posted",
-            OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+            OR: [{ isCleared: null }, { isCleared: 1 }],
           },
         },
         include: {
@@ -2520,6 +2520,157 @@ router.get("/invoices/by-part/:partId", async (req: Request, res: Response) => {
         total,
         totalPages: Math.ceil(total / limitNum),
       },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Last local (DPO) / import (PO) purchases for a part — used by Sales Invoice
+ * hidden "Brand" detail panel. Includes ETA for unreceived import POs.
+ */
+router.get("/purchases/by-part/:partId", async (req: Request, res: Response) => {
+  try {
+    const partId = String(req.params.partId || "").trim();
+    if (!partId) {
+      return res.status(400).json({ error: "partId is required" });
+    }
+
+    const limitRaw = Number(req.query.limit);
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(Math.floor(limitRaw), 10)
+        : 3;
+
+    const isPoFullyReceived = (status?: string | null) => {
+      const s = String(status || "").trim().toLowerCase();
+      return s === "received";
+    };
+
+    const [dpoItems, poItems] = await Promise.all([
+      prisma.directPurchaseOrderItem.findMany({
+        where: { partId },
+        take: 12,
+        orderBy: { createdAt: "desc" },
+        include: {
+          DirectPurchaseOrder: {
+            select: {
+              dpoNumber: true,
+              date: true,
+              status: true,
+              Supplier: {
+                select: { name: true, companyName: true },
+              },
+            },
+          },
+        },
+      }),
+      prisma.purchaseOrderItem.findMany({
+        where: { partId },
+        take: 12,
+        orderBy: { createdAt: "desc" },
+        include: {
+          PurchaseOrder: {
+            select: {
+              poNumber: true,
+              date: true,
+              status: true,
+              expectedDate: true,
+              Supplier: {
+                select: { name: true, companyName: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const normalizedDpo = dpoItems.map((row) => {
+      const status = row.DirectPurchaseOrder?.status || "";
+      const received =
+        String(status).toLowerCase() === "received" ||
+        String(status).toLowerCase() === "completed";
+      return {
+        source: "Local",
+        sourceKey: "dpo",
+        documentNumber: row.DirectPurchaseOrder?.dpoNumber || "-",
+        date: row.DirectPurchaseOrder?.date || row.createdAt,
+        supplierName:
+          row.DirectPurchaseOrder?.Supplier?.companyName ||
+          row.DirectPurchaseOrder?.Supplier?.name ||
+          "-",
+        quantity: row.quantity,
+        rate: row.purchasePrice,
+        amount: row.amount,
+        status: status || null,
+        received,
+        expectedDate: null as Date | null,
+      };
+    });
+
+    const normalizedPo = poItems.map((row) => {
+      const status = row.PurchaseOrder?.status || "";
+      // Import "received" means store stock-in done (status Received), not import form qty entered
+      const received = isPoFullyReceived(status);
+      return {
+        source: "Import",
+        sourceKey: "po",
+        documentNumber: row.PurchaseOrder?.poNumber || "-",
+        date: row.PurchaseOrder?.date || row.createdAt,
+        supplierName:
+          row.PurchaseOrder?.Supplier?.companyName ||
+          row.PurchaseOrder?.Supplier?.name ||
+          "-",
+        quantity: row.quantity,
+        rate: row.unitCost,
+        amount: row.totalCost,
+        status: status || null,
+        received,
+        expectedDate: row.PurchaseOrder?.expectedDate || null,
+        receivedQty: row.receivedQty,
+      };
+    });
+
+    // Prefer recent purchases; keep unreceived import rows visible even if older
+    // by promoting them when building the final top-N list.
+    const merged = [...normalizedDpo, ...normalizedPo].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+
+    const topRecent = merged.slice(0, limit);
+    const topKeys = new Set(
+      topRecent.map((r) => `${r.sourceKey}:${r.documentNumber}`),
+    );
+    const pendingImport = normalizedPo
+      .filter((r) => !r.received)
+      .sort((a, b) => {
+        const aEta = a.expectedDate ? new Date(a.expectedDate).getTime() : Infinity;
+        const bEta = b.expectedDate ? new Date(b.expectedDate).getTime() : Infinity;
+        if (aEta !== bEta) return aEta - bEta;
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+
+    const extras = pendingImport.filter(
+      (r) => !topKeys.has(`${r.sourceKey}:${r.documentNumber}`),
+    );
+
+    // Show last N, then any extra unreceived imports (still capped reasonably)
+    const combined = [...topRecent, ...extras].slice(0, Math.max(limit, 5));
+
+    res.json({
+      data: combined.map((row) => ({
+        source: row.source,
+        documentNumber: row.documentNumber,
+        date: row.date,
+        supplierName: row.supplierName,
+        quantity: row.quantity,
+        rate: row.rate,
+        amount: row.amount,
+        status: row.status,
+        received: row.received,
+        expectedDate: row.expectedDate,
+      })),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

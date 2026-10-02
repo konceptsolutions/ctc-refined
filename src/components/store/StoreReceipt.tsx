@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -231,7 +233,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
 
           {/* Print Button */}
           <div className="flex justify-end no-print">
-            <Button onClick={handlePrint} className="gap-2">
+            <Button variant="outline" onClick={handlePrint} className={cn("gap-2", PRINT_BUTTON_CLASS)}>
               <Printer className="w-4 h-4" />
               Print Receipt
             </Button>

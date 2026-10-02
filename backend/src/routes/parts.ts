@@ -551,6 +551,43 @@ const getCurrentStockByPartIds = async (partIds: string[]) => {
   return stockByPartId;
 };
 
+// Distinct descriptions for Items List filter (avoids loading full parts catalog)
+router.get("/descriptions", async (req: Request, res: Response) => {
+  try {
+    const { search } = req.query;
+    const searchTerm = String(search || "").trim();
+    const rows = await prisma.part.findMany({
+      where: {
+        status: "active",
+        AND: [
+          { description: { not: null } },
+          ...(searchTerm
+            ? [
+                {
+                  description: {
+                    contains: searchTerm,
+                    mode: "insensitive" as const,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+      select: { description: true },
+      distinct: ["description"],
+      orderBy: { description: "asc" },
+      take: 2000,
+    });
+    res.json(
+      rows
+        .map((r) => String(r.description || "").trim())
+        .filter((d) => d && d !== "null" && d !== "undefined"),
+    );
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Dedicated API for Part Entry screen - Optimized for quick loading and accurate stock
 router.get("/part-entry-list", async (req: Request, res: Response) => {
   res.setHeader(
@@ -611,35 +648,40 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     const stockSelect = `COALESCE(st.stock, 0) as stock,
         COALESCE(sr.reserved, 0) as reserved_stock`;
 
-    const stockJoins = `
+    // Paginate parts first; only aggregate stock for the current page.
+    const sql = `
+      WITH page_parts AS (
+        SELECT
+          p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
+          p.uom, p.weight, p.origin, p."updatedAt" as updated_at,
+          mp."masterPartNo" as master_part_no,
+          b."name" as brand_name
+        FROM "Part" p
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        ${whereClause}
+        ORDER BY p."updatedAt" DESC
+        LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+      )
+      SELECT
+        pp.*,
+        ${stockSelect}
+      FROM page_parts pp
       LEFT JOIN (
-          SELECT "partId", 
+          SELECT "partId",
             SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock
           FROM "StockMovement"
+          WHERE "partId" IN (SELECT id FROM page_parts)
           GROUP BY "partId"
-      ) st ON p.id = st."partId"
+      ) st ON pp.id = st."partId"
       LEFT JOIN (
-          SELECT "partId", 
+          SELECT "partId",
             SUM(quantity) as reserved
           FROM "StockReservation"
           WHERE status = 'reserved'
+            AND "partId" IN (SELECT id FROM page_parts)
           GROUP BY "partId"
-      ) sr ON p.id = sr."partId"`;
-
-    const sql = `
-      SELECT 
-        p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
-        p.uom, p.weight, p.origin, p."updatedAt" as updated_at,
-        mp."masterPartNo" as master_part_no,
-        b."name" as brand_name,
-        ${stockSelect}
-      FROM "Part" p
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
-      ${stockJoins}
-      ${whereClause}
-      ORDER BY p."updatedAt" DESC
-      LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+      ) sr ON pp.id = sr."partId"
     `;
 
     params.push(limitNum, offset);
@@ -676,73 +718,71 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         modelTotalByPartId[row.partId] = row._sum.qtyUsed || 0;
       });
 
-      // Helper: get model total for any part in DB by partNo or masterPartId
-      const getModelTotalByPartNo = async (partNo: string): Promise<number> => {
-        const trimmed = (partNo || "").trim();
-        if (!trimmed) return 0;
-        const other = await prisma.part.findFirst({
-          where: { partNo: trimmed, status: "active", Model: { some: {} } },
-          include: { Model: true },
-        });
-        if (!other?.Model?.length) return 0;
-        return other.Model.reduce((s, m) => s + (m.qtyUsed || 0), 0);
-      };
-      const getModelTotalByMasterPartId = async (masterPartId: string): Promise<number> => {
-        const other = await prisma.part.findFirst({
-          where: { masterPartId, status: "active", Model: { some: {} } },
-          include: { Model: true },
-        });
-        if (!other?.Model?.length) return 0;
-        return other.Model.reduce((s, m) => s + (m.qtyUsed || 0), 0);
-      };
-
-      // For each part in result with 0 model total, look up sibling in full DB by part_no (Part.partNo)
-      const partNosToResolve = new Set<string>();
-      result.rows.forEach((p: any) => {
-        const totalQty = modelTotalByPartId[p.id] ?? 0;
-        if (totalQty === 0) {
-          const pno = (p.part_no != null && String(p.part_no).trim() !== "") ? String(p.part_no).trim() : null;
-          if (pno) partNosToResolve.add(pno);
-        }
-      });
+      const partNosToResolve = Array.from(
+        new Set(
+          result.rows
+            .filter((p: any) => (modelTotalByPartId[p.id] ?? 0) === 0)
+            .map((p: any) => String(p.part_no || "").trim())
+            .filter(Boolean),
+        ),
+      );
       const partNoToTotal: Record<string, number> = {};
-      await Promise.all(
-        Array.from(partNosToResolve).map(async (pno) => {
-          const tot = await getModelTotalByPartNo(pno);
-          if (tot > 0) partNoToTotal[pno] = tot;
-        }),
-      );
-      result.rows.forEach((p: any) => {
-        const pid = p.id;
-        if ((modelTotalByPartId[pid] ?? 0) === 0) {
-          const pno = (p.part_no != null && String(p.part_no).trim() !== "") ? String(p.part_no).trim() : null;
-          if (pno && partNoToTotal[pno] != null) modelTotalByPartId[pid] = partNoToTotal[pno];
-        }
-      });
+      if (partNosToResolve.length > 0) {
+        const siblingModels = await query(
+          `SELECT p."partNo" as part_no, COALESCE(SUM(m."qtyUsed"), 0)::int as total
+           FROM "Part" p
+           INNER JOIN "Model" m ON m."partId" = p.id
+           WHERE p.status = 'active' AND p."partNo" = ANY($1::text[])
+           GROUP BY p."partNo"`,
+          [partNosToResolve],
+        );
+        siblingModels.rows.forEach((row: any) => {
+          const pno = String(row.part_no || "").trim();
+          const total = Number(row.total) || 0;
+          if (pno && total > 0) partNoToTotal[pno] = total;
+        });
+        result.rows.forEach((p: any) => {
+          if ((modelTotalByPartId[p.id] ?? 0) === 0) {
+            const pno = String(p.part_no || "").trim();
+            if (pno && partNoToTotal[pno] != null) {
+              modelTotalByPartId[p.id] = partNoToTotal[pno];
+            }
+          }
+        });
+      }
 
-      // Same by master part: parts with 0 and a masterPartId get total from any sibling in DB
-      const masterIdsToResolve = new Set<string>();
-      result.rows.forEach((p: any) => {
-        const totalQty = modelTotalByPartId[p.id] ?? 0;
-        if (totalQty === 0) {
-          const mid = p.masterPartId || p.masterpartid;
-          if (mid) masterIdsToResolve.add(mid);
-        }
-      });
-      const masterIdToTotal: Record<string, number> = {};
-      await Promise.all(
-        Array.from(masterIdsToResolve).map(async (mid) => {
-          const tot = await getModelTotalByMasterPartId(mid);
-          if (tot > 0) masterIdToTotal[mid] = tot;
-        }),
+      const masterIdsToResolve = Array.from(
+        new Set(
+          result.rows
+            .filter((p: any) => (modelTotalByPartId[p.id] ?? 0) === 0)
+            .map((p: any) => p.masterPartId || p.masterpartid)
+            .filter(Boolean),
+        ),
       );
-      result.rows.forEach((p: any) => {
-        const pid = p.id;
-        if ((modelTotalByPartId[pid] ?? 0) === 0) {
-          const mid = p.masterPartId || p.masterpartid;
-          if (mid && masterIdToTotal[mid] != null) modelTotalByPartId[pid] = masterIdToTotal[mid];
-        }
-      });
+      if (masterIdsToResolve.length > 0) {
+        const masterModels = await query(
+          `SELECT p."masterPartId" as master_part_id, COALESCE(SUM(m."qtyUsed"), 0)::int as total
+           FROM "Part" p
+           INNER JOIN "Model" m ON m."partId" = p.id
+           WHERE p.status = 'active' AND p."masterPartId" = ANY($1::text[])
+           GROUP BY p."masterPartId"`,
+          [masterIdsToResolve],
+        );
+        const masterIdToTotal: Record<string, number> = {};
+        masterModels.rows.forEach((row: any) => {
+          const mid = String(row.master_part_id || "").trim();
+          const total = Number(row.total) || 0;
+          if (mid && total > 0) masterIdToTotal[mid] = total;
+        });
+        result.rows.forEach((p: any) => {
+          if ((modelTotalByPartId[p.id] ?? 0) === 0) {
+            const mid = p.masterPartId || p.masterpartid;
+            if (mid && masterIdToTotal[mid] != null) {
+              modelTotalByPartId[p.id] = masterIdToTotal[mid];
+            }
+          }
+        });
+      }
     }
 
     res.json({
@@ -801,6 +841,8 @@ router.get("/", async (req: Request, res: Response) => {
       part_no,
       description,
       include_locations = "false",
+      include_history = "true",
+      include_images,
       duplicates_only,
       page = "1",
       limit = "50",
@@ -931,109 +973,188 @@ router.get("/", async (req: Request, res: Response) => {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // Skip images and per-row history/count subqueries for large catalog loads
+    // Skip images and history/count joins for large catalog loads
     // (Sales Inquiry / Invoice dropdowns use limit=all).
-    const skipImages = limitNum > 1000 || showDuplicateMeta;
-    const skipHeavyMeta = skipImages;
+    const skipImages =
+      limitNum > 1000 ||
+      showDuplicateMeta ||
+      String(include_images || "true").toLowerCase() === "false" ||
+      include_images === "0";
+    const skipHeavyMeta = limitNum > 1000 || showDuplicateMeta;
+    // Items List uses include_history=false: skip sale/delete-history joins.
+    const skipSaleHistory =
+      skipHeavyMeta ||
+      String(include_history || "true").toLowerCase() === "false" ||
+      include_history === "0";
+    // Delete-meta counts are expensive without partId indexes; Items List
+    // validates delete on the DELETE endpoint instead.
+    const skipDeleteMeta = skipHeavyMeta || skipSaleHistory;
     const showLocations = include_locations === "true";
     const orderByClause = showDuplicateMeta
       ? `ORDER BY ${partDuplicateKeySql}, p."partNo", p."id"`
       : `ORDER BY p."updatedAt" DESC`;
+    const needsJoinForFilter =
+      showDuplicateMeta ||
+      conditions.some((c) =>
+        /(?:\bmp\.|\bb\.|\bc\.|\bsc\.|\bapp\.|\bdup_items\.)/.test(c),
+      );
+
+    const limitParam = paramIdx++;
+    const offsetParam = paramIdx++;
+
+    // Paginate first (index-friendly when filters don't need joins), then stock for page.
+    const pagePartsCte = needsJoinForFilter
+      ? `page_parts AS (
+        SELECT
+          p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
+          p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
+          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
+          mp."masterPartNo" as master_part_no,
+          b."name" as brand_name,
+          c."name" as category_name,
+          sc."name" as subcategory_name,
+          app."name" as application_name,
+          (NULLIF(BTRIM(COALESCE(p."imageP1", '')), '') IS NOT NULL) as has_image_p1,
+          (NULLIF(BTRIM(COALESCE(p."imageP2", '')), '') IS NOT NULL) as has_image_p2
+          ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
+          ${showDuplicateMeta ? `, ${partDuplicateKeySql} as duplicate_key, COUNT(*) OVER (PARTITION BY ${partDuplicateKeySql})::int as duplicate_group_size, COUNT(*) OVER ()::int as filtered_total` : ""}
+        FROM "Part" p
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        ${duplicateJoinsSql}
+        LEFT JOIN "Category" c ON p."categoryId" = c.id
+        LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+        LEFT JOIN "Application" app ON p."applicationId" = app.id
+        ${whereClause}
+        ${orderByClause}
+        LIMIT $${limitParam} OFFSET $${offsetParam}
+      )`
+      : `page_ids AS (
+        SELECT p.id
+        FROM "Part" p
+        ${whereClause}
+        ${orderByClause}
+        LIMIT $${limitParam} OFFSET $${offsetParam}
+      ),
+      page_parts AS (
+        SELECT
+          p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
+          p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
+          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
+          mp."masterPartNo" as master_part_no,
+          b."name" as brand_name,
+          c."name" as category_name,
+          sc."name" as subcategory_name,
+          app."name" as application_name,
+          (NULLIF(BTRIM(COALESCE(p."imageP1", '')), '') IS NOT NULL) as has_image_p1,
+          (NULLIF(BTRIM(COALESCE(p."imageP2", '')), '') IS NOT NULL) as has_image_p2
+          ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
+        FROM page_ids
+        INNER JOIN "Part" p ON p.id = page_ids.id
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        LEFT JOIN "Category" c ON p."categoryId" = c.id
+        LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+        LEFT JOIN "Application" app ON p."applicationId" = app.id
+      )`;
 
     const sql = `
-      SELECT 
-        p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
-        p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
-        p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
-        mp."masterPartNo" as master_part_no,
-        b."name" as brand_name,
-        c."name" as category_name,
-        sc."name" as subcategory_name,
-        app."name" as application_name,
+      WITH ${pagePartsCte}
+      SELECT
+        pp.*,
         COALESCE(st.stock, 0) as current_stock,
         (COALESCE(st.reserved, 0) + COALESCE(sr.reserved, 0)) as reserved_stock,
         ${
-          skipHeavyMeta
+          skipDeleteMeta
             ? `0 as adjustment_count,
         0 as direct_purchase_count,
         0 as sales_invoice_count,
-        0 as kit_component_count,
-        NULL as latest_adj_cost,
+        0 as kit_component_count,`
+            : `COALESCE(adj.cnt, 0) as adjustment_count,
+        COALESCE(dpo.cnt, 0) as direct_purchase_count,
+        COALESCE(sii.cnt, 0) as sales_invoice_count,
+        COALESCE(kit.cnt, 0) as kit_component_count,`
+        }
+        ${
+          skipSaleHistory
+            ? `NULL as latest_adj_cost,
         NULL as last_sale_qty,
         NULL as last_sale_price,
         NULL as last_sale_customer,
         NULL as last_sale_date,`
-            : `(SELECT COUNT(*)::int FROM "AdjustmentItem" ai WHERE ai."partId" = p.id) as adjustment_count,
-        (SELECT COUNT(*)::int FROM "DirectPurchaseOrderItem" dpoi WHERE dpoi."partId" = p.id) as direct_purchase_count,
-        (SELECT COUNT(*)::int FROM "SalesInvoiceItem" sii_cnt WHERE sii_cnt."partId" = p.id) as sales_invoice_count,
-        (SELECT COUNT(*)::int FROM "KitItem" ki_cmp WHERE ki_cmp."componentPartId" = p.id) as kit_component_count,
-        lac.cost as latest_adj_cost,
+            : `lac.cost as latest_adj_cost,
         ls.last_sale_qty,
         ls.last_sale_price,
         ls.last_sale_customer,
         ls.last_sale_date,`
         }
-        ${
-          skipHeavyMeta
-            ? `'[]'::json as models`
-            : `COALESCE(
-          (
-            SELECT json_agg(
-              json_build_object(
-                'id', m.id,
-                'name', m.name,
-                'qty_used', m."qtyUsed"
-              )
-            )
-            FROM "Model" m
-            WHERE m."partId" = p.id
-          ),
-          '[]'::json
-        ) as models`
-        }
-        ${showDuplicateMeta ? `, ${partDuplicateKeySql} as duplicate_key, COUNT(*) OVER (PARTITION BY ${partDuplicateKeySql})::int as duplicate_group_size, COUNT(*) OVER ()::int as filtered_total` : ""}
+        '[]'::json as models
         ${showLocations ? ", COALESCE(loc.locations, '[]'::jsonb) as locations, (COALESCE(st.stock, 0) - COALESCE(loc.assigned_stock, 0)) as unlocated_stock" : ""}
-        ${skipImages ? "" : ', p."imageP1", p."imageP2"'}
-      FROM "Part" p
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
-      ${duplicateJoinsSql}
-      LEFT JOIN "Category" c ON p."categoryId" = c.id
-      LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
-      LEFT JOIN "Application" app ON p."applicationId" = app.id
+      FROM page_parts pp
       LEFT JOIN (
-          SELECT "partId", 
+          SELECT "partId",
             SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock,
             SUM(CASE WHEN "referenceType" = 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as reserved
           FROM "StockMovement"
+          WHERE "partId" IN (SELECT id FROM page_parts)
           GROUP BY "partId"
-      ) st ON p.id = st."partId"
+      ) st ON pp.id = st."partId"
       LEFT JOIN (
           SELECT "partId", SUM(quantity) as reserved
           FROM "StockReservation"
           WHERE status = 'reserved'
+            AND "partId" IN (SELECT id FROM page_parts)
           GROUP BY "partId"
-      ) sr ON p.id = sr."partId"
+      ) sr ON pp.id = sr."partId"
       ${
-        skipHeavyMeta
+        skipDeleteMeta
+          ? ""
+          : `LEFT JOIN (
+          SELECT "partId", COUNT(*)::int AS cnt
+          FROM "AdjustmentItem"
+          WHERE "partId" IN (SELECT id FROM page_parts)
+          GROUP BY "partId"
+      ) adj ON pp.id = adj."partId"
+      LEFT JOIN (
+          SELECT "partId", COUNT(*)::int AS cnt
+          FROM "DirectPurchaseOrderItem"
+          WHERE "partId" IN (SELECT id FROM page_parts)
+          GROUP BY "partId"
+      ) dpo ON pp.id = dpo."partId"
+      LEFT JOIN (
+          SELECT "partId", COUNT(*)::int AS cnt
+          FROM "SalesInvoiceItem"
+          WHERE "partId" IN (SELECT id FROM page_parts)
+          GROUP BY "partId"
+      ) sii ON pp.id = sii."partId"
+      LEFT JOIN (
+          SELECT "componentPartId" AS "partId", COUNT(*)::int AS cnt
+          FROM "KitItem"
+          WHERE "componentPartId" IN (SELECT id FROM page_parts)
+          GROUP BY "componentPartId"
+      ) kit ON pp.id = kit."partId"`
+      }
+      ${
+        skipSaleHistory
           ? ""
           : `LEFT JOIN (
           SELECT DISTINCT ON (ai."partId") ai."partId", ai.cost
           FROM "AdjustmentItem" ai
           JOIN "Adjustment" a ON ai."adjustmentId" = a.id
-          WHERE a.status = 'approved' AND a."deletedAt" IS NULL
+          WHERE ai."partId" IN (SELECT id FROM page_parts)
+            AND a.status = 'approved' AND a."deletedAt" IS NULL
           ORDER BY ai."partId", a.date DESC, a."createdAt" DESC, ai."createdAt" DESC
-      ) lac ON p.id = lac."partId"
+      ) lac ON pp.id = lac."partId"
       LEFT JOIN LATERAL (
           SELECT
-            sii."orderedQty" as last_sale_qty,
-            sii."unitPrice" as last_sale_price,
+            sii_ls."orderedQty" as last_sale_qty,
+            sii_ls."unitPrice" as last_sale_price,
             si."customerName" as last_sale_customer,
             si."invoiceDate" as last_sale_date
-          FROM "SalesInvoiceItem" sii
-          JOIN "SalesInvoice" si ON sii."invoiceId" = si.id
-          WHERE sii."partId" = p.id
-          ORDER BY si."invoiceDate" DESC, sii."createdAt" DESC
+          FROM "SalesInvoiceItem" sii_ls
+          JOIN "SalesInvoice" si ON sii_ls."invoiceId" = si.id
+          WHERE sii_ls."partId" = pp.id
+          ORDER BY si."invoiceDate" DESC, sii_ls."createdAt" DESC
           LIMIT 1
       ) ls ON true`
       }
@@ -1055,20 +1176,39 @@ router.get("/", async (req: Request, res: Response) => {
           LEFT JOIN "Store" s_loc ON prs."storeId" = s_loc.id
           LEFT JOIN "Rack" r_loc ON prs."rackId" = r_loc.id
           LEFT JOIN "Shelf" sh_loc ON prs."shelfId" = sh_loc.id
+          WHERE prs."partId" IN (SELECT id FROM page_parts)
           GROUP BY prs."partId"
-      ) loc ON p.id = loc."partId" ` : ""}
-      ${whereClause}
-      ${orderByClause}
-      LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+      ) loc ON pp.id = loc."partId" ` : ""}
+      ${showDuplicateMeta ? `ORDER BY pp.duplicate_key, pp."partNo", pp.id` : `ORDER BY pp."updatedAt" DESC`}
     `;
 
-    params.push(limitNum, offset);
+    const listParams = [...params, limitNum, offset];
+    const countParams = params.slice();
 
-    const result = await query(sql, params);
+    const countSql = showDuplicateMeta
+      ? null
+      : needsJoinForFilter
+        ? `SELECT count(*) as total FROM "Part" p 
+      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+      LEFT JOIN "Brand" b ON p."brandId" = b.id
+      LEFT JOIN "Category" c ON p."categoryId" = c.id
+      LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+      LEFT JOIN "Application" app ON p."applicationId" = app.id
+    ${whereClause}`
+        : `SELECT count(*) as total FROM "Part" p ${whereClause}`;
 
-    // Large catalog loads skip the per-row Model subquery for speed. Attach
-    // models in one grouped query so sales inquiry/invoice Model filters work.
-    if (skipHeavyMeta && result.rows.length > 0) {
+    const [result, countResult] = await Promise.all([
+      query(sql, listParams),
+      countSql
+        ? query(countSql, countParams)
+        : Promise.resolve({ rows: [{ total: 0 }] }),
+    ]);
+
+    // Attach models in one grouped query (avoids per-row Model subquery).
+    // Large catalog loads (skipHeavyMeta) still need models for sales filters.
+    // Items List passes include_history=false and skips models.
+    const needModels = skipHeavyMeta || !skipSaleHistory;
+    if (needModels && result.rows.length > 0) {
       const partIds = result.rows.map((row: any) => row.id).filter(Boolean);
       if (partIds.length > 0) {
         const modelsResult = await query(
@@ -1095,6 +1235,10 @@ router.get("/", async (req: Request, res: Response) => {
           part.models = modelsByPartId.get(part.id) || [];
         }
       }
+    } else {
+      for (const part of result.rows) {
+        part.models = [];
+      }
     }
 
     let total: number;
@@ -1104,17 +1248,7 @@ router.get("/", async (req: Request, res: Response) => {
           result.rows[0]?.filtered_total || result.rows[0]?.filteredtotal,
         ) || result.rows.length;
     } else {
-      const countResult = await query(
-        `SELECT count(*) as total FROM "Part" p 
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
-      LEFT JOIN "Category" c ON p."categoryId" = c.id
-      LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
-      LEFT JOIN "Application" app ON p."applicationId" = app.id
-    ${whereClause}`,
-        params.slice(0, -2),
-      ); // Remove limit/offset params
-      total = parseInt(countResult.rows[0].total);
+      total = parseInt(countResult.rows[0].total) || 0;
     }
 
     // Transform response
@@ -1169,9 +1303,19 @@ router.get("/", async (req: Request, res: Response) => {
         lastSaleCustomerName: part.last_sale_customer || "",
         lastSaleDate: part.last_sale_date || null,
         models: part.models || [],
-        // Only include images for small result sets
+        // Only include image blobs when requested; always expose presence flags.
         image_p1: skipImages ? null : part.imageP1 || part.imagep1,
         image_p2: skipImages ? null : part.imageP2 || part.imagep2,
+        has_image_p1:
+          part.has_image_p1 === true ||
+          part.has_image_p1 === "t" ||
+          part.hasimagep1 === true ||
+          !!(part.imageP1 || part.imagep1),
+        has_image_p2:
+          part.has_image_p2 === true ||
+          part.has_image_p2 === "t" ||
+          part.hasimagep2 === true ||
+          !!(part.imageP2 || part.imagep2),
         status: part.status,
         type: part.type || "single",
         locations: part.locations || [],
@@ -1884,6 +2028,32 @@ router.get("/model-associations/:modelName", async (req: Request, res: Response)
 });
 
 // Get single part by ID
+// Lightweight batch image fetch for Items List (list endpoint skips image blobs).
+router.post("/batch-images", async (req: Request, res: Response) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map((id: unknown) => String(id || "").trim()).filter(Boolean)
+      : [];
+    if (ids.length === 0) {
+      return res.json({ data: [] });
+    }
+    const capped = ids.slice(0, 100);
+    const rows = await prisma.part.findMany({
+      where: { id: { in: capped } },
+      select: { id: true, imageP1: true, imageP2: true },
+    });
+    res.json({
+      data: rows.map((row) => ({
+        id: row.id,
+        image_p1: row.imageP1 || null,
+        image_p2: row.imageP2 || null,
+      })),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

@@ -25,6 +25,94 @@ import {
 const router = express.Router();
 const DPO_START_NO = 113;
 
+/** Receiver name from ActivityLog (store operator who received the DPO). */
+async function getDpoReceiversFromActivity(
+  orders: Array<string | { id: string; dpoNumber?: string | null }>,
+): Promise<Map<string, { received_by: string; received_by_id: string | null; received_at: Date | null }>> {
+  const result = new Map<
+    string,
+    { received_by: string; received_by_id: string | null; received_at: Date | null }
+  >();
+
+  const normalized = orders
+    .map((entry) =>
+      typeof entry === "string"
+        ? { id: String(entry || "").trim(), dpoNumber: "" }
+        : {
+            id: String(entry?.id || "").trim(),
+            dpoNumber: String(entry?.dpoNumber || "").trim(),
+          },
+    )
+    .filter((entry) => entry.id);
+
+  if (normalized.length === 0) return result;
+
+  const ids = normalized.map((entry) => entry.id);
+  const labels = normalized
+    .map((entry) => entry.dpoNumber)
+    .filter((label) => label.length > 0);
+
+  // Historical logs used entityType "purchase_order" and action "Received Purchase Order";
+  // newer logs use "direct_purchase_order" / "Received Direct Purchase Order".
+  const logs = await prisma.activityLog.findMany({
+    where: {
+      AND: [
+        {
+          OR: [
+            { entityId: { in: ids } },
+            ...(labels.length > 0
+              ? [{ entityLabel: { in: labels } }]
+              : []),
+          ],
+        },
+        {
+          OR: [
+            { action: { contains: "Received Direct Purchase", mode: "insensitive" } },
+            { action: { contains: "Received Transfer In", mode: "insensitive" } },
+            { action: { contains: "Received Purchase Order", mode: "insensitive" } },
+            { description: { contains: "Received Direct Purchase", mode: "insensitive" } },
+            { description: { contains: "Received Transfer In", mode: "insensitive" } },
+            { description: { contains: "Received Purchase Order", mode: "insensitive" } },
+            { description: { contains: "stock added", mode: "insensitive" } },
+          ],
+        },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      entityId: true,
+      entityLabel: true,
+      user: true,
+      userId: true,
+      createdAt: true,
+      action: true,
+    },
+  });
+
+  const idByLabel = new Map(
+    normalized
+      .filter((entry) => entry.dpoNumber)
+      .map((entry) => [entry.dpoNumber.toUpperCase(), entry.id]),
+  );
+
+  for (const log of logs) {
+    const entityId =
+      String(log.entityId || "").trim() ||
+      idByLabel.get(String(log.entityLabel || "").trim().toUpperCase()) ||
+      "";
+    if (!entityId || result.has(entityId)) continue;
+    if (!ids.includes(entityId)) continue;
+    const name = String(log.user || "").trim();
+    if (!name || name.toLowerCase() === "unknown") continue;
+    result.set(entityId, {
+      received_by: name,
+      received_by_id: log.userId || null,
+      received_at: log.createdAt || null,
+    });
+  }
+  return result;
+}
+
 type PrismaTx = Omit<
   typeof prisma,
   "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
@@ -372,7 +460,7 @@ router.get("/dashboard", async (req: Request, res: Response) => {
           accountId: inventoryAccount.id,
           Voucher: {
             status: "posted",
-            OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+            OR: [{ isCleared: null }, { isCleared: 1 }],
           },
         },
         _sum: { debit: true, credit: true },
@@ -8431,6 +8519,10 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
       prisma.directPurchaseOrder.count({ where }),
     ]);
 
+    const receiverMap = await getDpoReceiversFromActivity(
+      orders.map((dpo) => ({ id: dpo.id, dpoNumber: dpo.dpoNumber })),
+    );
+
     res.json({
       data: orders.map((dpo) => {
         // Calculate total quantity from items
@@ -8457,6 +8549,9 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           status: dpo.status,
           discount: dpo.discount ?? 0,
           total_amount: dpo.totalAmount,
+          received_by: receiverMap.get(dpo.id)?.received_by || null,
+          received_by_id: receiverMap.get(dpo.id)?.received_by_id || null,
+          received_at: receiverMap.get(dpo.id)?.received_at || null,
           items_count: dpo.DirectPurchaseOrderItem.length,
           total_quantity: total_quantity,
           expenses_count: dpo.DirectPurchaseOrderExpense.length,
@@ -8639,6 +8734,15 @@ router.get(
           .json({ error: "Direct purchase order not found" });
       }
 
+      const receiverMap = await getDpoReceiversFromActivity([
+        { id: order.id, dpoNumber: order.dpoNumber },
+      ]);
+      const receiverInfo = receiverMap.get(order.id);
+      console.log(
+        `[DPO ${order.dpoNumber}] receiver from activity:`,
+        receiverInfo?.received_by || null,
+      );
+
       // Calculate returned quantities map: partId -> totalReturned
       const returnedQtyMap = new Map<string, number>();
       order.DirectPurchaseOrderReturn.forEach((ret) => {
@@ -8666,6 +8770,9 @@ router.get(
         status: order.status,
         discount: order.discount ?? 0,
         total_amount: order.totalAmount,
+        received_by: receiverInfo?.received_by || null,
+        received_by_id: receiverInfo?.received_by_id || null,
+        received_at: receiverInfo?.received_at || null,
         items: order.DirectPurchaseOrderItem.map((item) => ({
           id: item.id,
           part_id: item.partId,

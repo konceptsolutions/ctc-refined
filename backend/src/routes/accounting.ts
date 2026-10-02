@@ -1,5 +1,9 @@
 import express, { Request, Response } from "express";
 import prisma from "../config/database";
+import {
+  hydrateSalesInvoiceItems,
+  invoiceItemPartSelect,
+} from "../utils/salesInvoiceItemPart";
 
 const router = express.Router();
 
@@ -428,7 +432,7 @@ router.get("/account-balances", async (req: Request, res: Response) => {
         accountId: { not: null },
         Voucher: {
           status: "posted",
-          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          OR: [{ isCleared: null }, { isCleared: 1 }],
         },
       },
       _sum: {
@@ -740,7 +744,7 @@ router.post(
 
         // Update account balances using proper accounting logic
         // ONLY if the voucher is cleared (isCleared is null or not 0)
-        if (entry.isCleared === null || entry.isCleared !== 0) {
+        if (entry.isCleared === null || entry.isCleared === 1) {
           for (const line of entry.VoucherEntry) {
             if (!line.Account) continue;
             const accountType = line.Account.Subgroup.MainGroup.type;
@@ -785,10 +789,7 @@ router.get("/general-journal", async (req: Request, res: Response) => {
     // Build where clause for Vouchers
     const VoucherWhere: any = {
       status: "posted",
-      OR: [
-        { isCleared: null },
-        { isCleared: { not: 0 } }
-      ],
+      OR: [{ isCleared: null }, { isCleared: 1 }],
     };
 
     // Date range filter
@@ -937,10 +938,7 @@ router.get("/general-ledger", async (req: Request, res: Response) => {
           where: {
             Voucher: {
                status: "posted",
-               OR: [
-                 { isCleared: null },
-                 { isCleared: { not: 0 } }
-               ],
+               OR: [{ isCleared: null }, { isCleared: 1 }],
                ...(dateFrom && { date: { gte: new Date(dateFrom as string) } }),
                ...(dateTo && { date: { lte: new Date(dateTo as string) } }),
             },
@@ -1117,10 +1115,47 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
           where: {
             Voucher: {
               status: "posted",
-              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+              OR: [{ isCleared: null }, { isCleared: 1 }],
             },
           },
-          include: { Voucher: true },
+          include: {
+            Supplier: { select: { name: true, companyName: true } },
+            Customer: { select: { name: true } },
+            SalesInvoice: {
+              select: { invoiceNo: true, customerName: true },
+            },
+            Voucher: {
+              include: {
+                SalesInvoice: {
+                  select: { invoiceNo: true, customerName: true },
+                },
+                VoucherEntry: {
+                  select: {
+                    id: true,
+                    description: true,
+                    accountName: true,
+                    supplierId: true,
+                    customerId: true,
+                    salesInvoiceId: true,
+                    Supplier: { select: { name: true, companyName: true } },
+                    Customer: { select: { name: true } },
+                    SalesInvoice: {
+                      select: { invoiceNo: true, customerName: true },
+                    },
+                    Account: {
+                      select: {
+                        name: true,
+                        supplierId: true,
+                        customerId: true,
+                        Supplier: { select: { name: true, companyName: true } },
+                        Customer: { select: { name: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
         },
       },
@@ -1144,6 +1179,125 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
       return "cash";
     };
 
+    const partyLabel = (party?: {
+      name?: string | null;
+      companyName?: string | null;
+    } | null) =>
+      String(party?.companyName || party?.name || "")
+        .trim() || "";
+
+    const textHasParty = (text: string, party: string) => {
+      const hay = text.toLowerCase();
+      const needle = party.toLowerCase();
+      return Boolean(needle) && hay.includes(needle);
+    };
+
+    const isPurchaseOrInvoiceRelated = (parts: Array<string | null | undefined>) => {
+      const text = parts
+        .map((part) => String(part || "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return (
+        text.includes("invoice") ||
+        text.includes("dpo") ||
+        text.includes("direct purchase") ||
+        text.includes("purchase order") ||
+        /\bpo[- ]?\d/i.test(text) ||
+        text.includes("payment for dpo") ||
+        text.includes("receivable")
+      );
+    };
+
+    const resolveClosingPartyName = (entry: any): string => {
+      const voucher = entry?.Voucher || {};
+      const siblings: any[] = Array.isArray(voucher.VoucherEntry)
+        ? voucher.VoucherEntry
+        : [];
+
+      const candidates = [
+        partyLabel(entry?.Supplier),
+        partyLabel(entry?.Customer),
+        String(entry?.SalesInvoice?.customerName || "").trim(),
+        String(voucher?.SalesInvoice?.customerName || "").trim(),
+        ...siblings.flatMap((sibling) => [
+          partyLabel(sibling?.Supplier),
+          partyLabel(sibling?.Customer),
+          String(sibling?.SalesInvoice?.customerName || "").trim(),
+          partyLabel(sibling?.Account?.Supplier),
+          partyLabel(sibling?.Account?.Customer),
+        ]),
+      ]
+        .map((name) => String(name || "").trim())
+        .filter(Boolean);
+
+      return candidates[0] || "";
+    };
+
+    /** Paid To / Received From is stored on parent voucher.narration. */
+    const resolveReceivedFromPaidTo = (entry: any): string => {
+      const voucher = entry?.Voucher || {};
+      const narration = String(voucher.narration || "").trim();
+      if (narration) return narration;
+
+      const linkedParty = resolveClosingPartyName(entry);
+      if (linkedParty) return linkedParty;
+
+      const desc = String(entry?.description || "").trim();
+      const prefixed = desc.match(/^(?:Receipt from|Payment to)\s+(.+)$/i);
+      if (prefixed?.[1]) return String(prefixed[1]).trim();
+
+      return "";
+    };
+
+    const buildClosingDescription = (entry: any): string => {
+      const voucher = entry?.Voucher || {};
+      const base = String(
+        entry?.description || voucher?.narration || "",
+      ).trim();
+      const narration = String(voucher?.narration || "").trim();
+      const partyName = resolveClosingPartyName(entry);
+      const related =
+        Boolean(entry?.salesInvoiceId) ||
+        Boolean(voucher?.salesInvoiceId) ||
+        Boolean(entry?.supplierId) ||
+        Boolean(entry?.customerId) ||
+        Boolean(entry?.SalesInvoice) ||
+        Boolean(voucher?.SalesInvoice) ||
+        isPurchaseOrInvoiceRelated([
+          base,
+          narration,
+          ...(Array.isArray(voucher?.VoucherEntry)
+            ? voucher.VoucherEntry.map((sibling: any) => sibling?.description)
+            : []),
+        ]);
+
+      if (!related) return base;
+
+      if (partyName) {
+        if (textHasParty(base, partyName)) return base;
+        if (base) return `${base} — ${partyName}`;
+        return partyName;
+      }
+
+      // Fallback: if entry desc omits party but voucher narration has useful text
+      // (common for DPO payments where narration is the supplier name).
+      if (
+        base &&
+        narration &&
+        narration.toLowerCase() !== base.toLowerCase() &&
+        !textHasParty(base, narration)
+      ) {
+        const looksLikePartyOnly =
+          narration.length <= 80 &&
+          !narration.toLowerCase().startsWith("payment") &&
+          !narration.toLowerCase().startsWith("receipt");
+        if (looksLikePartyOnly) return `${base} — ${narration}`;
+      }
+
+      return base;
+    };
+
     const closingAccounts = accounts.map((account) => {
       const accountType = account.Subgroup?.MainGroup?.type || "Asset";
       let openingBalance = account.openingBalance;
@@ -1152,9 +1306,11 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
       const dayEntries: Array<{
         id: string;
         date: Date;
+        voucherId: string;
         voucherNumber: string;
         voucherType: string;
         description: string;
+        partyName: string;
         debit: number;
         credit: number;
         sortOrder: number;
@@ -1175,12 +1331,15 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
           const credit = Number(entry.credit || 0);
           receipts += debit;
           payments += credit;
+          const partyName = resolveReceivedFromPaidTo(entry);
           dayEntries.push({
             id: entry.id,
             date: voucherDate,
+            voucherId: entry.Voucher.id,
             voucherNumber: entry.Voucher.voucherNumber,
             voucherType: entry.Voucher.type,
-            description: entry.description || entry.Voucher.narration || "",
+            description: buildClosingDescription(entry),
+            partyName,
             debit,
             credit,
             sortOrder: entry.sortOrder ?? 0,
@@ -1232,8 +1391,10 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
     }
 
     type MatrixRow = {
+      voucherId: string;
       voucherNumber: string;
       description: string;
+      partyName: string;
       amounts: Record<string, number>;
       sortDate: number;
       sortOrder: number;
@@ -1246,8 +1407,10 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
       for (const entry of account.dayEntries) {
         if (entry.debit > 0) {
           receiptRows.push({
+            voucherId: entry.voucherId,
             voucherNumber: entry.voucherNumber,
             description: entry.description,
+            partyName: entry.partyName,
             amounts: { [account.id]: entry.debit },
             sortDate: entry.date.getTime(),
             sortOrder: entry.sortOrder,
@@ -1255,8 +1418,10 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
         }
         if (entry.credit > 0) {
           paymentRows.push({
+            voucherId: entry.voucherId,
             voucherNumber: entry.voucherNumber,
             description: entry.description,
+            partyName: entry.partyName,
             amounts: { [account.id]: entry.credit },
             sortDate: entry.date.getTime(),
             sortOrder: entry.sortOrder,
@@ -1278,15 +1443,21 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
 
     const receipts = receiptRows.map((row, index) => ({
       serialNo: index + 1,
+      voucherId: row.voucherId,
       voucherNumber: row.voucherNumber,
       description: row.description,
+      receivedFrom: row.partyName,
+      partyName: row.partyName,
       amounts: row.amounts,
     }));
 
     const payments = paymentRows.map((row, index) => ({
       serialNo: index + 1,
+      voucherId: row.voucherId,
       voucherNumber: row.voucherNumber,
       description: row.description,
+      paidTo: row.partyName,
+      partyName: row.partyName,
       amounts: row.amounts,
     }));
 
@@ -1318,7 +1489,14 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
         invoiceDate: true,
         customerName: true,
         customerType: true,
+        salesPerson: true,
         term: true,
+        remarks: true,
+        subtotal: true,
+        overallDiscount: true,
+        freightCharges: true,
+        tax: true,
+        taxPercentage: true,
         grandTotal: true,
         paidAmount: true,
         paymentStatus: true,
@@ -1326,6 +1504,25 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
       },
       orderBy: [{ invoiceDate: "asc" }, { invoiceNo: "asc" }],
     });
+
+    const creditInvoiceIds = creditInvoiceRows.map((invoice) => invoice.id);
+    const creditInvoiceItemRows =
+      creditInvoiceIds.length > 0
+        ? await prisma.salesInvoiceItem.findMany({
+            where: { invoiceId: { in: creditInvoiceIds } },
+            include: {
+              Part: { select: invoiceItemPartSelect },
+            },
+            orderBy: [{ invoiceId: "asc" }, { createdAt: "asc" }],
+          })
+        : [];
+
+    const itemsByInvoiceId = new Map<string, typeof creditInvoiceItemRows>();
+    for (const item of creditInvoiceItemRows) {
+      const list = itemsByInvoiceId.get(item.invoiceId) || [];
+      list.push(item);
+      itemsByInvoiceId.set(item.invoiceId, list);
+    }
 
     const creditInvoices = creditInvoiceRows
       .map((invoice) => {
@@ -1344,19 +1541,51 @@ router.get("/daily-closing", async (req: Request, res: Response) => {
         const isCreditSale =
           String(invoice.customerType || "").toLowerCase() === "registered" ||
           hasCreditTerm;
+        const rawItems = itemsByInvoiceId.get(invoice.id) || [];
+        const hydratedItems = hydrateSalesInvoiceItems(rawItems);
+        const items = hydratedItems.map((item) => ({
+          id: item.id,
+          partNo: item.partNo || "",
+          description: item.description || "",
+          brand: item.brand || "",
+          origin: item.origin || "",
+          grade: item.grade || "",
+          orderedQty: Number(item.orderedQty || 0),
+          deliveredQty: Number(item.deliveredQty || 0),
+          pendingQty: Number(item.pendingQty || 0),
+          unitPrice: Number(item.unitPrice || 0),
+          discount: Number(item.discount || 0),
+          lineTotal: Number(item.lineTotal || 0),
+        }));
+        const itemsSubtotal = items.reduce(
+          (sum, item) => sum + Number(item.lineTotal || 0),
+          0,
+        );
+        const headerSubtotal = Number(invoice.subtotal || 0);
         return {
           id: invoice.id,
           invoiceNo: invoice.invoiceNo,
           invoiceDate: invoice.invoiceDate,
           customerName: invoice.customerName,
           customerType: invoice.customerType,
+          salesPerson: invoice.salesPerson || null,
           term: termRaw || "-",
+          remarks: invoice.remarks || null,
+          subtotal: headerSubtotal > 0 ? headerSubtotal : itemsSubtotal,
+          overallDiscount: Number(invoice.overallDiscount || 0),
+          freightCharges: Number(invoice.freightCharges || 0),
+          tax: Number(invoice.tax || 0),
+          taxPercentage:
+            invoice.taxPercentage == null
+              ? null
+              : Number(invoice.taxPercentage),
           grandTotal,
           paidAmount,
           balance,
           paymentStatus: invoice.paymentStatus,
           status: invoice.status,
           isCreditSale,
+          items,
         };
       })
       .filter((invoice) => invoice.isCreditSale && invoice.balance > 0.009)
@@ -1419,10 +1648,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
           where: {
             Voucher: {
                status: "posted",
-               OR: [
-                 { isCleared: null },
-                 { isCleared: { not: 0 } }
-               ],
+               OR: [{ isCleared: null }, { isCleared: 1 }],
                ...VoucherDateFilter,
             },
           },
@@ -1523,10 +1749,7 @@ router.get("/trial-balance", async (req: Request, res: Response) => {
     const allVouchersList = await prisma.voucher.findMany({
       where: {
         status: "posted",
-        OR: [
-          { isCleared: null },
-          { isCleared: { not: 0 } }
-        ],
+        OR: [{ isCleared: null }, { isCleared: 1 }],
         ...(Object.keys(dateFilterForValidation).length > 0 && {
           date: dateFilterForValidation,
         }),
@@ -1582,10 +1805,7 @@ router.get("/income-statement", async (req: Request, res: Response) => {
         where: {
           Voucher: {
             status: "posted",
-            OR: [
-              { isCleared: null },
-              { isCleared: { not: 0 } }
-            ],
+            OR: [{ isCleared: null }, { isCleared: 1 }],
             ...(fromDateObj || toDateObj ? { date: dateFilter } : {}),
           },
         },
@@ -1712,10 +1932,7 @@ router.post("/recalculate-balances", async (req: Request, res: Response) => {
           where: {
             Voucher: {
                 status: "posted",
-              OR: [
-                { isCleared: null },
-                { isCleared: { not: 0 } }
-              ],
+              OR: [{ isCleared: null }, { isCleared: 1 }],
             },
           },
         },
@@ -1797,7 +2014,7 @@ function buildBalanceSheetVoucherInclude(asOfDate: Date) {
       where: {
         Voucher: {
           status: "posted",
-          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          OR: [{ isCleared: null }, { isCleared: 1 }],
           date: { lte: asOfDate },
         },
       },
@@ -1813,7 +2030,7 @@ async function getFirstPostedVoucherDateByAccount(): Promise<
       accountId: { not: null },
       Voucher: {
         status: "posted",
-        OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+        OR: [{ isCleared: null }, { isCleared: 1 }],
       },
     },
     select: {

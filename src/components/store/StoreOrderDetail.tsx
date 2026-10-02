@@ -26,6 +26,7 @@ interface DirectPurchaseOrder {
   description?: string;
   status: string;
   total_amount: number;
+  received_by?: string | null;
   items?: DirectPurchaseOrderItem[];
 }
 
@@ -49,6 +50,16 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
         </DialogHeader>
         <ScrollArea className="max-h-[calc(90vh-120px)]">
           <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm px-1">
+              <div>
+                <span className="text-muted-foreground">Store</span>
+                <p className="font-medium">{order.store_name || "-"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Receiver</span>
+                <p className="font-medium">{order.received_by || "-"}</p>
+              </div>
+            </div>
             {/* Items Table */}
             <Card>
               <CardContent className="pt-6">

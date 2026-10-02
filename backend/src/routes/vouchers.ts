@@ -6,6 +6,7 @@ import {
   resolveCashBankModeFromAccount,
   resolveVoucherCashBankMode,
 } from '../utils/cashBankMode';
+import { isClearedForBalance } from '../utils/voucherClearance';
 
 const router = express.Router();
 
@@ -134,7 +135,63 @@ function normalizeVoucherTypeFilter(typeParam: unknown): string | undefined {
   }
 
   // String types (e.g. "payment", "receipt", "journal", "contra", ...)
-  return raw;
+  // Also accepts receipt subtypes: receipt-cash | receipt-bank | receipt-cheque
+  return raw.toLowerCase();
+}
+
+/** Receipt subtype filters map to type=receipt + voucher number prefix. */
+function applyReceiptKindTypeFilter(
+  where: Record<string, unknown>,
+  normalizedType: string | undefined,
+): string | undefined {
+  if (!normalizedType) return undefined;
+
+  if (normalizedType === "receipt-cheque") {
+    where.type = "receipt";
+    where.voucherNumber = { startsWith: "RVCH", mode: "insensitive" };
+    return normalizedType;
+  }
+  if (normalizedType === "receipt-bank") {
+    where.type = "receipt";
+    where.voucherNumber = { startsWith: "RVB", mode: "insensitive" };
+    return normalizedType;
+  }
+  if (normalizedType === "receipt-cash") {
+    where.type = "receipt";
+    // RVC… (excluding RVCH…) plus legacy RV… (excluding RVB/RVCH/RVC handled below)
+    where.AND = [
+      ...(Array.isArray(where.AND) ? (where.AND as unknown[]) : []),
+      {
+        OR: [
+          {
+            AND: [
+              { voucherNumber: { startsWith: "RVC", mode: "insensitive" } },
+              { NOT: { voucherNumber: { startsWith: "RVCH", mode: "insensitive" } } },
+            ],
+          },
+          {
+            AND: [
+              { voucherNumber: { startsWith: "RV", mode: "insensitive" } },
+              { NOT: { voucherNumber: { startsWith: "RVB", mode: "insensitive" } } },
+              { NOT: { voucherNumber: { startsWith: "RVC", mode: "insensitive" } } },
+            ],
+          },
+        ],
+      },
+    ];
+    return normalizedType;
+  }
+
+  if (
+    normalizedType === "payment" ||
+    normalizedType === "receipt" ||
+    normalizedType === "journal" ||
+    normalizedType === "contra"
+  ) {
+    where.type = normalizedType;
+  }
+
+  return undefined;
 }
 
 function isSentinel(value: unknown, sentinels: string[]): boolean {
@@ -275,12 +332,23 @@ router.get('/', async (req: Request, res: Response) => {
     const where: any = {};
 
     const normalizedType = normalizeVoucherTypeFilter(type);
-    if (normalizedType) {
-      where.type = normalizedType;
-    }
+    const receiptKindFilter = applyReceiptKindTypeFilter(where, normalizedType);
 
     if (status && status !== 'all') {
       where.status = status as string;
+    }
+
+    const isClearedParam = req.query.is_cleared;
+    if (
+      isClearedParam !== undefined &&
+      isClearedParam !== null &&
+      String(isClearedParam).trim() !== "" &&
+      String(isClearedParam).trim().toLowerCase() !== "all"
+    ) {
+      const parsedCleared = parseInt(String(isClearedParam).trim(), 10);
+      if (!Number.isNaN(parsedCleared)) {
+        where.isCleared = parsedCleared;
+      }
     }
 
     if (from_date || to_date) {
@@ -423,10 +491,15 @@ router.get('/', async (req: Request, res: Response) => {
       return true; // For now, return all vouchers
     });
 
+    const baseTypeForMode =
+      receiptKindFilter || normalizedType === "receipt"
+        ? "receipt"
+        : normalizedType;
+
     const requestedMode = String(req.query.mode ?? '').trim().toLowerCase();
     if (
       (requestedMode === 'cash' || requestedMode === 'online') &&
-      (normalizedType === 'payment' || normalizedType === 'receipt')
+      (baseTypeForMode === 'payment' || baseTypeForMode === 'receipt')
     ) {
       filteredVouchers = filteredVouchers.filter((voucher) => {
         if (voucher.type !== 'payment' && voucher.type !== 'receipt') return false;
@@ -467,9 +540,9 @@ router.get('/', async (req: Request, res: Response) => {
         voucher.type === 'payment' || voucher.type === 'receipt'
           ? resolveVoucherCashBankMode(voucher, accountModeById)
           : undefined,
-      chequeNumber: voucher.chequeNumber || undefined,
-      chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
-      checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
+      chequeNumber: voucher.chequeNumber ?? null,
+      chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : null,
+      checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : null,
       isCleared: voucher.isCleared,
       entries: voucher.VoucherEntry.map(entry => ({
         id: entry.id,
@@ -596,9 +669,13 @@ router.get('/:id', async (req: Request, res: Response) => {
         cashBankAccount: voucher.cashBankAccount || '',
         conversionRate: (voucher as any).conversionRate ?? undefined,
         mode,
-        chequeNumber: voucher.chequeNumber || undefined,
-        chequeDate: voucher.chequeDate ? voucher.chequeDate.toISOString().split('T')[0] : undefined,
-        checkClearDate: voucher.checkClearDate ? voucher.checkClearDate.toISOString().split('T')[0] : undefined,
+        chequeNumber: voucher.chequeNumber ?? null,
+        chequeDate: voucher.chequeDate
+          ? voucher.chequeDate.toISOString().split("T")[0]
+          : null,
+        checkClearDate: voucher.checkClearDate
+          ? voucher.checkClearDate.toISOString().split("T")[0]
+          : null,
         isCleared: voucher.isCleared,
         entries: voucher.VoucherEntry.map((entry) => ({
           id: entry.id,
@@ -735,8 +812,8 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
-    // Update account balances if the voucher is created as 'posted' and is NOT uncleared
-    if (voucher.status === "posted" && (voucher.isCleared === null || (voucher.isCleared !== undefined && voucher.isCleared !== 0))) {
+    // Update account balances if the voucher is created as 'posted' and is balance-active
+    if (voucher.status === "posted" && isClearedForBalance(voucher.isCleared)) {
       // Re-fetch with full account context for balance updates
       const fullVoucher = await prisma.voucher.findUnique({
         where: { id: voucher.id },
@@ -1100,8 +1177,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       const oldIsCleared = (existingVoucher as any).isCleared;
       const newIsCleared = updatedVoucher.isCleared;
 
-      const becameCleared = (oldIsCleared === 0 && (newIsCleared === null || newIsCleared !== 0));
-      const becameUncleared = ((oldIsCleared === null || oldIsCleared !== 0) && newIsCleared === 0);
+      const oldActive = isClearedForBalance(oldIsCleared);
+      const newActive = isClearedForBalance(newIsCleared);
+      const becameCleared = !oldActive && newActive;
+      const becameUncleared = oldActive && !newActive;
 
       if (becameCleared || becameUncleared) {
         const fullVoucher = await prisma.voucher.findUnique({
@@ -1234,8 +1313,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // If voucher is posted, reverse account balances before deletion
-    // ONLY if it was cleared (isCleared is null or not 0)
-    if (voucher.status === 'posted' && voucher.VoucherEntry.length > 0 && (voucher.isCleared === null || voucher.isCleared !== 0)) {
+    // ONLY if balances were active (null/non-cheque or Cleared)
+    if (voucher.status === 'posted' && voucher.VoucherEntry.length > 0 && isClearedForBalance(voucher.isCleared)) {
 
       for (const entry of voucher.VoucherEntry) {
         if (!entry.accountId || !entry.Account) {

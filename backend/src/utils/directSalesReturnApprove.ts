@@ -1,9 +1,9 @@
 /**
  * Approve flow for direct (legacy) sales returns — separate from invoice-linked returns.
+ * Posts accounting vouchers only. Stock IN happens later via Store receive.
  * Uses SalesReturnItem.avgCost snapshot (current avg at save time), not invoice line cost.
  */
 import * as crypto from 'crypto';
-import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 
 type SalesReturnWithItems = {
@@ -38,23 +38,6 @@ function isRefundCashOrBankSubgroupCode(
   const sg = String(subgroupCode ?? '').trim();
   if (!sg) return false;
   return sg.startsWith('102') || sg.startsWith('103');
-}
-
-async function getPartStockFromMovements(
-  tx: Prisma.TransactionClient,
-  partId: string,
-): Promise<number> {
-  const [smIn, smOut] = await Promise.all([
-    tx.stockMovement.aggregate({
-      where: { partId, type: 'in' },
-      _sum: { quantity: true },
-    }),
-    tx.stockMovement.aggregate({
-      where: { partId, type: 'out' },
-      _sum: { quantity: true },
-    }),
-  ]);
-  return (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
 }
 
 async function getNextVoucherNumber(prefix: string): Promise<string> {
@@ -166,82 +149,6 @@ export async function approveDirectSalesReturn(
       `Cannot approve direct return: avg cost and cost price are both zero for part(s): ${label}. Set cost on the part (purchase, adjustment, or part master) before approving.`,
     );
   }
-
-  // —— Stock IN + weighted avg update (on approve, not on create) ——
-  const partRollup = new Map<
-    string,
-    { totalReturnQty: number; weightedCostSum: number }
-  >();
-  for (const item of salesReturn.SalesReturnItem) {
-    const unit = directReturnUnitCost(item);
-    let agg = partRollup.get(item.partId);
-    if (!agg) {
-      agg = { totalReturnQty: 0, weightedCostSum: 0 };
-      partRollup.set(item.partId, agg);
-    }
-    agg.totalReturnQty += item.returnQuantity;
-    agg.weightedCostSum += unit * item.returnQuantity;
-  }
-
-  await prisma.$transaction(async (tx) => {
-    for (const item of salesReturn.SalesReturnItem) {
-      const movement = await tx.stockMovement.create({
-        data: {
-          id: crypto.randomUUID(),
-          partId: item.partId,
-          type: 'in',
-          quantity: item.returnQuantity,
-          referenceType: 'sales_return_direct',
-          referenceId: salesReturn.id,
-          notes: `Direct Sales Return ${salesReturn.returnNumber} — legacy invoice ${legacyRef}`,
-        },
-      });
-      stockMovements.push(movement);
-    }
-
-    for (const [partId, roll] of partRollup) {
-      const part = await tx.part.findUnique({
-        where: { id: partId },
-        select: { avgCost: true, cost: true },
-      });
-      const currentAvg = Number(part?.avgCost) || 0;
-      const costPrice = Number(part?.cost) || 0;
-      const returnQty = roll.totalReturnQty;
-      const returnAvg =
-        returnQty > 0 ? roll.weightedCostSum / returnQty : 0;
-
-      let newAvg: number;
-      if (currentAvg <= 0 && costPrice > 0) {
-        // No avg cost: adopt cost price for inventory valuation
-        newAvg = costPrice;
-      } else if (currentAvg > 0 && returnAvg > 0) {
-        const currentStock = await getPartStockFromMovements(tx, partId);
-        const stockBeforeReturn = currentStock - returnQty;
-        const denom = stockBeforeReturn + returnQty;
-        if (denom > 0 && returnQty > 0) {
-          newAvg =
-            (currentAvg * stockBeforeReturn + returnAvg * returnQty) / denom;
-        } else {
-          newAvg = returnAvg;
-        }
-      } else {
-        newAvg = returnAvg > 0 ? returnAvg : currentAvg;
-      }
-
-      newAvg = Math.round(newAvg * 10000) / 10000;
-      if (!Number.isFinite(newAvg) || newAvg < 0) newAvg = currentAvg;
-
-      if (newAvg > 0) {
-        await tx.part.update({
-          where: { id: partId },
-          data: {
-            avgCost: newAvg,
-            costUpdatedAt: new Date(),
-          },
-        });
-      }
-    }
-  });
 
   let retSubtotal = round2(Number(salesReturn.subtotal));
   const retTax = round2(Number(salesReturn.tax));
@@ -708,7 +615,7 @@ export async function approveDirectSalesReturn(
   const updatedReturn = await prisma.salesReturn.update({
     where: { id: salesReturn.id },
     data: {
-      status: 'completed',
+      status: 'approved',
       approvedBy: approvedBy || 'System',
       approvedAt: new Date(),
     },
@@ -723,4 +630,11 @@ export async function approveDirectSalesReturn(
     stockMovements,
     vouchers,
   };
+}
+
+/** Unit cost helper for store receive avg-cost update. */
+export function directReturnUnitCostForItem(
+  item: SalesReturnWithItems['SalesReturnItem'][0],
+): number {
+  return directReturnUnitCost(item);
 }

@@ -1,3 +1,4 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Search,
@@ -207,7 +208,7 @@ export const ItemsListView = ({
   items,
   loading = false,
   currentPage = 1,
-  itemsPerPage = 25,
+  itemsPerPage = 50,
   totalItems = 0,
   searchFilters: externalFilters,
   onFiltersChange,
@@ -835,6 +836,8 @@ export const ItemsListView = ({
       page: 1,
       limit: "all",
       include_locations: "false",
+      include_history: "false",
+      include_images: "false",
     };
 
     if (searchFilters.search) params.search = searchFilters.search;
@@ -1721,7 +1724,7 @@ export const ItemsListView = ({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="gap-1.5 text-xs h-7"
+                        className={cn("gap-1.5 text-xs h-7", PRINT_BUTTON_CLASS)}
                         onClick={handlePrintSelected}
                       >
                         <Printer className="w-3 h-3" />

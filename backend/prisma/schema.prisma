@@ -102,6 +102,9 @@ model AdjustmentItem {
   Part         Part       @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack         Rack?      @relation(fields: [rackId], references: [id])
   Shelf        Shelf?     @relation(fields: [shelfId], references: [id])
+
+  @@index([partId])
+  @@index([adjustmentId])
 }
 
 model Area {
@@ -366,6 +369,9 @@ model DirectPurchaseOrderItem {
   Part                  Part                @relation(fields: [partId], references: [id], onDelete: Cascade)
   Rack                  Rack?               @relation(fields: [rackId], references: [id])
   Shelf                 Shelf?              @relation(fields: [shelfId], references: [id])
+
+  @@index([partId])
+  @@index([directPurchaseOrderId])
 }
 
 model DirectPurchaseOrderReturn {
@@ -562,6 +568,13 @@ model Part {
   StockVerificationItem         StockVerificationItem[]
   TransferItem                  TransferItem[]
   LocalInquiryItem              LocalInquiryItem[]
+
+  @@index([updatedAt])
+  @@index([status, updatedAt])
+  @@index([partNo])
+  @@index([masterPartId])
+  @@index([brandId])
+  @@index([categoryId])
 }
 
 model KitItem {
@@ -973,6 +986,9 @@ model SalesInvoiceItem {
   InvoiceRackShelf  InvoiceRackShelf[]
   SalesInvoice      SalesInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   Part              Part               @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  @@index([partId])
+  @@index([invoiceId])
 }
 
 model InvoiceRackShelf {
@@ -1129,6 +1145,10 @@ model StockMovement {
   Shelf         Shelf?    @relation(fields: [shelfId], references: [id])
   Store         Store?    @relation(fields: [storeId], references: [id])
   Supplier      Supplier? @relation(fields: [supplierId], references: [id])
+
+  @@index([partId])
+  @@index([partId, referenceType])
+  @@index([createdAt])
 }
 
 model StockReservation {
@@ -1149,6 +1169,10 @@ model StockReservation {
   Rack              Rack?         @relation(fields: [rackId], references: [id])
   Shelf             Shelf?        @relation(fields: [shelfId], references: [id])
   Store             Store?        @relation(fields: [storeId], references: [id])
+
+  @@index([partId])
+  @@index([partId, status])
+  @@index([status])
 }
 
 model StockVerification {

@@ -2163,7 +2163,7 @@ router.get('/financial/expenses', async (req: Request, res: Response) => {
         Voucher: {
           status: 'posted',
           date: { gte: fromDate, lte: toDate },
-          OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+          OR: [{ isCleared: null }, { isCleared: 1 }],
         },
         Account: {
           status: 'Active',
@@ -3137,7 +3137,7 @@ router.get('/financial/supplier-payable', async (req: Request, res: Response) =>
           where: {
             Voucher: {
               status: 'posted',
-              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+              OR: [{ isCleared: null }, { isCleared: 1 }],
               date: { lte: toDate },
             },
           },
@@ -3218,7 +3218,7 @@ router.get('/financial/customer-receivable', async (req: Request, res: Response)
           where: {
             Voucher: {
               status: 'posted',
-              OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+              OR: [{ isCleared: null }, { isCleared: 1 }],
               date: { lte: toDate },
             },
           },

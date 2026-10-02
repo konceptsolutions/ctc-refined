@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, Pencil, Plus, Printer, Receipt, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -746,7 +748,7 @@ export const PayrollManagement = () => {
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
                           {canPrint && (
-                            <Button size="sm" variant="outline" onClick={() => handlePrint(row)}>
+                            <Button className={PRINT_BUTTON_CLASS} size="sm" variant="outline" onClick={() => handlePrint(row)}>
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
                           )}

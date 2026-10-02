@@ -1,3 +1,4 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -986,9 +987,9 @@ export const DeliveryChallan = () => {
                                   </Button>
                                 )}
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="sm"
-                                  className="h-7 text-xs"
+                                  className={cn("h-7 text-xs", PRINT_BUTTON_CLASS)}
                                   onClick={() => handlePrint(challan)}
                                 >
                                   Print
@@ -1079,7 +1080,7 @@ export const DeliveryChallan = () => {
                             Dispatch
                           </Button>
                         )}
-                        <Button variant="outline" size="sm" className="text-xs" onClick={() => handlePrint(challan)}>
+                        <Button variant="outline" size="sm" className={cn("text-xs", PRINT_BUTTON_CLASS)} onClick={() => handlePrint(challan)}>
                           Print
                         </Button>
                       </div>

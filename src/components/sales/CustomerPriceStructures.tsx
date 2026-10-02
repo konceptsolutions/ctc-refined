@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -711,7 +713,7 @@ export const CustomerPriceStructures = () => {
               <Download className="w-4 h-4" />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint} className={cn("gap-2", PRINT_BUTTON_CLASS)}>
               <Printer className="w-4 h-4" />
               Print
             </Button>

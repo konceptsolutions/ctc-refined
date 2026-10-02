@@ -310,7 +310,7 @@ const AIChatBot: React.FC = () => {
     'local purchase': { path: '/inventory', tab: 'direct-purchase-order', description: 'Local purchase (DPO)' },
     'direct purchase': { path: '/inventory', tab: 'direct-purchase-order', description: 'Direct purchase order' },
     'dpo': { path: '/inventory', tab: 'direct-purchase-order', description: 'Direct purchase order' },
-    'dpo return': { path: '/inventory', tab: 'dpo-return', description: 'DPO return' },
+    'dpo return': { path: '/inventory', tab: 'dpo-return', description: 'LPO return' },
     'store management': { path: '/inventory', tab: 'store-management', description: 'Store management' },
     'new invoice': { path: '/sales', tab: 'invoice', description: 'Create sales invoice' },
     'quote': { path: '/sales', tab: 'quotation', description: 'Create quotation' },

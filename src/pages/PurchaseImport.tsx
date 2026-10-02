@@ -47,7 +47,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
+import { PrintPdfButton, PRINT_ICON_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { printPurchaseImportInquiry, buildPurchaseImportInquiryPdfBlob } from "@/utils/printPurchaseImportInquiryPdf";
 import { buildPurchaseImportInquiryExcelBlob } from "@/utils/buildPurchaseImportInquiryExcel";
 import { PurchaseInquiry } from "@/components/inventory/PurchaseInquiry";
@@ -1531,7 +1531,7 @@ const UnquotedItemsDialog = ({
           <PrintPdfButton
             size="icon"
             variant="outline"
-            className="h-8 w-8"
+            className={PRINT_BTN_CLASS}
             onPrint={() => onPrint?.()}
             disabled={loading || items.length === 0}
             label="Print PDF"
@@ -1711,6 +1711,17 @@ const isInquiryConfirmed = (status?: string | null) =>
 
 const formatInquiryListStatus = (status?: string | null) =>
   isInquiryConfirmed(status) ? "Confirmed" : "Pending";
+
+/** Confirm available (not yet confirmed) — light blue */
+const CONFIRM_AVAILABLE_BTN_CLASS =
+  "border-sky-300 bg-sky-100 text-sky-800 hover:bg-sky-200 hover:text-sky-900 disabled:opacity-60";
+/** Already confirmed — light green */
+const CONFIRM_DONE_BTN_CLASS =
+  "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 hover:text-emerald-900 disabled:opacity-60";
+/** Unconfirm action — light orange */
+const UNCONFIRM_BTN_CLASS =
+  "border-orange-300 bg-orange-100 text-orange-800 hover:bg-orange-200 hover:text-orange-900 disabled:opacity-60";
+const PRINT_BTN_CLASS = PRINT_ICON_BUTTON_CLASS;
 
 /** Build list consignee label from ISB / KHI (/ Other) split quantities. */
 const formatConsigneesFromSplitQuantities = (
@@ -4067,7 +4078,7 @@ const PurchaseImportRequestView = ({
             <PrintPdfButton
               size="icon"
               variant="outline"
-              className="h-8 w-8"
+              className={PRINT_BTN_CLASS}
               onPrint={handlePrintPdf}
             />
           )}
@@ -5179,7 +5190,7 @@ const PurchaseQuotationForm = ({
             <PrintPdfButton
               size="icon"
               variant="outline"
-              className="h-8 w-8"
+              className={PRINT_BTN_CLASS}
               onPrint={() => {
                 void handlePrintComparisonPdf();
               }}
@@ -5191,7 +5202,7 @@ const PurchaseQuotationForm = ({
             <PrintPdfButton
               size="icon"
               variant="outline"
-              className="h-8 w-8"
+              className={PRINT_BTN_CLASS}
               onPrint={handlePrintPdf}
               disabled={loading || !context || sortedRows.length === 0}
               label="Print PDF"
@@ -6111,7 +6122,7 @@ const PurchaseQuotationRevisionForm = ({
           <PrintPdfButton
             size="icon"
             variant="outline"
-            className="h-8 w-8"
+            className={PRINT_BTN_CLASS}
             onPrint={handlePrintPdf}
             disabled={loading || !detail || sortedRows.length === 0}
             label="Print PDF"
@@ -7207,6 +7218,7 @@ const PurchaseInquiryListPanel = ({
                                 type="button"
                                 size="sm"
                                 variant="outline"
+                                className={CONFIRM_AVAILABLE_BTN_CLASS}
                                 onClick={() => handleConfirmRequest(row.id)}
                                 disabled={
                                   confirmingRequestId === row.id || !hasSupplier
@@ -7226,11 +7238,24 @@ const PurchaseInquiryListPanel = ({
                                 type="button"
                                 size="sm"
                                 variant="outline"
+                                className={UNCONFIRM_BTN_CLASS}
                                 onClick={() => void handleUnconfirmRequest(row.id)}
                                 disabled={confirmingRequestId === row.id}
                                 title="Unconfirm inquiry (only before a quotation is confirmed)"
                               >
                                 Unconfirm
+                              </Button>
+                            ) : canApprove ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className={CONFIRM_DONE_BTN_CLASS}
+                                disabled
+                                title="Inquiry confirmed"
+                              >
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Confirmed
                               </Button>
                             ) : null}
                             <Button
@@ -7246,8 +7271,8 @@ const PurchaseInquiryListPanel = ({
                             {canPrint && (
                               <PrintPdfButton
                                 size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                variant="outline"
+                                className={PRINT_BTN_CLASS}
                                 disabled={printingRequestId === row.id}
                                 label={
                                   printingRequestId === row.id
@@ -7345,8 +7370,8 @@ const PurchaseInquiryListPanel = ({
                             {canPrint && (
                             <PrintPdfButton
                               size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              variant="outline"
+                              className={PRINT_BTN_CLASS}
                               disabled={
                                 !isConfirmed || printingRequestId === row.id
                               }
@@ -7364,8 +7389,8 @@ const PurchaseInquiryListPanel = ({
                             {canPrint && showComparisonPdf ? (
                               <PrintPdfButton
                                 size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                variant="outline"
+                                className={PRINT_BTN_CLASS}
                                 disabled={comparingRequestId === row.id}
                                 label={
                                   comparingRequestId === row.id
@@ -8244,6 +8269,11 @@ const PurchaseQuotationListPanel = ({
                             type="button"
                             size="sm"
                             variant="outline"
+                            className={
+                              isConfirmed
+                                ? CONFIRM_DONE_BTN_CLASS
+                                : CONFIRM_AVAILABLE_BTN_CLASS
+                            }
                             onClick={() => onConfirm?.(row.id)}
                             disabled={isConfirmed}
                           >
@@ -8272,6 +8302,7 @@ const PurchaseQuotationListPanel = ({
                             type="button"
                             size="sm"
                             variant="outline"
+                            className={UNCONFIRM_BTN_CLASS}
                             disabled={unconfirmingQuotationId === row.id}
                             title="Unconfirm quotation (only before Purchase Import is saved)"
                             onClick={() => void handleUnconfirmQuotation(row.id)}
@@ -8292,7 +8323,7 @@ const PurchaseQuotationListPanel = ({
                             variant="outline"
                             disabled
                             title="Purchase Import already saved — quotation cannot be unconfirmed"
-                            className="opacity-50 cursor-not-allowed"
+                            className={cn(UNCONFIRM_BTN_CLASS, "opacity-50 cursor-not-allowed")}
                           >
                             Unconfirm
                           </Button>
@@ -8300,8 +8331,8 @@ const PurchaseQuotationListPanel = ({
                         {canPrint && (
                         <PrintPdfButton
                           size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          variant="outline"
+                          className={PRINT_BTN_CLASS}
                           disabled={printingQuotationId === row.id}
                           label={
                             printingQuotationId === row.id
@@ -9370,7 +9401,7 @@ const PurchaseQuotationConfirmForm = ({
             <PrintPdfButton
               size="icon"
               variant="outline"
-              className="h-8 w-8"
+              className={PRINT_BTN_CLASS}
               onPrint={handlePrintPdf}
               disabled={loading || !detail || sortedRows.length === 0}
               label="Print PDF"
@@ -9845,6 +9876,7 @@ const PurchaseQuotationConfirmForm = ({
         {!isViewMode && canApprove && (
           <Button
             type="button"
+            className={CONFIRM_AVAILABLE_BTN_CLASS}
             onClick={handleConfirm}
             disabled={saving || promotingTemps || !detail || hasSplitMismatch}
           >
@@ -11806,8 +11838,8 @@ const PurchaseOrderTab = ({
                       {canPrint && (
                       <PrintPdfButton
                         size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        variant="outline"
+                        className={PRINT_BTN_CLASS}
                         disabled={printingOrderId === row.id}
                         label={
                           printingOrderId === row.id ? "Printing..." : "Print PDF"

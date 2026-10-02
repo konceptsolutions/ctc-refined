@@ -78,6 +78,7 @@ export const PaymentVoucherForm = ({
   // PV: Account Dr must NOT include cash/bank accounts.
   const paymentDrOptions = accounts.filter((a) => !cashBankValues.has(a.value));
   const [paidTo, setPaidTo] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
   // Initialize date in YYYY-MM-DD format for date input
   const getTodayDate = () => {
     const today = new Date();
@@ -204,6 +205,7 @@ export const PaymentVoucherForm = ({
       const saved = await onSave({
         type: "payment",
         paidTo,
+        chequeNumber: chequeNumber.trim() || undefined,
         date,
         crAccount,
         entries: entries.map((entry) => {
@@ -238,6 +240,7 @@ export const PaymentVoucherForm = ({
       if (!saved) return;
 
       setPaidTo("");
+      setChequeNumber("");
       setCrAccount("");
       setExchangeRate("1");
       setEntries([{ id: "1", accountDr: "", description: "", drAmount: "", drAmountLc: "" }]);
@@ -269,15 +272,28 @@ export const PaymentVoucherForm = ({
         </div>
       </div>
 
-      {/* Paid To and Date */}
-      <div className={isInternationalSupplier ? "grid grid-cols-1 lg:grid-cols-6 gap-4" : "grid grid-cols-1 lg:grid-cols-4 gap-4"}>
-        <div className="lg:col-span-3">
+      {/* Paid To, Cheque No and Date */}
+      <div className={isInternationalSupplier ? "grid grid-cols-1 lg:grid-cols-7 gap-4" : "grid grid-cols-1 lg:grid-cols-5 gap-4"}>
+        <div className="lg:col-span-2">
           <Input
             placeholder="Paid To"
             value={paidTo}
             onChange={(e) => setPaidTo(e.target.value)}
             className="h-11"
           />
+        </div>
+        <div className="lg:col-span-1">
+          <div className="relative">
+            <Label className="absolute -top-2 left-2 bg-background px-1 text-xs text-muted-foreground z-10">
+              Cheque No
+            </Label>
+            <Input
+              placeholder="Cheque No"
+              value={chequeNumber}
+              onChange={(e) => setChequeNumber(e.target.value)}
+              className="h-11"
+            />
+          </div>
         </div>
         {isInternationalSupplier ? (
           <div className="lg:col-span-2">

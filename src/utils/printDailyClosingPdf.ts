@@ -11,6 +11,9 @@ export type DailyClosingPrintRow = {
   serialNo: number;
   voucherNumber: string;
   description: string;
+  partyName?: string;
+  receivedFrom?: string;
+  paidTo?: string;
   amounts: Record<string, number>;
 };
 
@@ -56,12 +59,13 @@ export const printDailyClosing = (input: DailyClosingPrintInput): boolean => {
   const amountCells = (values: Record<string, number>) =>
     input.columns.map((col) => money(Number(values[col.id] || 0)));
 
-  const txnRows = (rows: DailyClosingPrintRow[]) =>
+  const txnRows = (rows: DailyClosingPrintRow[], partyKey: "receivedFrom" | "paidTo") =>
     rows.length === 0
       ? [
           [
             "",
             "",
+            "—",
             "—",
             ...input.columns.map(() => ""),
           ],
@@ -69,33 +73,42 @@ export const printDailyClosing = (input: DailyClosingPrintInput): boolean => {
       : rows.map((row) => [
           String(row.serialNo),
           row.voucherNumber || "",
+          row[partyKey] || row.partyName || "",
           row.description || "",
           ...amountCells(row.amounts),
         ]);
 
   const head = [
-    ["S no", "V no", "Desc", ...input.columns.map((c) => c.name)],
+    [
+      "S no",
+      "V no",
+      "Received From / Paid To",
+      "Desc",
+      ...input.columns.map((c) => c.name),
+    ],
   ];
 
   const body: string[][] = [
-    ["", "", "Opening Balances:", ...amountCells(input.openingBalances)],
+    ["", "", "", "Opening Balances:", ...amountCells(input.openingBalances)],
     [
       "Receipts",
       "",
       "",
+      "",
       ...input.columns.map(() => ""),
     ],
-    ...txnRows(input.receipts),
-    ["", "", "Total Receipts:", ...amountCells(input.totalReceipts)],
+    ...txnRows(input.receipts, "receivedFrom"),
+    ["", "", "", "Total Receipts:", ...amountCells(input.totalReceipts)],
     [
       "Payments",
       "",
       "",
+      "",
       ...input.columns.map(() => ""),
     ],
-    ...txnRows(input.payments),
-    ["", "", "Total Payments:", ...amountCells(input.totalPayments)],
-    ["", "", "Closing Balances:", ...amountCells(input.closingBalances)],
+    ...txnRows(input.payments, "paidTo"),
+    ["", "", "", "Total Payments:", ...amountCells(input.totalPayments)],
+    ["", "", "", "Closing Balances:", ...amountCells(input.closingBalances)],
   ];
 
   const sectionIndexes = new Set<number>();
@@ -105,10 +118,10 @@ export const printDailyClosing = (input: DailyClosingPrintInput): boolean => {
       sectionIndexes.add(index);
     }
     if (
-      row[2] === "Opening Balances:" ||
-      row[2] === "Total Receipts:" ||
-      row[2] === "Total Payments:" ||
-      row[2] === "Closing Balances:"
+      row[3] === "Opening Balances:" ||
+      row[3] === "Total Receipts:" ||
+      row[3] === "Total Payments:" ||
+      row[3] === "Closing Balances:"
     ) {
       summaryIndexes.add(index);
     }

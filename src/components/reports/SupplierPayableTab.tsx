@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -132,7 +134,7 @@ ${printRef.current.innerHTML}
             </Button>
             {rows.length > 0 && (
               <>
-                <Button variant="outline" onClick={handlePrint}>
+                <Button className={PRINT_BUTTON_CLASS} variant="outline" onClick={handlePrint}>
                   <Printer className="w-4 h-4 mr-2" /> Print
                 </Button>
                 <Button variant="outline" onClick={handleExport}>

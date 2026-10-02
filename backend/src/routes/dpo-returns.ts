@@ -190,6 +190,17 @@ router.post('/', async (req: Request, res: Response) => {
           error: `Cannot return ${returnItem.return_quantity} units of part ${returnItem.part_id}. Only ${availableToReturn} units available for return.`
         });
       }
+
+      const currentStock = await calculateStockQuantity(returnItem.part_id, prisma);
+      if (returnItem.return_quantity > currentStock) {
+        const part = await prisma.part.findUnique({
+          where: { id: returnItem.part_id },
+          select: { partNo: true },
+        });
+        return res.status(400).json({
+          error: `Cannot return ${returnItem.return_quantity} units of ${part?.partNo || 'item'}. Item stock is only ${currentStock}.`,
+        });
+      }
     }
 
     // Generate return number
@@ -313,211 +324,273 @@ router.post('/', async (req: Request, res: Response) => {
         });
       }
 
-      // 2. Create Vouchers (JV and potentially RV)
-      if (account_id) {
-        // Find Inventory Account
-        const inventoryAccount = await tx.account.findFirst({
+      // 2. Create vouchers
+      // JV: always DR Supplier Payable / CR Inventory (supplier is already on the LPO)
+      // RV: only when cash/bank account_id is selected (refund receipt)
+      // Prefer exact Inventory GL (101001); avoid matching Cost/Disposed Inventory by name
+      let inventoryAccount = await tx.account.findFirst({
+        where: { code: '101001', status: 'Active' },
+      });
+      if (!inventoryAccount) {
+        inventoryAccount = await tx.account.findFirst({
           where: {
-            OR: [
-              { code: '101001' },
-              { Subgroup: { code: '104' } },
-              { name: { contains: 'Inventory' } },
-            ],
+            OR: [{ code: '104005' }, { code: '104001' }],
             status: 'Active',
           },
         });
+      }
+      if (!inventoryAccount) {
+        inventoryAccount = await tx.account.findFirst({
+          where: {
+            name: { equals: 'Inventory', mode: 'insensitive' },
+            status: 'Active',
+          },
+        });
+      }
 
-        // Find Supplier Account (Payable)
-        let supplierAccount = null;
-        if (dpo.supplierId) {
-          const supplier = await tx.supplier.findUnique({
-            where: { id: dpo.supplierId },
-            select: { companyName: true, name: true },
-          });
-          if (supplier) {
-            const payablesSubgroup = await tx.subgroup.findFirst({
-              where: { code: '301' },
-            });
-            if (payablesSubgroup) {
-              supplierAccount = await tx.account.findFirst({
-                where: {
-                  subgroupId: payablesSubgroup.id,
-                  OR: [
-                    { name: supplier.name || "" },
-                    { name: supplier.companyName || "" },
-                  ],
-                },
-                include: { Subgroup: true },
-              });
-            }
-          }
-        }
-
+      let supplierAccount: any = null;
+      // 1) Direct link Account.supplierId (most reliable)
+      if (dpo.supplierId) {
+        supplierAccount = await tx.account.findFirst({
+          where: {
+            supplierId: dpo.supplierId,
+            status: 'Active',
+            Subgroup: { code: '301' },
+          },
+          include: { Subgroup: true },
+        });
         if (!supplierAccount) {
           supplierAccount = await tx.account.findFirst({
-            where: { OR: [{ code: '301001' }, { name: 'Accounts Payable' }], status: 'Active' },
+            where: {
+              supplierId: dpo.supplierId,
+              status: 'Active',
+            },
             include: { Subgroup: true },
           });
         }
-
-        const selectedAccount = await tx.account.findUnique({
-          where: { id: account_id },
-          include: { Subgroup: true }
+      }
+      // 2) Name match in payables subgroup
+      if (!supplierAccount && dpo.supplierId) {
+        const supplier = await tx.supplier.findUnique({
+          where: { id: dpo.supplierId },
+          select: { companyName: true, name: true },
         });
-
-        if (inventoryAccount && selectedAccount && supplierAccount) {
-          const isCashRefund = selectedAccount.Subgroup?.code === '101' || selectedAccount.Subgroup?.code === '102';
-
-          // A. Create JOURNAL VOUCHER (Inventory -> Supplier)
-          // For both credit and cash returns, we first reverse the inventory and liability
-          const lastJV = await tx.voucher.findFirst({
-            where: { type: 'journal', voucherNumber: { startsWith: 'JV' } },
-            orderBy: { voucherNumber: "desc" },
+        if (supplier) {
+          const payablesSubgroup = await tx.subgroup.findFirst({
+            where: { code: '301' },
           });
-
-          let jvNum = 1;
-          if (lastJV) {
-            const match = lastJV.voucherNumber.match(/^JV(\d+)$/);
-            if (match) jvNum = parseInt(match[1]) + 1;
-            else {
-              const countJV = await tx.voucher.count({ where: { type: 'journal', voucherNumber: { startsWith: 'JV' } } });
-              jvNum = countJV + 1;
-            }
-          }
-          const jvVoucherNumber = `JV${String(jvNum).padStart(4, "0")}`;
-
-          // JV accounts depend on whether it's cash refund or credit
-          // If cash refund, JV goes to Supplier Payable. If credit, JV goes to Selected Account (which is the supplier anyway)
-          const jvDebitAccount = isCashRefund ? supplierAccount : selectedAccount;
-
-          const voucherDescription = `Return ${returnNumber}: ${itemDetailsStr}`;
-
-          await tx.voucher.create({
-            data: {
-              id: crypto.randomUUID(),
-              voucherNumber: jvVoucherNumber,
-              type: 'journal',
-              date: new Date(return_date),
-              narration: `DPO Return ${returnNumber} - Inventory Adjusted`,
-              totalDebit: totalAmount, // Use totalAmount for JV (before deduction) or netAmount? User image shows 237,380 which is likely total.
-              totalCredit: totalAmount,
-              status: 'posted',
-              createdBy: 'System',
-              approvedBy: 'System',
-              approvedAt: new Date(),
-              updatedAt: new Date(),
-              VoucherEntry: {
-                create: [
-                  {
-                    id: crypto.randomUUID(),
-                    accountId: jvDebitAccount.id,
-                    accountName: `${jvDebitAccount.code}-${jvDebitAccount.name}`,
-                    description: voucherDescription, // UPDATE: Included item details
-                    debit: totalAmount,
-                    credit: 0,
-                    sortOrder: 0,
-                  },
-                  {
-                    id: crypto.randomUUID(),
-                    accountId: inventoryAccount.id,
-                    accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
-                    description: voucherDescription, // UPDATE: Included item details
-                    debit: 0,
-                    credit: totalAmount,
-                    sortOrder: 1,
-                  },
-                ],
-              },
-            } as any,
-          });
-
-          // B. Create RECEIPT VOUCHER (Supplier -> Cash/Bank) if cash refund
-          if (isCashRefund) {
-            // Numeric max only — startsWith('RV') also matches RVC* and breaks lex desc.
-            const rvCandidates = await tx.voucher.findMany({
-              where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } },
-              select: { voucherNumber: true },
-            });
-            let rvMax = 0;
-            for (const v of rvCandidates) {
-              const match = String(v.voucherNumber).match(/^RV(\d+)$/);
-              if (match) rvMax = Math.max(rvMax, parseInt(match[1], 10));
-            }
-            const rvVoucherNumber = `RV${String(rvMax + 1).padStart(4, "0")}`;
-
-            await tx.voucher.create({
-              data: {
-                id: crypto.randomUUID(),
-                voucherNumber: rvVoucherNumber,
-                type: 'receipt',
-                date: new Date(return_date),
-                narration: `DPO Return ${returnNumber} - Cash Refund Received`,
-                totalDebit: netAmount,
-                totalCredit: netAmount,
-                status: 'posted',
-                createdBy: 'System',
-                approvedBy: 'System',
-                approvedAt: new Date(),
-                updatedAt: new Date(),
-                VoucherEntry: {
-                  create: [
-                    {
-                      id: crypto.randomUUID(),
-                      accountId: selectedAccount.id,
-                      accountName: `${selectedAccount.code}-${selectedAccount.name}`,
-                      description: voucherDescription, // UPDATE: Included item details
-                      debit: netAmount,
-                      credit: 0,
-                      sortOrder: 0,
-                    },
-                    {
-                      id: crypto.randomUUID(),
-                      accountId: supplierAccount.id,
-                      accountName: `${supplierAccount.code}-${supplierAccount.name}`,
-                      description: voucherDescription, // UPDATE: Included item details
-                      debit: 0,
-                      credit: netAmount,
-                      sortOrder: 1,
-                    },
-                  ],
+          if (payablesSubgroup) {
+            const nameOrCompany = [supplier.name, supplier.companyName]
+              .map((n) => String(n || '').trim())
+              .filter(Boolean);
+            if (nameOrCompany.length > 0) {
+              supplierAccount = await tx.account.findFirst({
+                where: {
+                  subgroupId: payablesSubgroup.id,
+                  status: 'Active',
+                  OR: nameOrCompany.map((n) => ({
+                    name: { equals: n, mode: 'insensitive' as const },
+                  })),
                 },
-              } as any,
-            });
-
-            // Update Balances for Cash Refund
-            // JV: DR Supplier. RV: CR Supplier. Net Supplier change = 0 (if totalAmount == netAmount). 
-            // If deduction exists, Supplier balance decreases by deduction.
-            // RV: DR Cash (increases). JV: CR Inventory (decreases).
-
-            await tx.account.update({
-              where: { id: selectedAccount.id },
-              data: { currentBalance: { increment: netAmount } } // Cash increases
-            });
-            await tx.account.update({
-              where: { id: inventoryAccount.id },
-              data: { currentBalance: { decrement: totalAmount } } // Inventory decreases
-            });
-            await tx.account.update({
-              where: { id: supplierAccount.id },
-              // Net change = totalAmount (Debit) - netAmount (Credit) = deduction
-              data: { currentBalance: { decrement: totalAmount - netAmount } }
-            });
-
-          } else {
-            // Update Balances for Credit Return (selectedAccount is Supplier)
-            await tx.account.update({
-              where: { id: selectedAccount.id },
-              data: { currentBalance: { decrement: netAmount } } // Liability decreases
-            });
-            await tx.account.update({
-              where: { id: inventoryAccount.id },
-              data: { currentBalance: { decrement: totalAmount } } // Inventory decreases
-            });
+                include: { Subgroup: true },
+              });
+              if (!supplierAccount) {
+                supplierAccount = await tx.account.findFirst({
+                  where: {
+                    subgroupId: payablesSubgroup.id,
+                    status: 'Active',
+                    OR: nameOrCompany.map((n) => ({
+                      name: { contains: n, mode: 'insensitive' as const },
+                    })),
+                  },
+                  include: { Subgroup: true },
+                });
+              }
+            }
           }
         }
       }
 
-      return dpoReturn;
+      if (!supplierAccount) {
+        supplierAccount = await tx.account.findFirst({
+          where: {
+            OR: [{ code: '301001' }, { name: 'Accounts Payable' }],
+            status: 'Active',
+          },
+          include: { Subgroup: true },
+        });
+      }
+
+      if (!inventoryAccount) {
+        throw new Error(
+          'Inventory account not found. Cannot create LPO return JV.',
+        );
+      }
+      if (!supplierAccount) {
+        throw new Error(
+          'Supplier payable account not found for this LPO supplier. Cannot create LPO return JV.',
+        );
+      }
+
+      const voucherDescription = `Return ${returnNumber}: ${itemDetailsStr}`;
+
+      // A. JOURNAL VOUCHER — DR Supplier Payable, CR Inventory
+      const jvCandidates = await tx.voucher.findMany({
+        where: { type: 'journal', voucherNumber: { startsWith: 'JV' } },
+        select: { voucherNumber: true },
+      });
+      let jvMax = 0;
+      for (const v of jvCandidates) {
+        const match = String(v.voucherNumber).match(/^JV(\d+)$/);
+        if (match) jvMax = Math.max(jvMax, parseInt(match[1], 10));
+      }
+      const jvVoucherNumber = `JV${String(jvMax + 1).padStart(4, '0')}`;
+
+      await tx.voucher.create({
+        data: {
+          id: crypto.randomUUID(),
+          voucherNumber: jvVoucherNumber,
+          type: 'journal',
+          date: new Date(return_date),
+          narration: `LPO Return ${returnNumber} - Inventory Adjusted (LPO ${dpo.dpoNumber})`,
+          totalDebit: totalAmount,
+          totalCredit: totalAmount,
+          status: 'posted',
+          createdBy: 'System',
+          approvedBy: 'System',
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+          VoucherEntry: {
+            create: [
+              {
+                id: crypto.randomUUID(),
+                accountId: supplierAccount.id,
+                accountName: `${supplierAccount.code}-${supplierAccount.name}`,
+                description: voucherDescription,
+                debit: totalAmount,
+                credit: 0,
+                sortOrder: 0,
+              },
+              {
+                id: crypto.randomUUID(),
+                accountId: inventoryAccount.id,
+                accountName: `${inventoryAccount.code}-${inventoryAccount.name}`,
+                description: voucherDescription,
+                debit: 0,
+                credit: totalAmount,
+                sortOrder: 1,
+              },
+            ],
+          },
+        } as any,
+      });
+
+      // JV balances: DR payable (liability down), CR inventory (asset down)
+      await tx.account.update({
+        where: { id: supplierAccount.id },
+        data: { currentBalance: { decrement: totalAmount } },
+      });
+      await tx.account.update({
+        where: { id: inventoryAccount.id },
+        data: { currentBalance: { decrement: totalAmount } },
+      });
+
+      let rvVoucherNumber: string | null = null;
+
+      // B. RECEIPT VOUCHER — only when cash/bank account selected for refund
+      if (account_id && netAmount > 0) {
+        const selectedAccount = await tx.account.findUnique({
+          where: { id: account_id },
+          include: { Subgroup: true },
+        });
+        if (!selectedAccount) {
+          throw new Error('Selected cash/bank account not found for receipt voucher.');
+        }
+
+        const sg = String(selectedAccount.Subgroup?.code || '');
+        const isCashOrBank =
+          sg.startsWith('102') ||
+          sg.startsWith('103') ||
+          sg === '101' ||
+          sg === '102';
+        if (!isCashOrBank) {
+          throw new Error(
+            'Receipt voucher account must be Cash or Bank. Supplier payable is used on the JV.',
+          );
+        }
+
+        const rvCandidates = await tx.voucher.findMany({
+          where: { type: 'receipt', voucherNumber: { startsWith: 'RV' } },
+          select: { voucherNumber: true },
+        });
+        let rvMax = 0;
+        for (const v of rvCandidates) {
+          const match = String(v.voucherNumber).match(/^RV(\d+)$/);
+          if (match) rvMax = Math.max(rvMax, parseInt(match[1], 10));
+        }
+        rvVoucherNumber = `RV${String(rvMax + 1).padStart(4, '0')}`;
+
+        await tx.voucher.create({
+          data: {
+            id: crypto.randomUUID(),
+            voucherNumber: rvVoucherNumber,
+            type: 'receipt',
+            date: new Date(return_date),
+            narration: `LPO Return ${returnNumber} - Cash/Bank Refund Received`,
+            cashBankAccount: selectedAccount.name,
+            totalDebit: netAmount,
+            totalCredit: netAmount,
+            status: 'posted',
+            createdBy: 'System',
+            approvedBy: 'System',
+            approvedAt: new Date(),
+            updatedAt: new Date(),
+            VoucherEntry: {
+              create: [
+                {
+                  id: crypto.randomUUID(),
+                  accountId: selectedAccount.id,
+                  accountName: `${selectedAccount.code}-${selectedAccount.name}`,
+                  description: voucherDescription,
+                  debit: netAmount,
+                  credit: 0,
+                  sortOrder: 0,
+                },
+                {
+                  id: crypto.randomUUID(),
+                  accountId: supplierAccount.id,
+                  accountName: `${supplierAccount.code}-${supplierAccount.name}`,
+                  description: voucherDescription,
+                  debit: 0,
+                  credit: netAmount,
+                  sortOrder: 1,
+                },
+              ],
+            },
+          } as any,
+        });
+
+        // RV: DR cash/bank (asset up), CR payable (liability up / offsets JV debit)
+        await tx.account.update({
+          where: { id: selectedAccount.id },
+          data: { currentBalance: { increment: netAmount } },
+        });
+        await tx.account.update({
+          where: { id: supplierAccount.id },
+          data: { currentBalance: { increment: netAmount } },
+        });
+      }
+
+      console.log(
+        `[DPOR] ${returnNumber} vouchers: JV=${jvVoucherNumber}` +
+          (rvVoucherNumber ? ` RV=${rvVoucherNumber}` : ' (no RV)'),
+      );
+
+      return {
+        ...dpoReturn,
+        jvVoucherNumber,
+        rvVoucherNumber,
+      };
     });
 
     res.status(201).json(result);
@@ -607,23 +680,9 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
     // Original DPO JV: DR Inventory, CR Supplier Payable
     // Return JV: DR Supplier Payable, CR Inventory
     try {
-      // Find Inventory Account
-      const inventoryAccount = await prisma.account.findFirst({
-        where: {
-          OR: [
-            {
-              Subgroup: {
-                code: '104',
-              },
-            },
-            {
-              name: {
-                contains: 'Inventory',
-              },
-            },
-          ],
-          status: 'Active',
-        },
+      // Find Inventory Account (prefer 101001)
+      let inventoryAccount = await prisma.account.findFirst({
+        where: { code: '101001', status: 'Active' },
         include: {
           Subgroup: {
             include: {
@@ -632,6 +691,36 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
           },
         },
       });
+      if (!inventoryAccount) {
+        inventoryAccount = await prisma.account.findFirst({
+          where: {
+            OR: [{ code: '104005' }, { code: '104001' }],
+            status: 'Active',
+          },
+          include: {
+            Subgroup: {
+              include: {
+                MainGroup: true,
+              },
+            },
+          },
+        });
+      }
+      if (!inventoryAccount) {
+        inventoryAccount = await prisma.account.findFirst({
+          where: {
+            name: { equals: 'Inventory', mode: 'insensitive' },
+            status: 'Active',
+          },
+          include: {
+            Subgroup: {
+              include: {
+                MainGroup: true,
+              },
+            },
+          },
+        });
+      }
 
       if (!inventoryAccount) {
         return res.status(400).json({ error: 'Inventory Account not found' });

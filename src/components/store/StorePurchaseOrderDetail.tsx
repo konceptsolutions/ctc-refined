@@ -1,3 +1,5 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
+import { cn } from "@/lib/utils";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -196,7 +198,7 @@ export const StorePurchaseOrderDetail = ({
           </div>
           <div className="flex gap-2">
             {onPrint && (
-              <Button variant="outline" onClick={onPrint}>
+              <Button className={PRINT_BUTTON_CLASS} variant="outline" onClick={onPrint}>
                 <Printer className="w-4 h-4 mr-2" />
                 Print
               </Button>

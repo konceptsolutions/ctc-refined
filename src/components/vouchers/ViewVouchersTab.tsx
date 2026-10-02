@@ -1,3 +1,4 @@
+import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { formatUiDate, parseFlexibleDateToISO, UI_DATE_PLACEHOLDER } from "@/utils/dateUtils";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format } from "date-fns";
@@ -118,6 +119,7 @@ export const ViewVouchersTab = ({
   // Filter states
   const [typeFilter, setTypeFilter] = useState("all");
   const [modeFilter, setModeFilter] = useState("all");
+  const [chequeStatusFilter, setChequeStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("default");
   const [postDatedFilter, setPostDatedFilter] = useState("default");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
@@ -197,13 +199,25 @@ export const ViewVouchersTab = ({
   };
 
   const isModeFilterEnabled =
-    typeFilter === "payment" || typeFilter === "receipt";
+    typeFilter === "payment" ||
+    typeFilter === "receipt" ||
+    typeFilter === "receipt-cash" ||
+    typeFilter === "receipt-bank" ||
+    typeFilter === "receipt-cheque";
+
+  const isChequeStatusFilterVisible = typeFilter === "receipt-cheque";
 
   useEffect(() => {
     if (!isModeFilterEnabled && modeFilter !== "all") {
       setModeFilter("all");
     }
   }, [isModeFilterEnabled, modeFilter]);
+
+  useEffect(() => {
+    if (!isChequeStatusFilterVisible && chequeStatusFilter !== "all") {
+      setChequeStatusFilter("all");
+    }
+  }, [isChequeStatusFilterVisible, chequeStatusFilter]);
 
   // Simple pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -255,6 +269,15 @@ export const ViewVouchersTab = ({
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
   const [voucherToClear, setVoucherToClear] = useState<Voucher | null>(null);
   const [clearanceDate, setClearanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [clearanceStatus, setClearanceStatus] = useState<number>(1);
+
+  const getChequeStatusLabel = (isCleared: number | null | undefined) => {
+    if (isCleared === 1) return "Cleared";
+    if (isCleared === 2) return "Returned";
+    if (isCleared === 3) return "Cancelled";
+    if (isCleared === 0) return "Pending";
+    return "-";
+  };
 
   // Debug the viewingVoucher state
   useEffect(() => {
@@ -594,6 +617,10 @@ export const ViewVouchersTab = ({
       type: typeFilter !== "all" ? typeFilter : undefined,
       mode:
         isModeFilterEnabled && modeFilter !== "all" ? modeFilter : undefined,
+      is_cleared:
+        isChequeStatusFilterVisible && chequeStatusFilter !== "all"
+          ? chequeStatusFilter
+          : undefined,
       category: categoryFilter !== "default" ? categoryFilter : undefined,
       is_post_dated: postDatedFilter !== "default" ? postDatedFilter : undefined,
       from_date: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
@@ -610,6 +637,7 @@ export const ViewVouchersTab = ({
   const clearFilters = () => {
     setTypeFilter("all");
     setModeFilter("all");
+    setChequeStatusFilter("all");
     setCategoryFilter("default");
     setPostDatedFilter("default");
     setFromDate(undefined);
@@ -723,24 +751,40 @@ export const ViewVouchersTab = ({
       }
     }
     setEditCheckClearDate(checkClearDateValue);
-    setEditChequeNumber(voucher.chequeNumber || "");
+    setEditChequeNumber(
+      String(
+        (voucher as any).chequeNumber ??
+          (voucher as any).cheque_number ??
+          "",
+      ).trim(),
+    );
 
     let editChequeDateValue = "";
-    if (voucher.chequeDate) {
-      try {
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(voucher.chequeDate)) {
-          const [day, month, year] = voucher.chequeDate.split("/");
-          editChequeDateValue = `${year}-${month}-${day}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(voucher.chequeDate)) {
-          editChequeDateValue = voucher.chequeDate;
-        } else {
-          const date = new Date(voucher.chequeDate);
-          if (!isNaN(date.getTime())) {
-            editChequeDateValue = date.toISOString().split("T")[0];
+    const rawChequeDate =
+      voucher.chequeDate || (voucher as any).cheque_date || "";
+    if (rawChequeDate) {
+      editChequeDateValue =
+        parseFlexibleDateToISO(String(rawChequeDate)) || "";
+      if (!editChequeDateValue) {
+        try {
+          if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(rawChequeDate))) {
+            const [day, month, year] = String(rawChequeDate).split("/");
+            editChequeDateValue = `${year}-${month}-${day}`;
+          } else if (/^\d{4}-\d{2}-\d{2}/.test(String(rawChequeDate))) {
+            editChequeDateValue = String(rawChequeDate).slice(0, 10);
+          } else {
+            const date = new Date(String(rawChequeDate));
+            if (!isNaN(date.getTime())) {
+              // Use local Y-M-D to avoid UTC day shift
+              const y = date.getFullYear();
+              const m = String(date.getMonth() + 1).padStart(2, "0");
+              const d = String(date.getDate()).padStart(2, "0");
+              editChequeDateValue = `${y}-${m}-${d}`;
+            }
           }
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
       }
     }
     setEditChequeDate(editChequeDateValue);
@@ -813,6 +857,8 @@ export const ViewVouchersTab = ({
     const requestId = ++editRequestRef.current;
     setEditLoading(true);
     setEditingVoucher(voucher);
+    // Seed form immediately from list row (includes cheque fields when present)
+    populateEditFormFromVoucher(voucher, internationalAccountIds);
 
     let intlIds = internationalAccountIds;
     if (intlIds.size === 0) {
@@ -839,8 +885,24 @@ export const ViewVouchersTab = ({
         throw new Error("Failed to load voucher details");
       }
 
-      populateEditFormFromVoucher(fullVoucher, intlIds);
-      setEditingVoucher(fullVoucher);
+      // Prefer API detail, but keep list cheque values if detail omits them
+      const merged: Voucher = {
+        ...voucher,
+        ...fullVoucher,
+        chequeNumber:
+          fullVoucher.chequeNumber ||
+          voucher.chequeNumber ||
+          undefined,
+        chequeDate:
+          fullVoucher.chequeDate || voucher.chequeDate || undefined,
+        checkClearDate:
+          fullVoucher.checkClearDate ||
+          voucher.checkClearDate ||
+          undefined,
+      };
+
+      populateEditFormFromVoucher(merged, intlIds);
+      setEditingVoucher(merged);
     } catch (error) {
       if (requestId !== editRequestRef.current) return;
       console.error("Failed to load voucher for editing:", error);
@@ -980,15 +1042,15 @@ export const ViewVouchersTab = ({
         ...editingVoucher,
         narration: editNarration,
         date: finalDate,
-        checkClearDate: editCheckClearDate || undefined,
-        chequeNumber: editChequeNumber || undefined,
-        chequeDate: editChequeDate || undefined,
-        isCleared: editIsCleared !== null ? editIsCleared : undefined,
+        checkClearDate: editCheckClearDate || null,
+        chequeNumber: editChequeNumber.trim(),
+        chequeDate: editChequeDate || null,
+        isCleared: editIsCleared !== null ? editIsCleared : null,
         conversionRate: editIsInternational ? exchangeRateValue : editingVoucher.conversionRate,
         entries: savedEntries,
         totalDebit,
         totalCredit,
-      });
+      } as Voucher);
       resetEditDialog();
     } catch {
       // Error toast is shown by onUpdateVoucher
@@ -997,7 +1059,16 @@ export const ViewVouchersTab = ({
 
   const handleOpenClearDialog = (voucher: Voucher) => {
     setVoucherToClear(voucher);
-    setClearanceDate(new Date().toISOString().split('T')[0]);
+    setClearanceDate(
+      voucher.checkClearDate
+        ? (parseFlexibleDateToISO(voucher.checkClearDate) ?? new Date().toISOString().split("T")[0])
+        : new Date().toISOString().split("T")[0],
+    );
+    setClearanceStatus(
+      voucher.isCleared !== undefined && voucher.isCleared !== null
+        ? Number(voucher.isCleared)
+        : 0,
+    );
     setIsClearDialogOpen(true);
   };
 
@@ -1005,18 +1076,20 @@ export const ViewVouchersTab = ({
     if (!voucherToClear) return;
 
     try {
-      // Use the existing handleUpdateVoucher logic via the onUpdateVoucher callback
-      onUpdateVoucher({
+      await onUpdateVoucher({
         ...voucherToClear,
-        isCleared: 1, // 1 = Cleared (Recieve)
-        checkClearDate: clearanceDate,
+        isCleared: clearanceStatus,
+        checkClearDate: clearanceStatus === 1 ? clearanceDate : voucherToClear.checkClearDate,
       });
 
       setIsClearDialogOpen(false);
       setVoucherToClear(null);
-      toast({ title: "Success", description: "Voucher marked as cleared (Recieve)" });
+      toast({
+        title: "Success",
+        description: `Cheque status updated to ${getChequeStatusLabel(clearanceStatus)}`,
+      });
     } catch (error) {
-      toast({ title: "Error", description: "Failed to clear voucher", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to update cheque status", variant: "destructive" });
     }
   };
 
@@ -1041,7 +1114,7 @@ export const ViewVouchersTab = ({
 
   const handleApprove = async (voucher: Voucher) => {
     try {
-      await onUpdateVoucher({ ...voucher, status: "posted" });
+      await onUpdateVoucher({ id: voucher.id, status: "posted" } as Voucher);
       // Success toast is already shown in handleUpdateVoucher
     } catch (error: any) {
       // Error toast is already shown in handleUpdateVoucher
@@ -1050,7 +1123,7 @@ export const ViewVouchersTab = ({
 
   const handleChangeToPending = async (voucher: Voucher) => {
     try {
-      await onUpdateVoucher({ ...voucher, status: "draft" });
+      await onUpdateVoucher({ id: voucher.id, status: "draft" } as Voucher);
       // Success toast is already shown in handleUpdateVoucher
     } catch (error: any) {
       // Error toast is already shown in handleUpdateVoucher
@@ -1163,8 +1236,9 @@ export const ViewVouchersTab = ({
   const getVoucherTypeLabel = (type: string, voucherNumber?: string) => {
     if (type === "receipt" && voucherNumber) {
       const upper = voucherNumber.toUpperCase();
-      if (upper.startsWith("RVC")) return "RVC";
+      // Check RVCH before RVC (RVCH also starts with RVC)
       if (upper.startsWith("RVCH")) return "RVCH";
+      if (upper.startsWith("RVC")) return "RVC";
       if (upper.startsWith("RVB")) return "RVB";
       if (upper.startsWith("RV")) return "RV";
     }
@@ -1256,12 +1330,33 @@ export const ViewVouchersTab = ({
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="payment">Payment</SelectItem>
-                <SelectItem value="receipt">Receipt</SelectItem>
+                <SelectItem value="receipt">Receipt (All)</SelectItem>
+                <SelectItem value="receipt-cash">Receipt Cash (RVC)</SelectItem>
+                <SelectItem value="receipt-bank">Receipt Bank (RVB)</SelectItem>
+                <SelectItem value="receipt-cheque">Receipt Cheque (RVCH)</SelectItem>
                 <SelectItem value="journal">Journal</SelectItem>
                 <SelectItem value="contra">Contra</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {isChequeStatusFilterVisible && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Cheque Status</Label>
+              <Select value={chequeStatusFilter} onValueChange={setChequeStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="0">Pending</SelectItem>
+                  <SelectItem value="1">Cleared</SelectItem>
+                  <SelectItem value="2">Returned</SelectItem>
+                  <SelectItem value="3">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Mode</Label>
@@ -1517,7 +1612,10 @@ export const ViewVouchersTab = ({
                     <TableCell className="text-primary font-medium">
                       <div>
                         {voucher.voucherNumber}
-                        {voucher.isCleared === 0 && (
+                        {(voucher.isCleared === 0 ||
+                          voucher.isCleared === 1 ||
+                          voucher.isCleared === 2 ||
+                          voucher.isCleared === 3) && (
                           <div 
                             className="text-[10px] text-blue-600 hover:underline cursor-pointer mt-1 font-normal"
                             onClick={() => handleOpenClearDialog(voucher)}
@@ -1532,7 +1630,7 @@ export const ViewVouchersTab = ({
                     <TableCell>{formatDisplayDate(voucher.date)}</TableCell>
                     <TableCell>{formatDisplayDate(voucher.checkClearDate || "")}</TableCell>
                     <TableCell>
-                      {voucher.isCleared === 1 ? "Cleared" : voucher.isCleared === 2 ? "Returned" : voucher.isCleared === 0 ? "Pending" : "-"}
+                      {getChequeStatusLabel(voucher.isCleared)}
                     </TableCell>
                     <TableCell className={`font-medium ${amountValueClass()}`}>{formatAmount(voucher.totalDebit)}</TableCell>
                     <TableCell>{getStatusBadge(voucher.status)}</TableCell>
@@ -1789,7 +1887,7 @@ export const ViewVouchersTab = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Is Cleared Status</Label>
+                <Label className="text-xs text-muted-foreground">Cheque Status</Label>
                 <Select 
                   value={editIsCleared === null ? "none" : String(editIsCleared)} 
                   onValueChange={(val) => setEditIsCleared(val === "none" ? null : parseInt(val))}
@@ -1799,9 +1897,10 @@ export const ViewVouchersTab = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None (-)</SelectItem>
-                    <SelectItem value="0">Pending (0)</SelectItem>
-                    <SelectItem value="1">Cleared (1)</SelectItem>
-                    <SelectItem value="2">Returned (2)</SelectItem>
+                    <SelectItem value="0">Pending</SelectItem>
+                    <SelectItem value="1">Cleared</SelectItem>
+                    <SelectItem value="2">Returned</SelectItem>
+                    <SelectItem value="3">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2085,10 +2184,9 @@ export const ViewVouchersTab = ({
                   </div>
                 )}
                 <div className="space-y-1">
-                  <p className="text-muted-foreground">Is Cleared Status</p>
+                  <p className="text-muted-foreground">Cheque Status</p>
                   <p className="font-medium">
-                    {viewingVoucher.isCleared === 1 ? "Cleared" : viewingVoucher.isCleared === 2 ? "Returned" : viewingVoucher.isCleared === 0 ? "Pending" : "-"} 
-                    {viewingVoucher.isCleared !== null && viewingVoucher.isCleared !== undefined ? ` (${viewingVoucher.isCleared})` : ""}
+                    {getChequeStatusLabel(viewingVoucher.isCleared)}
                   </p>
                 </div>
               </div>
@@ -2135,7 +2233,7 @@ export const ViewVouchersTab = ({
                 </Table>
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => viewingVoucher && handlePrint(viewingVoucher)}>
+                <Button className={PRINT_BUTTON_CLASS} variant="outline" onClick={() => viewingVoucher && handlePrint(viewingVoucher)}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print
                 </Button>
@@ -2151,29 +2249,53 @@ export const ViewVouchersTab = ({
       <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Cheque Clearance</DialogTitle>
+            <DialogTitle>Update Cheque Status</DialogTitle>
             <DialogDescription>
-              Set the date when the cheque for voucher {voucherToClear?.voucherNumber} was cleared.
+              Change cheque status for voucher {voucherToClear?.voucherNumber}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="clear-date">Cheque Cleared Date</Label>
-              <Input
-                id="clear-date"
-                type="date"
-                value={clearanceDate}
-                onChange={(e) => setClearanceDate(e.target.value)}
-              />
+              <Label>Status</Label>
+              <Select
+                value={String(clearanceStatus)}
+                onValueChange={(val) => setClearanceStatus(parseInt(val))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Pending</SelectItem>
+                  <SelectItem value="1">Cleared</SelectItem>
+                  <SelectItem value="2">Returned</SelectItem>
+                  <SelectItem value="3">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            {clearanceStatus === 1 && (
+              <div className="space-y-2">
+                <Label htmlFor="clear-date">Cheque Cleared Date</Label>
+                <Input
+                  id="clear-date"
+                  type="date"
+                  value={clearanceDate}
+                  onChange={(e) => setClearanceDate(e.target.value)}
+                />
+              </div>
+            )}
             <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-700">
-              This will change the status from <strong>Pending</strong> to <strong>Recieve</strong> (Cleared) 
-               and update account balances in the ledger and balance sheet.
+              {clearanceStatus === 1
+                ? "Cleared will mark the cheque as received and update account balances."
+                : clearanceStatus === 2
+                  ? "Returned marks the cheque as bounced/returned."
+                  : clearanceStatus === 3
+                    ? "Cancelled marks the cheque as cancelled."
+                    : "Pending keeps the cheque uncleared until it is received."}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsClearDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleConfirmClearance}>Confirm Receive</Button>
+            <Button onClick={handleConfirmClearance}>Update Status</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

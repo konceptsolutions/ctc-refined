@@ -335,7 +335,7 @@ async function liveAccountBalance(account: any): Promise<number> {
       accountId: account.id,
       Voucher: {
         status: "posted",
-        OR: [{ isCleared: null }, { isCleared: { not: 0 } }],
+        OR: [{ isCleared: null }, { isCleared: 1 }],
       },
     },
     _sum: { debit: true, credit: true },

@@ -1,3 +1,4 @@
+import { PrintPdfButton, PRINT_BUTTON_CLASS, PRINT_ICON_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import {
   Fragment,
   useState,
@@ -466,6 +467,19 @@ interface RecentSaleInvoiceLine {
   unitPrice: number | null;
 }
 
+interface RecentPurchaseLine {
+  source: string;
+  documentNumber: string;
+  date?: string;
+  supplierName: string;
+  quantity: number | null;
+  rate: number | null;
+  amount: number | null;
+  status?: string | null;
+  received?: boolean;
+  expectedDate?: string | null;
+}
+
 function mapRecentSaleInvoiceLines(
   invoiceData: unknown[],
   excludeInvoiceId?: string | null,
@@ -780,6 +794,11 @@ export const SalesInvoice = ({
   const [recentCustomerSalesByPartId, setRecentCustomerSalesByPartId] =
     useState<Record<string, RecentSaleInvoiceLine[]>>({});
   const [loadingRecentCustomerSalesByPartId, setLoadingRecentCustomerSalesByPartId] =
+    useState<Record<string, boolean>>({});
+  const [recentPurchasesByPartId, setRecentPurchasesByPartId] = useState<
+    Record<string, RecentPurchaseLine[]>
+  >({});
+  const [loadingRecentPurchasesByPartId, setLoadingRecentPurchasesByPartId] =
     useState<Record<string, boolean>>({});
   const [partImagesByPartId, setPartImagesByPartId] = useState<
     Record<string, string[]>
@@ -3419,6 +3438,89 @@ export const SalesInvoice = ({
     newInvoice.customerType,
     newInvoice.customerName,
   ]);
+
+  useEffect(() => {
+    if (!showDocumentForm || !showLastSaleInfo) {
+      return;
+    }
+
+    const partIds = lastSalePartIdsFingerprint
+      ? Array.from(
+          new Set(lastSalePartIdsFingerprint.split("|").filter(Boolean)),
+        )
+      : [];
+
+    setRecentPurchasesByPartId((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!partIds.includes(k)) delete next[k];
+      }
+      return next;
+    });
+
+    if (partIds.length === 0) return;
+
+    let cancelled = false;
+    partIds.forEach((partId) => {
+      setLoadingRecentPurchasesByPartId((p) => ({ ...p, [partId]: true }));
+    });
+
+    void (async () => {
+      await Promise.all(
+        partIds.map(async (partId) => {
+          try {
+            const response = await apiClient.getRecentPurchasesByPart(partId, {
+              limit: 3,
+            });
+            if (cancelled) return;
+            if ((response as { error?: string }).error) {
+              setRecentPurchasesByPartId((p) => ({ ...p, [partId]: [] }));
+              return;
+            }
+            const rows = Array.isArray((response as any)?.data)
+              ? (response as any).data
+              : Array.isArray(response)
+                ? response
+                : [];
+            setRecentPurchasesByPartId((p) => ({
+              ...p,
+              [partId]: rows.slice(0, 5).map((row: any) => ({
+                source: String(row.source || ""),
+                documentNumber: String(row.documentNumber || "-"),
+                date: row.date != null ? String(row.date) : undefined,
+                supplierName: String(row.supplierName || "-"),
+                quantity:
+                  row.quantity != null ? Number(row.quantity) : null,
+                rate: row.rate != null ? Number(row.rate) : null,
+                amount: row.amount != null ? Number(row.amount) : null,
+                status: row.status != null ? String(row.status) : null,
+                received: Boolean(row.received),
+                expectedDate:
+                  row.expectedDate != null
+                    ? String(row.expectedDate)
+                    : null,
+              })),
+            }));
+          } catch {
+            if (!cancelled) {
+              setRecentPurchasesByPartId((p) => ({ ...p, [partId]: [] }));
+            }
+          } finally {
+            if (!cancelled) {
+              setLoadingRecentPurchasesByPartId((p) => ({
+                ...p,
+                [partId]: false,
+              }));
+            }
+          }
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showDocumentForm, showLastSaleInfo, lastSalePartIdsFingerprint]);
 
   // Update dropdown position on scroll
   useEffect(() => {
@@ -8503,6 +8605,67 @@ export const SalesInvoice = ({
                                           </div>
                                         ) : null}
 
+                                        <div className="flex flex-col gap-1">
+                                          <span className="font-semibold">
+                                            Last 3 purchases (local / import)
+                                          </span>
+                                          {loadingRecentPurchasesByPartId[
+                                            item.selectedPartId
+                                          ] ? (
+                                            <span>Loading…</span>
+                                          ) : (recentPurchasesByPartId[
+                                                item.selectedPartId
+                                              ]?.length ?? 0) > 0 ? (
+                                            <ul className="list-none space-y-0.5 m-0 p-0">
+                                              {recentPurchasesByPartId[
+                                                item.selectedPartId
+                                              ]!.map((row, idx) => (
+                                                <li
+                                                  key={`${row.source}-${row.documentNumber}-${idx}`}
+                                                >
+                                                  {row.source} #{row.documentNumber}
+                                                  {row.date
+                                                    ? ` · ${formatInvoiceDateDisplay(row.date)}`
+                                                    : ""}
+                                                  {row.quantity != null
+                                                    ? ` · ${row.quantity} pcs`
+                                                    : ""}
+                                                  {row.supplierName &&
+                                                  row.supplierName !== "-"
+                                                    ? ` · ${row.supplierName}`
+                                                    : ""}
+                                                  {row.source === "Import" ? (
+                                                    <span
+                                                      className={
+                                                        row.received
+                                                          ? ""
+                                                          : "text-amber-700"
+                                                      }
+                                                    >
+                                                      {row.received
+                                                        ? ""
+                                                        : " · Not received"}
+                                                      {row.expectedDate
+                                                        ? ` · ETA ${formatInvoiceDateDisplay(row.expectedDate)}`
+                                                        : row.received
+                                                          ? ""
+                                                          : " · ETA —"}
+                                                      {!row.received && row.status
+                                                        ? ` (${row.status})`
+                                                        : ""}
+                                                    </span>
+                                                  ) : null}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          ) : (
+                                            <span>
+                                              No local or import purchases on
+                                              record for this part
+                                            </span>
+                                          )}
+                                        </div>
+
                                         {/* model chips removed; Quantity Used section below is the source of truth */}
                                       </div>
                                     )}
@@ -10908,23 +11071,19 @@ export const SalesInvoice = ({
                             ))}
                             {/* Print — quotation list */}
                             {canPrint && isQuotation ? (
-                              <Button
-                                variant="ghost"
+                              <PrintPdfButton
                                 size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                onClick={() => openSalesInvoicePrintDialog(inv)}
-                                title="Print Quotation"
-                              >
-                                <Printer className="w-4 h-4" />
-                              </Button>
+                                label="Print Quotation"
+                                onPrint={() => openSalesInvoicePrintDialog(inv)}
+                              />
                             ) : null}
                             {/* Print / extra menu — Action Menu permission */}
                             {canUseActionMenu && !isQuotation && <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
-                                  variant="ghost"
+                                  variant="outline"
                                   size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  className={PRINT_ICON_BUTTON_CLASS}
                                   title="Print"
                                 >
                                   <Printer className="w-4 h-4" />
@@ -11415,7 +11574,7 @@ export const SalesInvoice = ({
                   <Download className="w-4 h-4 mr-2" />
                   Download
                 </Button>
-                <Button
+                <Button className={PRINT_BUTTON_CLASS}
                   variant="outline"
                   size="sm"
                   onClick={() =>
@@ -11426,7 +11585,7 @@ export const SalesInvoice = ({
                   <Printer className="w-4 h-4 mr-2" />
                   Print Invoice
                 </Button>
-                <Button
+                <Button className={PRINT_BUTTON_CLASS}
                   variant="outline"
                   size="sm"
                   onClick={() =>
@@ -11439,7 +11598,7 @@ export const SalesInvoice = ({
                 </Button>
                 </>
                 ) : canPrint ? (
-                <Button
+                <Button className={PRINT_BUTTON_CLASS}
                   variant="outline"
                   size="sm"
                   onClick={() =>
@@ -11606,6 +11765,8 @@ export const SalesInvoice = ({
               Cancel
             </Button>
             <Button
+              variant="outline"
+              className={PRINT_BUTTON_CLASS}
               onClick={() => {
                 if (!invoiceForPrint) return;
                 if (isQuotation) {

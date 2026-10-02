@@ -6,6 +6,7 @@ import { useNotifications } from "@/contexts/NotificationContext";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PRINT_BUTTON_CLASS, PRINT_ICON_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -61,6 +62,7 @@ import {
   Trash,
   Edit,
   MapPin,
+  PackagePlus,
 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -69,6 +71,10 @@ import { StoreOrderDetail } from "./StoreOrderDetail";
 import { StoreReceipt } from "./StoreReceipt";
 import { StorePurchaseOrderDetail } from "./StorePurchaseOrderDetail";
 import { StoreSalesInvoiceReceipt } from "./StoreSalesInvoiceReceipt";
+import {
+  StoreSalesReturnReceipt,
+  type SalesReturnReceiveOrder,
+} from "./StoreSalesReturnReceipt";
 import { StoreEditDPO } from "./StoreEditDPO";
 import { StoreEditPO } from "./StoreEditPO";
 import { StoreEditSalesInvoice } from "./StoreEditSalesInvoice";
@@ -132,6 +138,7 @@ type StoreOrderTypeFilter =
   | "all"
   | "receiving-po"
   | "receiving-dpo"
+  | "invoice-return-receive"
   | "stock-out"
   | "transfer-in"
   | "transfer-out"
@@ -413,6 +420,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [transferInOrders, setTransferInOrders] = useState<DirectPurchaseOrder[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [stockOutOrders, setStockOutOrders] = useState<StockOutOrder[]>([]);
+  const [salesReturnOrders, setSalesReturnOrders] = useState<
+    SalesReturnReceiveOrder[]
+  >([]);
   const [transferOutOrders, setTransferOutOrders] = useState<StockOutOrder[]>([]);
   const [partOptions, setPartOptions] = useState<StorePartOption[]>([]);
   const [associationLoading, setAssociationLoading] = useState(false);
@@ -447,6 +457,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const [deleteOrderType, setDeleteOrderType] = useState<"dpo" | "po" | null>(null);
   const [selectedStockOutOrder, setSelectedStockOutOrder] = useState<StockOutOrder | null>(null);
   const [stockOutReceiptOpen, setStockOutReceiptOpen] = useState(false);
+  const [selectedSalesReturn, setSelectedSalesReturn] =
+    useState<SalesReturnReceiveOrder | null>(null);
+  const [salesReturnReceiptOpen, setSalesReturnReceiptOpen] = useState(false);
 
   // Fetch stores on mount
   useEffect(() => {
@@ -475,10 +488,19 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders();
         setOrders([]);
         setStockOutOrders([]);
+        setSalesReturnOrders([]);
         setTransferInOrders([]);
         setTransferOutOrders([]);
       } else if (typeFilter === "receiving-dpo") {
         fetchOrders();
+        setPurchaseOrders([]);
+        setStockOutOrders([]);
+        setSalesReturnOrders([]);
+        setTransferInOrders([]);
+        setTransferOutOrders([]);
+      } else if (typeFilter === "invoice-return-receive") {
+        fetchSalesReturnOrders();
+        setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
         setTransferInOrders([]);
@@ -487,6 +509,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchStockOutOrders();
         setOrders([]);
         setPurchaseOrders([]);
+        setSalesReturnOrders([]);
         setTransferInOrders([]);
         setTransferOutOrders([]);
       } else if (typeFilter === "transfer-in") {
@@ -494,17 +517,20 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
+        setSalesReturnOrders([]);
         setTransferOutOrders([]);
       } else if (typeFilter === "transfer-out") {
         fetchTransferOutOrders();
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
+        setSalesReturnOrders([]);
         setTransferInOrders([]);
       } else if (typeFilter === "part-association") {
         setOrders([]);
         setPurchaseOrders([]);
         setStockOutOrders([]);
+        setSalesReturnOrders([]);
         if (isStoreOnlyUser) {
           fetchAssociationParts();
         }
@@ -513,6 +539,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders();
         fetchOrders();
         fetchStockOutOrders();
+        fetchSalesReturnOrders();
       }
 
       // Store users should keep receiving approved-invoice notifications
@@ -528,6 +555,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     setOrders([]);
     setPurchaseOrders([]);
     setStockOutOrders([]);
+    setSalesReturnOrders([]);
     setTransferInOrders([]);
     setTransferOutOrders([]);
   }, [filterPartId]);
@@ -547,6 +575,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       "all",
       "receiving-po",
       "receiving-dpo",
+      "invoice-return-receive",
       "stock-out",
       "transfer-in",
       "transfer-out",
@@ -571,6 +600,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders(true);
       } else if (typeFilter === "receiving-dpo") {
         fetchOrders(true);
+      } else if (typeFilter === "invoice-return-receive") {
+        fetchSalesReturnOrders(true);
       } else if (typeFilter === "stock-out") {
         fetchStockOutOrders(true);
       } else if (typeFilter === "transfer-in") {
@@ -583,6 +614,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
         fetchPurchaseOrders(true);
         fetchOrders(true);
         fetchStockOutOrders(true);
+        fetchSalesReturnOrders(true);
         fetchTransferInOrders(true);
         fetchTransferOutOrders(true);
       }
@@ -936,6 +968,99 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       }
     } catch (error: any) {
       if (!silent) toast.error(error.error || "Failed to fetch sales invoices");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const mapApiSalesReturnToReceiveOrder = (row: any): SalesReturnReceiveOrder => {
+    const itemsRaw = row.SalesReturnItem || row.items || [];
+    const items = Array.isArray(itemsRaw)
+      ? itemsRaw.map((item: any) => ({
+          id: String(item.id || ""),
+          partId: String(item.partId || item.part_id || ""),
+          partNo:
+            item.Part?.partNo ||
+            item.partNo ||
+            item.part_no ||
+            "N/A",
+          description:
+            item.Part?.description ||
+            item.description ||
+            item.part_description ||
+            "",
+          returnQuantity: Number(
+            item.returnQuantity ?? item.return_quantity ?? 0,
+          ),
+        }))
+      : [];
+    const isDirect = Boolean(row.isDirectReturn ?? row.is_direct_return);
+    const invoiceLabel = isDirect
+      ? String(row.legacyInvoiceNo || row.legacy_invoice_no || "Legacy")
+      : String(
+          row.SalesInvoice?.invoiceNo ||
+            row.salesInvoice?.invoiceNo ||
+            row.invoiceNo ||
+            "—",
+        );
+    const customerName = isDirect
+      ? String(
+          row.legacyCustomerName ||
+            row.legacy_customer_name ||
+            row.Customer?.name ||
+            row.customerName ||
+            "—",
+        )
+      : String(
+          row.SalesInvoice?.customerName ||
+            row.Customer?.name ||
+            row.customerName ||
+            "—",
+        );
+    const returnDateRaw = row.returnDate || row.return_date || "";
+    return {
+      id: String(row.id),
+      returnNumber: String(row.returnNumber || row.return_number || ""),
+      returnDate: returnDateRaw
+        ? String(returnDateRaw).slice(0, 10)
+        : "",
+      customerName,
+      invoiceLabel,
+      isDirectReturn: isDirect,
+      status: String(row.status || "approved"),
+      items,
+    };
+  };
+
+  const fetchSalesReturnOrders = async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      // Load all returns, then keep approved (awaiting) + completed (already received)
+      const response = await apiClient.getSalesReturns({
+        page: 1,
+        limit: 500,
+      });
+      const rows = (response as any)?.data || response;
+      if (Array.isArray(rows)) {
+        let mapped = rows
+          .map(mapApiSalesReturnToReceiveOrder)
+          .filter((r) => {
+            const s = String(r.status || "").toLowerCase();
+            return s === "approved" || s === "completed";
+          });
+        if (filterPartId) {
+          mapped = mapped.filter((r) =>
+            r.items.some((i) => String(i.partId) === String(filterPartId)),
+          );
+        }
+        setSalesReturnOrders(mapped);
+      } else {
+        setSalesReturnOrders([]);
+      }
+    } catch (error: any) {
+      if (!silent) {
+        toast.error(error?.error || error?.message || "Failed to fetch sales returns");
+      }
     } finally {
       if (!silent) setLoading(false);
     }
@@ -1589,6 +1714,19 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     return inDateRange && matchesSearch && matchesPart;
   });
 
+  const filteredSalesReturnOrders = (salesReturnOrders || []).filter((ret) => {
+    const inDateRange = isWithinDateRange(ret.returnDate);
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      ret.returnNumber.toLowerCase().includes(q) ||
+      ret.customerName.toLowerCase().includes(q) ||
+      ret.invoiceLabel.toLowerCase().includes(q);
+    const matchesPart =
+      !filterPartId ||
+      ret.items.some((i) => String(i.partId) === String(filterPartId));
+    return inDateRange && matchesSearch && matchesPart;
+  });
+
   const filteredTransferInOrders = (transferInOrders || []).filter((order) => {
     const inDateRange = isWithinDateRange(order.date);
     const party = order.branch_account_name || order.store_name || "";
@@ -1647,6 +1785,19 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
       status: invoice.status,
       deliveredTo: invoice.deliveredTo || "",
       raw: invoice,
+    })),
+    ...filteredSalesReturnOrders.map((ret) => ({
+      type: "sales-return" as const,
+      id: ret.id,
+      number: ret.returnNumber,
+      date: ret.returnDate,
+      party: ret.customerName || "N/A",
+      itemsCount: ret.items.length,
+      quantity: ret.items.reduce((s, i) => s + (i.returnQuantity || 0), 0),
+      amount: 0,
+      status: ret.status,
+      deliveredTo: ret.isDirectReturn ? "Direct Return" : ret.invoiceLabel,
+      raw: ret,
     })),
   ].sort((a, b) => {
     const aTime = a.date ? new Date(a.date).getTime() : 0;
@@ -1895,6 +2046,15 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   Local Order
                 </Button>
                 <Button
+                  variant={typeFilter === "invoice-return-receive" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setTypeFilter("invoice-return-receive")}
+                  className="gap-2"
+                >
+                  <PackagePlus className="w-4 h-4" />
+                  Invoice Return Receive
+                </Button>
+                <Button
                   variant={typeFilter === "stock-out" ? "default" : "outline"}
                   size="sm"
                   onClick={() => setTypeFilter("stock-out")}
@@ -1947,15 +2107,17 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                 ? "Import Order"
                 : typeFilter === "receiving-dpo"
                   ? "Local Order"
-                  : typeFilter === "stock-out"
-                    ? "Sales Stock Out"
-                    : typeFilter === "transfer-in"
-                      ? "Transfer In"
-                      : typeFilter === "transfer-out"
-                        ? "Transfer Out"
-                        : typeFilter === "part-association"
-                          ? "Part Association"
-                          : "All Orders"}
+                  : typeFilter === "invoice-return-receive"
+                    ? "Invoice Return Receive"
+                    : typeFilter === "stock-out"
+                      ? "Sales Stock Out"
+                      : typeFilter === "transfer-in"
+                        ? "Transfer In"
+                        : typeFilter === "transfer-out"
+                          ? "Transfer Out"
+                          : typeFilter === "part-association"
+                            ? "Part Association"
+                            : "All Orders"}
               {selectedStore && ` - ${selectedStore.name}`}
             </CardTitle>
           </CardHeader>
@@ -1998,14 +2160,24 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline">
-                                  {row.type === "po" ? "PO" : row.type === "dpo" ? "DPO" : "Stock Out"}
+                                  {row.type === "po"
+                                    ? "PO"
+                                    : row.type === "dpo"
+                                      ? "DPO"
+                                      : row.type === "sales-return"
+                                        ? "Return"
+                                        : "Stock Out"}
                                 </Badge>
                               </TableCell>
                               <TableCell>{row.party}</TableCell>
                               <TableCell>{row.itemsCount} items</TableCell>
-                              <TableCell>{row.type === "stock-out" ? "-" : row.quantity}</TableCell>
                               <TableCell>
-                                {row.type === "stock-out" ? "-" : `Rs ${Number(row.amount || 0).toFixed(2)}`}
+                                {row.type === "stock-out" ? "-" : row.quantity}
+                              </TableCell>
+                              <TableCell>
+                                {row.type === "stock-out" || row.type === "sales-return"
+                                  ? "-"
+                                  : `Rs ${Number(row.amount || 0).toFixed(2)}`}
                               </TableCell>
                               <TableCell>
                                 {row.type === "stock-out" ? (
@@ -2021,6 +2193,10 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     }
                                   >
                                     {row.status.replace('_', ' ')}
+                                  </Badge>
+                                ) : row.type === "sales-return" ? (
+                                  <Badge variant="secondary" className="capitalize">
+                                    {row.status}
                                   </Badge>
                                 ) : row.type === "po" ? (
                                   <Badge
@@ -2046,7 +2222,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   </Badge>
                                 )}
                               </TableCell>
-                              <TableCell>{row.type === "stock-out" ? (row.deliveredTo || "-") : "-"}</TableCell>
+                              <TableCell>
+                                {row.type === "stock-out" || row.type === "sales-return"
+                                  ? (row.deliveredTo || "-")
+                                  : "-"}
+                              </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   {row.type === "po" && (
@@ -2061,8 +2241,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                       </Button>
                                       {canPrint && (
                                         <Button
-                                          variant="ghost"
-                                          size="sm"
+                                          className={PRINT_ICON_BUTTON_CLASS}
+                                          variant="outline"
+                                          size="icon"
                                           onClick={() => handlePrintPurchaseOrder(row.raw as PurchaseOrder)}
                                           title="Print Order"
                                         >
@@ -2136,9 +2317,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                         </Button>
                                       )}
                                       {canPrint && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
+                                        <Button className={PRINT_ICON_BUTTON_CLASS}
+                                          variant="outline"
+                                          size="icon"
                                           onClick={() => handlePrintReceipt(row.raw as DirectPurchaseOrder)}
                                           title="Print Receipt"
                                         >
@@ -2159,15 +2340,33 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   )}
 
                                   {row.type === "stock-out" && !isStockOutBlocked(row.status) && canApprove && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
+                                    <Button className={PRINT_ICON_BUTTON_CLASS}
+                                      variant="outline"
+                                      size="icon"
                                       onClick={() => handlePrintStockOutReceipt(row.raw as StockOutOrder)}
                                       title="Print Receipt & Confirm Stock Out"
                                     >
                                       <Printer className="w-4 h-4" />
                                     </Button>
                                   )}
+
+                                  {row.type === "sales-return" &&
+                                    canApprove &&
+                                    String(row.status).toLowerCase() === "approved" && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          setSelectedSalesReturn(
+                                            row.raw as SalesReturnReceiveOrder,
+                                          );
+                                          setSalesReturnReceiptOpen(true);
+                                        }}
+                                        title="Receive Return Stock"
+                                      >
+                                        <CheckCircle className="w-4 h-4" />
+                                      </Button>
+                                    )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -2236,9 +2435,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     <Eye className="w-4 h-4" />
                                   </Button>
                                   {canPrint && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
+                                    <Button className={PRINT_ICON_BUTTON_CLASS}
+                                      variant="outline"
+                                      size="icon"
                                       onClick={() => handlePrintPurchaseOrder(order)}
                                       title="Print Order"
                                     >
@@ -2367,9 +2566,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                     </Button>
                                   )}
                                   {canPrint && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
+                                    <Button className={PRINT_ICON_BUTTON_CLASS}
+                                      variant="outline"
+                                      size="icon"
                                       onClick={() => handlePrintReceipt(order)}
                                       title="Print Receipt"
                                     >
@@ -2390,6 +2589,104 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               </TableCell>
                             </TableRow>
                           ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                )}
+
+                {/* Invoice Return Receive - Sale Return / Direct Sale Return */}
+                {typeFilter === "invoice-return-receive" && (
+                  filteredSalesReturnOrders.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No sale returns found.
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <ListNumberHeader />
+                            <TableHead>Return No</TableHead>
+                            <TableHead className={ORDER_TABLE_DATE_CLASS}>Date</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Customer</TableHead>
+                            <TableHead>Invoice</TableHead>
+                            <TableHead>Items</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredSalesReturnOrders.map((ret, index) => {
+                            const isAwaitingReceive =
+                              String(ret.status).toLowerCase() === "approved";
+                            const isReceived =
+                              String(ret.status).toLowerCase() === "completed";
+                            return (
+                            <TableRow key={`sr-${ret.id}`}>
+                              <ListNumberCell
+                                index={index}
+                                total={filteredSalesReturnOrders.length}
+                              />
+                              <TableCell className="font-medium">
+                                {ret.returnNumber}
+                              </TableCell>
+                              <TableCell className={ORDER_TABLE_DATE_CLASS}>
+                                {ret.returnDate ? formatUiDate(ret.returnDate) : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {ret.isDirectReturn ? "Direct Return" : "Sale Return"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{ret.customerName}</TableCell>
+                              <TableCell>{ret.invoiceLabel}</TableCell>
+                              <TableCell>{ret.items.length} items</TableCell>
+                              <TableCell>
+                                {ret.items.reduce(
+                                  (s, i) => s + (i.returnQuantity || 0),
+                                  0,
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={isReceived ? "default" : "secondary"}
+                                  className="capitalize"
+                                >
+                                  {isReceived
+                                    ? "Received"
+                                    : isAwaitingReceive
+                                      ? "Awaiting Receive"
+                                      : ret.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {canApprove && isAwaitingReceive && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setSelectedSalesReturn(ret);
+                                        setSalesReturnReceiptOpen(true);
+                                      }}
+                                      title="Receive Return Stock"
+                                    >
+                                      <CheckCircle className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  {isReceived && (
+                                    <span className="text-xs text-muted-foreground pr-2">
+                                      Stocked in
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -2449,6 +2746,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                 <div className="flex items-center justify-end gap-2">
                                   {canPrint && (
                                     <Button
+                                      className={PRINT_BUTTON_CLASS}
                                       variant="outline"
                                       size="sm"
                                       onClick={() =>
@@ -2581,8 +2879,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                                   )}
                                   {canPrint && (
                                     <Button
-                                      variant="ghost"
-                                      size="sm"
+                                      className={PRINT_ICON_BUTTON_CLASS}
+                                      variant="outline"
+                                      size="icon"
                                       onClick={() => handlePrintReceipt(order)}
                                       title="Print Receipt"
                                     >
@@ -2663,7 +2962,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
                                   {canPrint && (
-                                    <Button
+                                    <Button className={PRINT_BUTTON_CLASS}
                                       variant="outline"
                                       size="sm"
                                       onClick={() => handlePrintDeliveryChallan(invoice)}
@@ -2760,6 +3059,26 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             } else {
               await fetchStockOutOrders();
             }
+          }}
+        />
+      )}
+
+      {/* Invoice Return Receive Dialog */}
+      {selectedSalesReturn && (
+        <StoreSalesReturnReceipt
+          salesReturn={selectedSalesReturn}
+          open={salesReturnReceiptOpen}
+          onOpenChange={setSalesReturnReceiptOpen}
+          storeId={selectedStoreId}
+          storeName={
+            selectedStoreId === "all"
+              ? "All Stores"
+              : selectedStore?.name
+          }
+          onReceived={async () => {
+            setSalesReturnReceiptOpen(false);
+            setSelectedSalesReturn(null);
+            await fetchSalesReturnOrders();
           }}
         />
       )}

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus';
 import { approveDirectSalesReturn } from '../utils/directSalesReturnApprove';
+import { receiveSalesReturnStock } from '../utils/receiveSalesReturnStock';
 import {
   buildDirectReturnItemsCreate,
   nextDirectReturnNumber,
@@ -31,29 +32,6 @@ async function getPartStockFromMovements(
   return (smIn._sum.quantity || 0) - (smOut._sum.quantity || 0);
 }
 
-type ShelfLoc = {
-  storeId: string | null;
-  rackId: string | null;
-  shelfId: string | null;
-};
-
-/** Split integer total across buckets proportionally; largest remainder gets +1 until exact. */
-function distributeIntegerProportional(total: number, weights: number[]): number[] {
-  if (total <= 0) return weights.map(() => 0);
-  const wsum = weights.reduce((a, b) => a + b, 0);
-  if (wsum <= 0) return weights.map(() => 0);
-  const raw = weights.map((w) => (total * w) / wsum);
-  const base = raw.map((x) => Math.floor(x));
-  let rem = total - base.reduce((a, b) => a + b, 0);
-  const order = raw
-    .map((x, i) => ({ i, frac: x - base[i] }))
-    .sort((a, b) => b.frac - a.frac);
-  for (let k = 0; k < rem; k++) {
-    base[order[k].i] += 1;
-  }
-  return base;
-}
-
 /**
  * Refund-from account must be Cash (subgroup 102) or Bank (103), same as SalesInvoice UI.
  * Subgroup 101 is inventory / stock; 104 is typically receivables — not valid for customer refunds.
@@ -77,11 +55,9 @@ function isRefundCashOrBankSubgroupCode(subgroupCode: string | null | undefined)
  *    - JV: Debit Sales Revenue, Credit AR/Cash (reverses original revenue)
  *    - JV: Debit Inventory, Credit COGS (reverses original COGS)
  * 5. Return status: pending -> approved -> completed
- * 6. Approved returns trigger:
- *    - Stock movement IN
- *    - Accounting voucher creation (2 JVs)
- *    - Customer account balance adjustment (if credit sale)
- *    - Inventory average cost recalculation
+ * 6. Approved returns trigger accounting voucher creation
+ * 7. Store receive (completed) triggers stock movement IN + PartRackShelf restore
+ * 8. Customer account balance adjustment (if credit sale) on approve
  */
 
 // ==================== GET ALL SALES RETURNS ====================
@@ -95,7 +71,15 @@ router.get('/', async (req: Request, res: Response) => {
     const where: any = {};
 
     if (status && status !== 'all') {
-      where.status = status as string;
+      const statusList = String(status)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (statusList.length === 1) {
+        where.status = statusList[0];
+      } else if (statusList.length > 1) {
+        where.status = { in: statusList };
+      }
     }
 
     if (invoice_id) {
@@ -696,7 +680,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
           approved_by,
         );
         return res.json({
-          message: 'Direct sales return approved successfully',
+          message:
+            'Direct sales return approved successfully. Awaiting store stock-in.',
           ...directResult,
         });
       } catch (directErr: any) {
@@ -704,143 +689,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       }
     }
 
-    // ========== STEP 1: RESTORE PartRackShelf + STOCK MOVEMENTS (IN) ==========
-    const invoiceLineItems: any[] =
-      salesReturn.SalesInvoice?.SalesInvoiceItem || [];
+    // ========== ACCOUNTING VOUCHERS (stock IN happens on Store receive) ==========
     const stockMovements: any[] = [];
-
-    for (const item of salesReturn.SalesReturnItem) {
-      const invoiceItem = invoiceLineItems.find(
-        (i: any) => i.partId === item.partId,
-      );
-      const invNo =
-        salesReturn.SalesInvoice?.invoiceNo || salesReturn.salesInvoiceId;
-
-      const outs = await prisma.stockMovement.findMany({
-        where: {
-          partId: item.partId,
-          referenceId: salesReturn.salesInvoiceId,
-          referenceType: 'sales_invoice',
-          type: { in: ['out', 'OUT'] },
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      const R = item.returnQuantity;
-      const bucketMap = new Map<
-        string,
-        { loc: ShelfLoc; qty: number }
-      >();
-
-      for (const m of outs) {
-        const key = `${m.storeId ?? ''}|${m.rackId ?? ''}|${m.shelfId ?? ''}`;
-        const prev = bucketMap.get(key);
-        const q = Number(m.quantity) || 0;
-        if (prev) prev.qty += q;
-        else {
-          bucketMap.set(key, {
-            loc: {
-              storeId: m.storeId,
-              rackId: m.rackId,
-              shelfId: m.shelfId,
-            },
-            qty: q,
-          });
-        }
-      }
-
-      const buckets = Array.from(bucketMap.values());
-      const totalOut = buckets.reduce((a, b) => a + b.qty, 0);
-
-      let allocations: Array<{ loc: ShelfLoc; qty: number }> = [];
-
-      if (totalOut > 0) {
-        const weights = buckets.map((b) => b.qty);
-        const parts = distributeIntegerProportional(R, weights);
-        allocations = buckets
-          .map((b, i) => ({ loc: b.loc, qty: parts[i] }))
-          .filter((x) => x.qty > 0);
-      } else if (invoiceItem?.InvoiceRackShelf?.length) {
-        const irs: any[] = invoiceItem.InvoiceRackShelf;
-        const weights = irs.map((row) => Number(row.quantity) || 0);
-        const wsum = weights.reduce((a, b) => a + b, 0);
-        if (wsum > 0) {
-          const parts = distributeIntegerProportional(R, weights);
-          allocations = irs
-            .map((row, i) => ({
-              loc: {
-                storeId: row.storeId,
-                rackId: row.rackId,
-                shelfId: row.shelfId,
-              },
-              qty: parts[i],
-            }))
-            .filter((x) => x.qty > 0);
-        }
-      }
-
-      if (allocations.length === 0) {
-        const movement = await prisma.stockMovement.create({
-          data: {
-            id: crypto.randomUUID(),
-            partId: item.partId,
-            type: 'in',
-            quantity: R,
-            referenceType: 'sales_return',
-            referenceId: salesReturn.id,
-            notes: `Sales Return ${salesReturn.returnNumber} - Invoice ${invNo}`,
-          },
-        });
-        stockMovements.push(movement);
-        continue;
-      }
-
-      for (const a of allocations) {
-        const prs = await prisma.partRackShelf.findFirst({
-          where: {
-            partId: item.partId,
-            storeId: a.loc.storeId,
-            rackId: a.loc.rackId,
-            shelfId: a.loc.shelfId,
-          },
-        });
-        if (prs) {
-          await prisma.partRackShelf.update({
-            where: { id: prs.id },
-            data: { quantity: { increment: a.qty } },
-          });
-        } else {
-          await prisma.partRackShelf.create({
-            data: {
-              id: crypto.randomUUID(),
-              partId: item.partId,
-              storeId: a.loc.storeId,
-              rackId: a.loc.rackId,
-              shelfId: a.loc.shelfId,
-              quantity: a.qty,
-            },
-          });
-        }
-
-        const movement = await prisma.stockMovement.create({
-          data: {
-            id: crypto.randomUUID(),
-            partId: item.partId,
-            type: 'in',
-            quantity: a.qty,
-            storeId: a.loc.storeId,
-            rackId: a.loc.rackId,
-            shelfId: a.loc.shelfId,
-            referenceType: 'sales_return',
-            referenceId: salesReturn.id,
-            notes: `Sales Return ${salesReturn.returnNumber} - Invoice ${invNo}`,
-          },
-        });
-        stockMovements.push(movement);
-      }
-    }
-
-    // ========== STEP 2: CREATE ACCOUNTING VOUCHERS ==========
 
     async function getNextVoucherNumber(prefix: string): Promise<string> {
       const lastVoucher = await prisma.voucher.findFirst({
@@ -1678,13 +1528,11 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       await applyJvBalanceUpdates(pvEntries);
     }
 
-    // Walk-in refunds use JV1 against the selected cash/bank account only (no customer PV).
-
-    // ========== STEP 3: UPDATE SALES RETURN STATUS ==========
+    // ========== UPDATE SALES RETURN STATUS (awaiting store stock-in) ==========
     const updatedReturn = await prisma.salesReturn.update({
       where: { id },
       data: {
-        status: 'completed',
+        status: 'approved',
         approvedBy: approved_by || 'System',
         approvedAt: new Date(),
       },
@@ -1710,12 +1558,91 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       : null;
 
     res.json({
-      message: 'Sales return approved successfully',
+      message:
+        'Sales return approved successfully. Awaiting store stock-in.',
       salesReturn: updatedReturn,
       salesInvoice,
       stockMovements,
       vouchers,
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== RECEIVE SALES RETURN (STORE STOCK-IN) ====================
+router.post('/:id/receive', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { received_by, store_id, locations, items } = req.body || {};
+
+    const salesReturn = await prisma.salesReturn.findUnique({
+      where: { id },
+      include: {
+        Customer: true,
+        SalesReturnItem: {
+          include: { Part: true },
+        },
+        SalesInvoice: {
+          include: {
+            SalesInvoiceItem: {
+              include: { InvoiceRackShelf: true },
+            },
+          },
+        },
+      },
+    }) as any;
+
+    if (!salesReturn) {
+      return res.status(404).json({ error: 'Sales return not found' });
+    }
+
+    if (salesReturn.status === 'completed') {
+      return res.status(400).json({ error: 'Return already stocked in' });
+    }
+
+    if (salesReturn.status !== 'approved') {
+      return res.status(400).json({
+        error: `Cannot receive return with status: ${salesReturn.status}. Approve the return first.`,
+      });
+    }
+
+    const locationLines = Array.isArray(locations)
+      ? locations
+      : Array.isArray(items)
+        ? items
+        : undefined;
+
+    try {
+      const { stockMovements } = await receiveSalesReturnStock(salesReturn, {
+        storeId: store_id || null,
+        locations: locationLines,
+        receivedBy: received_by,
+      });
+
+      if (salesReturn.salesInvoiceId) {
+        await syncSalesInvoiceReturnStatus(salesReturn.salesInvoiceId);
+      }
+
+      const updated = await prisma.salesReturn.findUnique({
+        where: { id },
+        include: {
+          SalesReturnItem: { include: { Part: true } },
+          Customer: true,
+          SalesInvoice: {
+            select: { id: true, invoiceNo: true, status: true },
+          },
+        },
+      });
+
+      return res.json({
+        message: 'Sales return stocked in successfully',
+        salesReturn: updated,
+        stockMovements,
+      });
+    } catch (recvErr: any) {
+      return res.status(400).json({ error: recvErr.message });
+    }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -418,6 +418,13 @@ class ApiClient {
     return this.request(`/parts/${id}`);
   }
 
+  async getPartBatchImages(ids: string[]) {
+    return this.request("/parts/batch-images", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   async getPartByPartNo(partNo: string, masterPartNo?: string) {
     const params = new URLSearchParams();
     params.set("part_no", partNo.trim());
@@ -584,6 +591,11 @@ class ApiClient {
   async getPartNos(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
     return this.request(`/dropdowns/part-nos${query}`);
+  }
+
+  async getPartDescriptions(search?: string) {
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    return this.request(`/parts/descriptions${query}`);
   }
 
   async getBrands(search?: string, limit?: number) {
@@ -4102,6 +4114,7 @@ class ApiClient {
     type?: string;
     mode?: string;
     status?: string;
+    is_cleared?: string | number;
     from_date?: string;
     to_date?: string;
     search?: string;
@@ -4528,6 +4541,30 @@ class ApiClient {
     );
   }
 
+  async getRecentPurchasesByPart(
+    partId: string,
+    params?: { limit?: number },
+  ) {
+    const queryParams = new URLSearchParams();
+    if (params?.limit != null) queryParams.set("limit", String(params.limit));
+    const qs = queryParams.toString();
+    return this.request<{
+      data?: Array<{
+        source: string;
+        documentNumber: string;
+        date: string;
+        supplierName: string;
+        quantity: number;
+        rate: number;
+        amount: number;
+        status?: string | null;
+        received?: boolean;
+        expectedDate?: string | null;
+      }>;
+      error?: string;
+    }>(`/sales/purchases/by-part/${partId}${qs ? `?${qs}` : ""}`);
+  }
+
   async createSalesInvoice(data: {
     invoiceDate: string;
     term?: string;
@@ -4826,6 +4863,39 @@ class ApiClient {
         body: JSON.stringify(body ?? {}),
       },
     );
+  }
+
+  async receiveSalesReturn(
+    id: string,
+    body?: {
+      received_by?: string;
+      store_id?: string | null;
+      locations?: Array<{
+        item_id?: string;
+        part_id?: string;
+        store_id?: string | null;
+        rack_id?: string | null;
+        shelf_id?: string | null;
+        quantity?: number;
+      }>;
+      items?: Array<{
+        item_id?: string;
+        part_id?: string;
+        store_id?: string | null;
+        rack_id?: string | null;
+        shelf_id?: string | null;
+        quantity?: number;
+      }>;
+    },
+  ) {
+    return this.request<{
+      message?: string;
+      salesReturn?: unknown;
+      stockMovements?: unknown[];
+    }>(`/sales-returns/${id}/receive`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    });
   }
 
   async rejectSalesReturn(

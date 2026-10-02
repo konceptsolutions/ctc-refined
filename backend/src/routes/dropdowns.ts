@@ -85,6 +85,45 @@ router.get("/part-nos", async (req: Request, res: Response) => {
   }
 });
 
+// Distinct part descriptions for Items List filter dropdown (lightweight)
+router.get("/descriptions", async (req: Request, res: Response) => {
+  try {
+    const { search } = req.query;
+    const searchTerm = String(search || "").trim();
+
+    const rows = await prisma.part.findMany({
+      where: {
+        status: "active",
+        AND: [
+          { description: { not: null } },
+          ...(searchTerm
+            ? [
+                {
+                  description: {
+                    contains: searchTerm,
+                    mode: "insensitive" as const,
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+      select: { description: true },
+      distinct: ["description"],
+      orderBy: { description: "asc" },
+      take: 2000,
+    });
+
+    res.json(
+      rows
+        .map((r) => String(r.description || "").trim())
+        .filter((d) => d && d !== "null" && d !== "undefined"),
+    );
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all brands
 router.get("/brands", async (req: Request, res: Response) => {
   try {
