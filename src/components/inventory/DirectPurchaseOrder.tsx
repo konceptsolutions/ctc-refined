@@ -3185,7 +3185,7 @@ export const DirectPurchaseOrder = ({
                           <TableHeader>
                             <TableRow>
                               <ListNumberHeader />
-                              <TableHead className={cn(isTransferIn ? "min-w-[360px]" : "min-w-[200px]")}>
+                              <TableHead className="min-w-[360px]">
                                 Part
                               </TableHead>
                               <TableHead className="min-w-[80px]">Brand</TableHead>
@@ -3216,7 +3216,7 @@ export const DirectPurchaseOrder = ({
                                   )}
                                 >
                                   <ListNumberCell index={index} total={formItems.length} />
-                                  <TableCell className={cn(isTransferIn && "min-w-[360px]")}>
+                                  <TableCell className="min-w-[360px]">
                                     <SearchableSelect
                                       options={partSelectOptions}
                                       value={item.partId}
@@ -3224,7 +3224,7 @@ export const DirectPurchaseOrder = ({
                                       placeholder="Select part..."
                                       autoOpen={focusItemSelectId === item.id}
                                       onAutoOpenHandled={() => setFocusItemSelectId(null)}
-                                      className={cn(isTransferIn && "min-w-[340px]")}
+                                      className="min-w-[340px]"
                                     />
                                   </TableCell>
                                   <TableCell>
