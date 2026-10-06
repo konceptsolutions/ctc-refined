@@ -306,6 +306,27 @@ function parsePayrollMonth(value: unknown): string | null {
   return raw;
 }
 
+function getCurrentPakistanMonth(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  if (year && month) return `${year}-${month}`;
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function assertPayrollMonthAllowed(payrollMonth: string): string | null {
+  const current = getCurrentPakistanMonth();
+  if (payrollMonth >= current) {
+    return "Payroll month cannot be the current or a future month. Select a previous month.";
+  }
+  return null;
+}
+
 function getEffectivePayrollMonth(tx: { payrollMonth?: string | null; date: Date }): string {
   if (tx.payrollMonth && /^\d{4}-\d{2}$/.test(tx.payrollMonth)) {
     return tx.payrollMonth;
@@ -1020,6 +1041,11 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
       return res.status(400).json({ error: "Payroll month is required." });
     }
 
+    const payrollMonthError = assertPayrollMonthAllowed(payrollMonth);
+    if (payrollMonthError) {
+      return res.status(400).json({ error: payrollMonthError });
+    }
+
     if (payrollMonth !== payrollMonthKey) {
       if (paidAmount > 0.01) {
         return res.status(400).json({
@@ -1231,8 +1257,67 @@ router.put("/payroll-transactions/:txId", async (req: Request, res: Response) =>
           extraPaymentDescription,
           extraDeduction,
           extraDeductionDescription,
+          employeeName: employee.name,
         },
         balances,
+        employeeName: employee.name,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/payroll-transactions/:txId", async (req: Request, res: Response) => {
+  try {
+    const txId = String(req.params.txId || "").trim();
+    const existing = await prisma.employeeTransaction.findUnique({
+      where: { id: txId },
+      select: {
+        id: true,
+        type: true,
+        employeeId: true,
+        payrollMonth: true,
+        date: true,
+        voucherId: true,
+        netPaid: true,
+        Employee: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    if (!existing || existing.type !== "salary_accrual") {
+      return res.status(404).json({ error: "Payroll accrual not found." });
+    }
+
+    const payrollMonthKey = getEffectivePayrollMonth(existing);
+    const paidSummary = await prisma.employeeTransaction.aggregate({
+      where: {
+        employeeId: existing.employeeId,
+        type: "salary_payment",
+        payrollMonth: payrollMonthKey,
+      },
+      _sum: { netPaid: true },
+    });
+    const paidAmount = Number(paidSummary._sum.netPaid || 0);
+    if (paidAmount > 0.01) {
+      return res.status(400).json({
+        error:
+          "Cannot delete payroll after payment has been posted. Delete is only allowed before payment.",
+      });
+    }
+
+    if (existing.voucherId) {
+      await reverseEmployeeVoucher(existing.voucherId);
+    }
+
+    await prisma.employeeTransaction.delete({ where: { id: existing.id } });
+
+    res.json({
+      data: {
+        id: existing.id,
+        payrollMonth: payrollMonthKey,
+        employeeId: existing.employeeId,
+        employeeName: existing.Employee?.name || null,
       },
     });
   } catch (error: any) {
@@ -1767,6 +1852,10 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
       if (!payrollMonth) {
         return res.status(400).json({ error: "Payroll month is required for salary accrual." });
       }
+      const payrollMonthError = assertPayrollMonthAllowed(payrollMonth);
+      if (payrollMonthError) {
+        return res.status(400).json({ error: payrollMonthError });
+      }
       const existingAccrual = await prisma.employeeTransaction.findFirst({
         where: {
           employeeId: employee.id,
@@ -2055,6 +2144,9 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
         updatedAt: new Date(),
       },
       include: {
+        Employee: {
+          select: { id: true, code: true, name: true },
+        },
         Voucher: { select: { id: true, voucherNumber: true, type: true } },
       },
     });
@@ -2081,9 +2173,14 @@ router.post(`/${EMPLOYEE_ID_PARAM}/transactions`, async (req: Request, res: Resp
                 extraPaymentDescription,
                 extraDeduction,
                 extraDeductionDescription,
+                employeeName: employee.name,
               }
-            : transaction,
+            : {
+                ...transaction,
+                employeeName: employee.name,
+              },
         balances: mapEmployeeBalances(refreshedAccounts),
+        employeeName: employee.name,
       },
     });
   } catch (error: any) {

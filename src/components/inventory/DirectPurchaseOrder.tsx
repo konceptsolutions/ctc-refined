@@ -175,10 +175,10 @@ type DpoExpenseLineInput = {
   weight?: number;
 };
 
-const formatDpoMoney = (value: number) =>
+const formatDpoMoney = (value: number, wholeNumbers = false) =>
   value.toLocaleString("en-PK", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: wholeNumbers ? 0 : 2,
+    maximumFractionDigits: wholeNumbers ? 0 : 2,
   });
 
 function getDpoDistributionShares(items: DpoExpenseLineInput[]): number[] {
@@ -911,11 +911,7 @@ export const DirectPurchaseOrder = ({
       resetForm();
       setViewMode("create");
       setPageView("form");
-      setFormDescription(
-        draft.inquiryNo
-          ? `Converted from Inquiry ${draft.inquiryNo}`
-          : "Converted from Sales Inquiry",
-      );
+      setFormDescription(String(draft.description || "").trim());
       setFormItems(mappedItems);
       setShowBackToInquiry(true);
       sessionStorage.removeItem("salesInquiryConversionDraft");
@@ -2545,7 +2541,12 @@ export const DirectPurchaseOrder = ({
                         <TableCell>{order.requestDate}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{order.description || "-"}</TableCell>
                         <TableCell className="text-right font-medium">
-                          {order.grandTotal.toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                          {order.grandTotal.toLocaleString("en-PK", {
+                            style: "currency",
+                            currency: "PKR",
+                            minimumFractionDigits: isTransferIn ? 0 : 2,
+                            maximumFractionDigits: isTransferIn ? 0 : 2,
+                          })}
                         </TableCell>
                         {!isTransferIn ? (
                           <TableCell>
@@ -3136,10 +3137,7 @@ export const DirectPurchaseOrder = ({
                               <div>
                                 <span className="text-muted-foreground block mb-0.5">Total Amount</span>
                                 <span className="tabular-nums font-semibold">
-                                  {itemValue.toLocaleString("en-PK", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}
+                                  {formatDpoMoney(itemValue, isTransferIn)}
                                 </span>
                               </div>
                               <div>
@@ -3175,23 +3173,21 @@ export const DirectPurchaseOrder = ({
                         <div>
                           <span className="text-muted-foreground block mb-0.5">Total Amount</span>
                           <span className="font-semibold tabular-nums">
-                            {itemPartTotals.totalAmount.toLocaleString("en-PK", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
+                            {formatDpoMoney(itemPartTotals.totalAmount, isTransferIn)}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Desktop: full table with horizontal scroll */}
-                    <div className="hidden lg:block rounded-md border overflow-x-auto">
-                      <div className="min-w-[1100px]">
+                    {/* Desktop: Table component provides the only horizontal scroller */}
+                    <div className="hidden lg:block rounded-md border">
                         <Table>
                           <TableHeader>
                             <TableRow>
                               <ListNumberHeader />
-                              <TableHead className="min-w-[200px]">Part</TableHead>
+                              <TableHead className={cn(isTransferIn ? "min-w-[360px]" : "min-w-[200px]")}>
+                                Part
+                              </TableHead>
                               <TableHead className="min-w-[80px]">Brand</TableHead>
                               <TableHead className="min-w-[60px]">UoM</TableHead>
                               <TableHead className="w-24">Qty</TableHead>
@@ -3220,7 +3216,7 @@ export const DirectPurchaseOrder = ({
                                   )}
                                 >
                                   <ListNumberCell index={index} total={formItems.length} />
-                                  <TableCell>
+                                  <TableCell className={cn(isTransferIn && "min-w-[360px]")}>
                                     <SearchableSelect
                                       options={partSelectOptions}
                                       value={item.partId}
@@ -3228,6 +3224,7 @@ export const DirectPurchaseOrder = ({
                                       placeholder="Select part..."
                                       autoOpen={focusItemSelectId === item.id}
                                       onAutoOpenHandled={() => setFocusItemSelectId(null)}
+                                      className={cn(isTransferIn && "min-w-[340px]")}
                                     />
                                   </TableCell>
                                   <TableCell>
@@ -3359,28 +3356,25 @@ export const DirectPurchaseOrder = ({
                                     })()}
                                   </TableCell>
                                   <TableCell className="text-right font-medium">
-                                    {(() => {
-                                      const price =
-                                        typeof item.purchasePrice === "number"
-                                          ? item.purchasePrice
-                                          : 0;
-                                      const qty =
-                                        typeof item.quantity === "number" ? item.quantity : 0;
-                                      const distributedExpense =
-                                        calculateDistributedExpenses[index] || 0;
-                                      const expensePerUnit =
-                                        qty > 0 ? distributedExpense / qty : 0;
-                                      const totalExpenses = calculateTotalExpenses();
-                                      const itemValue =
-                                        totalExpenses > 0
-                                          ? qty * (price + expensePerUnit)
-                                          : qty * price;
-                                      return itemValue.toLocaleString("en-PK", {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      });
-                                    })()}
-                                  </TableCell>
+                                      {(() => {
+                                        const price =
+                                          typeof item.purchasePrice === "number"
+                                            ? item.purchasePrice
+                                            : 0;
+                                        const qty =
+                                          typeof item.quantity === "number" ? item.quantity : 0;
+                                        const distributedExpense =
+                                          calculateDistributedExpenses[index] || 0;
+                                        const expensePerUnit =
+                                          qty > 0 ? distributedExpense / qty : 0;
+                                        const totalExpenses = calculateTotalExpenses();
+                                        const itemValue =
+                                          totalExpenses > 0
+                                            ? qty * (price + expensePerUnit)
+                                            : qty * price;
+                                        return formatDpoMoney(itemValue, isTransferIn);
+                                      })()}
+                                    </TableCell>
                                   <TableCell className="text-right">
                                     {(() => {
                                       const qty =
@@ -3438,17 +3432,13 @@ export const DirectPurchaseOrder = ({
                                 })}
                               </TableCell>
                               <TableCell className="text-right font-semibold tabular-nums">
-                                {itemPartTotals.totalAmount.toLocaleString("en-PK", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
+                                {formatDpoMoney(itemPartTotals.totalAmount, isTransferIn)}
                               </TableCell>
                               <TableCell />
                               <TableCell />
                             </TableRow>
                           </TableFooter>
                         </Table>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -3570,16 +3560,13 @@ export const DirectPurchaseOrder = ({
               <div className="flex flex-wrap items-end gap-3 justify-end">
                 {/* Items Total */}
                 <div className="space-y-1 w-32">
-                  <Label className="text-xs">Items Total</Label>
-                  <Input
-                    value={calculateItemsTotal().toLocaleString("en-PK", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    disabled
-                    className="w-full text-right bg-muted"
-                  />
-                </div>
+                    <Label className="text-xs">Items Total</Label>
+                    <Input
+                      value={formatDpoMoney(calculateItemsTotal(), isTransferIn)}
+                      disabled
+                      className="w-full text-right bg-muted"
+                    />
+                  </div>
 
                 {/* Discount (on items): Percentage + Amount inline */}
                 <div className="space-y-1">
@@ -3655,14 +3642,14 @@ export const DirectPurchaseOrder = ({
                 <div className="space-y-1 w-36">
                   <Label className="text-xs">Total After Discount</Label>
                   <Input
-                    value={(() => {
-                      const itemsSub = calculateItemsTotal();
-                      const disc = calculateDiscountAmount(itemsSub);
-                      return (itemsSub - disc).toLocaleString("en-PK", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      });
-                    })()}
+                    value={formatDpoMoney(
+                      (() => {
+                        const itemsSub = calculateItemsTotal();
+                        const disc = calculateDiscountAmount(itemsSub);
+                        return itemsSub - disc;
+                      })(),
+                      isTransferIn,
+                    )}
                     disabled
                     className="w-full text-right bg-muted"
                   />
@@ -3673,13 +3660,7 @@ export const DirectPurchaseOrder = ({
                   <div className="space-y-1 w-32">
                     <Label className="text-xs">Expense Amount</Label>
                     <Input
-                      value={calculateTotalExpenses().toLocaleString(
-                        "en-PK",
-                        {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        },
-                      )}
+                      value={formatDpoMoney(calculateTotalExpenses(), isTransferIn)}
                       disabled
                       className="w-full text-right bg-muted"
                     />
@@ -3690,10 +3671,7 @@ export const DirectPurchaseOrder = ({
                 <div className="space-y-1 w-36">
                   <Label className="text-xs">Grand Total</Label>
                   <Input
-                    value={calculateTotal().toLocaleString("en-PK", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    value={formatDpoMoney(calculateTotal(), isTransferIn)}
                     disabled
                     className="w-full text-right bg-muted font-semibold"
                   />
@@ -3863,16 +3841,17 @@ export const DirectPurchaseOrder = ({
                           <TableCell className="text-right font-medium tabular-nums">
                             {formatDpoMoney(
                               viewItemDiscountedUnitPrice[index] ?? item.purchasePrice,
+                              isTransferIn,
                             )}
                           </TableCell>
                           <TableCell className="text-right font-medium">
-                            {item.amount.toLocaleString("en-PK")}
+                            {formatDpoMoney(item.amount, isTransferIn)}
                           </TableCell>
                           <TableCell className="text-right font-medium tabular-nums">
-                            {formatDpoMoney(viewItemExpensePerUnit[index] ?? 0)}
+                            {formatDpoMoney(viewItemExpensePerUnit[index] ?? 0, isTransferIn)}
                           </TableCell>
                           <TableCell className="text-right font-medium tabular-nums">
-                            {formatDpoMoney(viewItemCostPerUnit[index] ?? item.purchasePrice)}
+                            {formatDpoMoney(viewItemCostPerUnit[index] ?? item.purchasePrice, isTransferIn)}
                           </TableCell>
                           <TableCell>
                             <Input
@@ -3956,14 +3935,13 @@ export const DirectPurchaseOrder = ({
                         </TableCell>
                         <TableCell />
                         <TableCell />
-                        <TableCell className="text-right font-semibold tabular-nums">
-                          {selectedOrder.items
-                            .reduce((s, i) => s + (Number(i.amount) || 0), 0)
-                            .toLocaleString("en-PK", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                        </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatDpoMoney(
+                              selectedOrder.items
+                                .reduce((s, i) => s + (Number(i.amount) || 0), 0),
+                              isTransferIn,
+                            )}
+                          </TableCell>
                         <TableCell />
                         <TableCell />
                         <TableCell />
@@ -3999,7 +3977,12 @@ export const DirectPurchaseOrder = ({
                       <span className="font-medium tabular-nums">
                         {selectedOrder.items
                           .reduce((s, i) => s + (Number(i.amount) || 0), 0)
-                          .toLocaleString("en-PK", { style: "currency", currency: "PKR" })}
+                          .toLocaleString("en-PK", {
+                            style: "currency",
+                            currency: "PKR",
+                            minimumFractionDigits: isTransferIn ? 0 : 2,
+                            maximumFractionDigits: isTransferIn ? 0 : 2,
+                          })}
                       </span>
                     </div>
                     {(selectedOrder.discount ?? 0) > 0 && (
@@ -4010,6 +3993,8 @@ export const DirectPurchaseOrder = ({
                           {(selectedOrder.discount ?? 0).toLocaleString("en-PK", {
                             style: "currency",
                             currency: "PKR",
+                            minimumFractionDigits: isTransferIn ? 0 : 2,
+                            maximumFractionDigits: isTransferIn ? 0 : 2,
                           })}
                         </span>
                       </div>
@@ -4021,6 +4006,8 @@ export const DirectPurchaseOrder = ({
                           {(selectedOrder.totalExpenses ?? 0).toLocaleString("en-PK", {
                             style: "currency",
                             currency: "PKR",
+                            minimumFractionDigits: isTransferIn ? 0 : 2,
+                            maximumFractionDigits: isTransferIn ? 0 : 2,
                           })}
                         </span>
                       </div>
@@ -4033,6 +4020,8 @@ export const DirectPurchaseOrder = ({
                         {selectedOrder.grandTotal.toLocaleString("en-PK", {
                           style: "currency",
                           currency: "PKR",
+                          minimumFractionDigits: isTransferIn ? 0 : 2,
+                          maximumFractionDigits: isTransferIn ? 0 : 2,
                         })}
                       </span>
                     </div>

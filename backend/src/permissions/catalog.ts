@@ -99,7 +99,7 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
       page("inventory.stock-in-out", "Stock Movement", "/inventory/stock-in-out", "stock-in-out"),
       page("inventory.adjust-item", "Adjust Item", "/inventory/adjust-item", "adjust-item"),
       page("inventory.multi-dimensional", "Multi-Dimensional", "/inventory/multi-dimensional", "multi-dimensional"),
-      page("inventory.stock-analysis", "Stock Analysis", "/inventory/stock-analysis", "stock-analysis"),
+      page("inventory.stock-analysis", "Stock Verification", "/inventory/stock-analysis", "stock-analysis"),
       page("inventory.local-inquiry", "Local Inquiry", "/inventory/local-inquiry", "local-inquiry"),
       page("inventory.direct-purchase-order", "Local Purchase", "/inventory/direct-purchase-order", "direct-purchase-order", [
         { key: "field.inventory.direct-purchase-order.price", label: "Purchase Price", kind: "field" },

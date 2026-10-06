@@ -360,6 +360,12 @@ export const ItemsListPage = ({
       cost: p.cost ? parseFloat(p.cost) : null,
       purchasePrice: p.purchasePrice ? parseFloat(p.purchasePrice) : null,
       avgCost: p.avgCost ? parseFloat(p.avgCost) : null,
+      priceA: p.price_a != null || p.priceA != null
+        ? parseFloat(p.price_a ?? p.priceA)
+        : null,
+      priceB: p.price_b != null || p.priceB != null
+        ? parseFloat(p.price_b ?? p.priceB)
+        : null,
       weight: p.weight ? String(p.weight) : "-",
       duplicateGroupKey: p.duplicate_key
         ? String(p.duplicate_key).trim().toLowerCase()
@@ -845,6 +851,7 @@ export const ItemsListPage = ({
         itemIds: string[],
         nextType: "single" | "kit",
         quantity: number,
+        prices?: { cost?: number; priceA?: number; priceB?: number },
       ) => {
         if (itemIds.length !== 1) return;
         const targetId = itemIds[0];
@@ -852,7 +859,16 @@ export const ItemsListPage = ({
           const qty = Math.max(1, Math.floor(Number(quantity || 1)));
           const response =
             nextType === "kit"
-              ? await apiClient.makeKit(targetId, { quantity: qty })
+              ? await apiClient.makeKit(targetId, {
+                  quantity: qty,
+                  ...(prices?.cost !== undefined ? { cost: prices.cost } : {}),
+                  ...(prices?.priceA !== undefined
+                    ? { priceA: prices.priceA }
+                    : {}),
+                  ...(prices?.priceB !== undefined
+                    ? { priceB: prices.priceB }
+                    : {}),
+                })
               : await apiClient.breakKit(targetId, { quantity: qty });
           if ((response as any)?.error) {
             throw new Error((response as any).error);

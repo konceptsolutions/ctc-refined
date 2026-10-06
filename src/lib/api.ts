@@ -468,7 +468,15 @@ class ApiClient {
     return this.request(`/parts/${partId}/kit-operation-details`);
   }
 
-  async makeKit(partId: string, data: { quantity: number }) {
+  async makeKit(
+    partId: string,
+    data: {
+      quantity: number;
+      cost?: number;
+      priceA?: number;
+      priceB?: number;
+    },
+  ) {
     return this.request(`/parts/${partId}/make-kit`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -1100,6 +1108,62 @@ class ApiClient {
     return this.request(
       `/inventory/stock-analysis${queryString ? `?${queryString}` : ""}`,
     );
+  }
+
+  async getStockVerificationDates(params?: {
+    search?: string;
+    category_id?: string;
+    subcategory_id?: string;
+    period?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (typeof value !== "string" || value !== "")
+        ) {
+          queryParams.append(key, String(value));
+        }
+      });
+    }
+    const queryString = queryParams.toString();
+    return this.request(
+      `/inventory/stock-verification-dates${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
+  async updateStockVerificationDate(
+    partId: string,
+    data: {
+      verified_at?: string | null;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
+    },
+  ) {
+    return this.request(`/inventory/stock-verification-dates/${partId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async bulkUpdateStockVerificationDates(data: {
+    category_id?: string;
+    subcategory_id?: string;
+    part_ids?: string[];
+    verified_at?: string | null;
+    performedBy?: string;
+    performedById?: string;
+    performedByRole?: string;
+  }) {
+    return this.request(`/inventory/stock-verification-dates/bulk`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
   }
 
   async getTransfers(params?: {
@@ -2684,6 +2748,12 @@ class ApiClient {
     return this.request(`/employees/payroll-transactions/${txId}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEmployeePayrollTransaction(txId: string) {
+    return this.request(`/employees/payroll-transactions/${txId}`, {
+      method: "DELETE",
     });
   }
 

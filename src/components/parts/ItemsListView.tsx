@@ -105,6 +105,8 @@ export interface Item {
   cost?: number | null;
   purchasePrice?: number | null;
   avgCost?: number | null;
+  priceA?: number | null;
+  priceB?: number | null;
   weight?: string | number | null;
   duplicateGroupKey?: string;
   duplicateGroupSize?: number;
@@ -143,6 +145,7 @@ interface KitDetailRow {
   origin?: string;
   qtyPerKit: number;
   stock: number;
+  cost: number;
 }
 
 interface SearchFilters {
@@ -182,6 +185,7 @@ interface ItemsListViewProps {
     itemIds: string[],
     nextType: "single" | "kit",
     quantity: number,
+    prices?: { cost?: number; priceA?: number; priceB?: number },
   ) => Promise<void>;
   onItemsUpdate?: (updatedItems: Item[]) => void;
   onAddNew?: () => void;
@@ -312,6 +316,9 @@ export const ItemsListView = ({
   const [breakKitRows, setBreakKitRows] = useState<KitDetailRow[]>([]);
   const [makeKitCurrentStock, setMakeKitCurrentStock] = useState(0);
   const [breakKitCurrentStock, setBreakKitCurrentStock] = useState(0);
+  const [makeKitCost, setMakeKitCost] = useState("");
+  const [makeKitPriceA, setMakeKitPriceA] = useState("");
+  const [makeKitPriceB, setMakeKitPriceB] = useState("");
 
   // Debounce timer ref for search
   const searchDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -524,12 +531,32 @@ export const ItemsListView = ({
   const makeRequiredRows = useMemo(() => {
     const qty =
       makeKitQuantity === "" ? 0 : Math.max(1, Number(makeKitQuantity || 1));
-    return makeKitRows.map((row) => ({
-      ...row,
-      requiredQty: row.qtyPerKit * qty,
-      enoughStock: row.stock >= row.qtyPerKit * qty,
-    }));
+    return makeKitRows.map((row) => {
+      const requiredQty = row.qtyPerKit * qty;
+      const unitCost = Number(row.cost || 0);
+      return {
+        ...row,
+        requiredQty,
+        enoughStock: row.stock >= requiredQty,
+        unitCost,
+        lineCost: unitCost * requiredQty,
+      };
+    });
   }, [makeKitRows, makeKitQuantity]);
+
+  const makeKitSuggestedUnitCost = useMemo(
+    () =>
+      makeKitRows.reduce(
+        (sum, row) => sum + Number(row.cost || 0) * Number(row.qtyPerKit || 0),
+        0,
+      ),
+    [makeKitRows],
+  );
+
+  const makeKitComponentsTotal = useMemo(
+    () => makeRequiredRows.reduce((sum, row) => sum + row.lineCost, 0),
+    [makeRequiredRows],
+  );
 
   const makeKitHasInsufficientStock = useMemo(
     () => makeRequiredRows.some((row) => !row.enoughStock),
@@ -593,16 +620,31 @@ export const ItemsListView = ({
     setKitDetailsLoading(true);
     try {
       const response = await apiClient.getKitOperationDetails(kitPartId);
-      const data = ((response as any)?.data || response) as {
+      const raw = (response as any)?.data || response;
+      const data = raw as {
         kit_stock?: number;
+        kitStock?: number;
+        kit_cost?: number;
+        kitCost?: number;
+        kit_avg_cost?: number;
+        kitAvgCost?: number;
+        kit_price_a?: number;
+        kitPriceA?: number;
+        kit_price_b?: number;
+        kitPriceB?: number;
         kit_items?: Array<{
           item_part_id?: string;
           master_part_no?: string;
           item_part_no?: string;
           item_description?: string;
           brand_name?: string;
+          origin?: string;
           quantity?: number;
           stock?: number;
+          cost?: number;
+          cost_per_unit?: number;
+          price_a?: number;
+          price_b?: number;
         }>;
         error?: string;
       };
@@ -611,25 +653,72 @@ export const ItemsListView = ({
         throw new Error((response as any).error);
       }
 
-      const currentStock = Number(data.kit_stock || 0);
+      const currentStock = Number(data.kit_stock ?? data.kitStock ?? 0);
       const rows: KitDetailRow[] = Array.isArray(data.kit_items)
         ? data.kit_items
-            .map((row) => ({
-              itemPartId: String(row.item_part_id || "").trim(),
-              masterPartNo: String(row.master_part_no || "").trim(),
-              itemPartNo: String(row.item_part_no || "").trim(),
-              itemDescription: String(row.item_description || "").trim(),
-              brand: String(row.brand_name || "").trim(),
-              origin: String((row as any).origin || "").trim() || undefined,
-              qtyPerKit: Math.max(1, Number(row.quantity || 1)),
-              stock: Number(row.stock || 0),
-            }))
+            .map((row) => {
+              const unitCost = Number(
+                row.cost || row.cost_per_unit || 0,
+              );
+              return {
+                itemPartId: String(row.item_part_id || "").trim(),
+                masterPartNo: String(row.master_part_no || "").trim(),
+                itemPartNo: String(row.item_part_no || "").trim(),
+                itemDescription: String(row.item_description || "").trim(),
+                brand: String(row.brand_name || "").trim(),
+                origin: String(row.origin || "").trim() || undefined,
+                qtyPerKit: Math.max(1, Number(row.quantity || 1)),
+                stock: Number(row.stock || 0),
+                cost: unitCost,
+              };
+            })
             .filter((row: KitDetailRow) => row.itemPartId)
         : [];
 
       if (mode === "make") {
         setMakeKitRows(rows);
         setMakeKitCurrentStock(currentStock);
+        const suggestedCost = rows.reduce(
+          (sum, row) => sum + Number(row.cost || 0) * Number(row.qtyPerKit || 0),
+          0,
+        );
+        const listItem = items.find((item) => item.id === kitPartId);
+        const existingCost = Number(
+          data.kit_cost ??
+            data.kitCost ??
+            data.kit_avg_cost ??
+            data.kitAvgCost ??
+            listItem?.cost ??
+            listItem?.avgCost ??
+            0,
+        );
+        setMakeKitCost(
+          String(
+            existingCost > 0
+              ? existingCost
+              : Number(suggestedCost.toFixed(2)),
+          ),
+        );
+        setMakeKitPriceA(
+          String(
+            Number(
+              data.kit_price_a ??
+                data.kitPriceA ??
+                (listItem as any)?.priceA ??
+                0,
+            ),
+          ),
+        );
+        setMakeKitPriceB(
+          String(
+            Number(
+              data.kit_price_b ??
+                data.kitPriceB ??
+                (listItem as any)?.priceB ??
+                0,
+            ),
+          ),
+        );
       } else {
         setBreakKitRows(rows);
         setBreakKitCurrentStock(currentStock);
@@ -643,6 +732,9 @@ export const ItemsListView = ({
       if (mode === "make") {
         setMakeKitRows([]);
         setMakeKitCurrentStock(0);
+        setMakeKitCost("");
+        setMakeKitPriceA("");
+        setMakeKitPriceB("");
       } else {
         setBreakKitRows([]);
         setBreakKitCurrentStock(0);
@@ -1479,6 +1571,7 @@ export const ItemsListView = ({
     itemId: string,
     nextType: "single" | "kit",
     quantity: number,
+    prices?: { cost?: number; priceA?: number; priceB?: number },
   ): Promise<boolean> => {
     if (!itemId) return false;
     if (!onBulkPartTypeChange) {
@@ -1491,7 +1584,7 @@ export const ItemsListView = ({
     }
 
     try {
-      await onBulkPartTypeChange([itemId], nextType, quantity);
+      await onBulkPartTypeChange([itemId], nextType, quantity, prices);
       toast({
         title: nextType === "kit" ? "Kit created" : "Kit broken",
         description:
@@ -1523,6 +1616,9 @@ export const ItemsListView = ({
     setMakeKitQuantity(1);
     setMakeKitRows([]);
     setMakeKitCurrentStock(0);
+    setMakeKitCost("");
+    setMakeKitPriceA("");
+    setMakeKitPriceB("");
     setMakeKitDialogOpen(true);
   };
 
@@ -1561,10 +1657,20 @@ export const ItemsListView = ({
     }
     const qty =
       makeKitQuantity === "" ? 1 : Math.max(1, Number(makeKitQuantity || 1));
+    const parsePrice = (raw: string) => {
+      if (String(raw).trim() === "") return undefined;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    };
     const success = await handleBulkPartTypeChange(
       selectedMakeKitItemId,
       "kit",
       qty,
+      {
+        cost: parsePrice(makeKitCost),
+        priceA: parsePrice(makeKitPriceA),
+        priceB: parsePrice(makeKitPriceB),
+      },
     );
     if (success) {
       setMakeKitDialogOpen(false);
@@ -3169,7 +3275,7 @@ export const ItemsListView = ({
       </Dialog>
 
       <Dialog open={makeKitDialogOpen} onOpenChange={setMakeKitDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[820px]">
           <DialogHeader>
             <DialogTitle>Make Kit</DialogTitle>
             <DialogDescription>
@@ -3205,6 +3311,48 @@ export const ItemsListView = ({
                 Current kit stock: <span className="font-semibold">{makeKitCurrentStock}</span>
               </p>
             )}
+            {selectedMakeKitItemId ? (
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Kit Cost Price</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={makeKitCost}
+                    onChange={(e) => setMakeKitCost(e.target.value)}
+                    placeholder="0.00"
+                  />
+                  {makeKitSuggestedUnitCost > 0 ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      From singles: {formatCurrency(makeKitSuggestedUnitCost)} / kit
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Price A</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={makeKitPriceA}
+                    onChange={(e) => setMakeKitPriceA(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Price B</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={makeKitPriceB}
+                    onChange={(e) => setMakeKitPriceB(e.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            ) : null}
             {kitDetailsLoading ? (
               <div className="text-xs text-muted-foreground border rounded p-2">
                 Loading associated items...
@@ -3212,37 +3360,56 @@ export const ItemsListView = ({
             ) : makeRequiredRows.length > 0 ? (
               <div className="border rounded">
                 <div className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] font-semibold border-b bg-muted/40">
-                  <div className="col-span-3">Item</div>
-                  <div className="col-span-3">Description</div>
+                  <div className="col-span-2">Item</div>
+                  <div className="col-span-2">Description</div>
                   <div className="col-span-1">Brand</div>
-                  <div className="col-span-2 text-right">Stock</div>
+                  <div className="col-span-1 text-right">Stock</div>
                   <div className="col-span-1 text-right">Qty/Kit</div>
-                  <div className="col-span-2 text-right">Required</div>
+                  <div className="col-span-1 text-right">Required</div>
+                  <div className="col-span-2 text-right">Cost</div>
+                  <div className="col-span-2 text-right">Cost × Qty</div>
                 </div>
-                <div className="max-h-44 overflow-y-auto">
+                <div className="max-h-52 overflow-y-auto">
                   {makeRequiredRows.map((row) => (
                     <div
                       key={row.itemPartId}
                       className="grid grid-cols-12 gap-2 px-2 py-1 text-[10px] border-b last:border-b-0"
                     >
-                      <div className="col-span-3 font-medium">
+                      <div className="col-span-2 font-medium truncate" title={`${row.masterPartNo || "-"} | ${row.itemPartNo || "-"}`}>
                         {`${row.masterPartNo || "-"} | ${row.itemPartNo || "-"}`}
                       </div>
-                      <div className="col-span-3 truncate" title={row.itemDescription}>
+                      <div className="col-span-2 truncate" title={row.itemDescription}>
                         {row.itemDescription || "-"}
                       </div>
                       <div className="col-span-1 truncate" title={row.brand}>
                         <BrandOriginCell brand={row.brand} origin={row.origin} />
                       </div>
-                      <div className="col-span-2 text-right">{row.stock}</div>
+                      <div className="col-span-1 text-right">{row.stock}</div>
                       <div className="col-span-1 text-right">{row.qtyPerKit}</div>
                       <div
-                        className={`col-span-2 text-right font-semibold ${row.enoughStock ? "text-emerald-700" : "text-red-700"}`}
+                        className={`col-span-1 text-right font-semibold ${row.enoughStock ? "text-emerald-700" : "text-red-700"}`}
                       >
                         {row.requiredQty}
                       </div>
+                      <div className="col-span-2 text-right tabular-nums">
+                        {formatCurrency(row.unitCost)}
+                      </div>
+                      <div className="col-span-2 text-right tabular-nums font-medium">
+                        {formatCurrency(row.lineCost)}
+                        <div className="text-[9px] text-muted-foreground font-normal">
+                          {formatCurrency(row.unitCost)} × {row.requiredQty}
+                        </div>
+                      </div>
                     </div>
                   ))}
+                </div>
+                <div className="flex items-center justify-between px-2 py-1.5 text-[10px] border-t bg-muted/20">
+                  <span className="text-muted-foreground">
+                    Suggested kit cost (per unit): {formatCurrency(makeKitSuggestedUnitCost)}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    Total: {formatCurrency(makeKitComponentsTotal)}
+                  </span>
                 </div>
               </div>
             ) : selectedMakeKitItemId ? (
@@ -3271,6 +3438,9 @@ export const ItemsListView = ({
                 setMakeKitRows([]);
                 setMakeKitCurrentStock(0);
                 setMakeKitQuantity(1);
+                setMakeKitCost("");
+                setMakeKitPriceA("");
+                setMakeKitPriceB("");
               }}
             >
               Cancel

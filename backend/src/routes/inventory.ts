@@ -2604,6 +2604,258 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
   }
 });
 
+function getStockVerificationPeriodRange(
+  period: string,
+): { gte?: Date; lte?: Date; isNull?: boolean } | null {
+  const now = new Date();
+  const normalized = String(period || "all").toLowerCase();
+
+  if (normalized === "never") {
+    return { isNull: true };
+  }
+  if (normalized === "all" || !normalized) {
+    return null;
+  }
+
+  if (normalized === "week") {
+    const day = now.getDay(); // 0 Sun .. 6 Sat
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - diffToMonday);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    end.setMilliseconds(-1);
+    return { gte: start, lte: end };
+  }
+
+  if (normalized === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { gte: start, lte: end };
+  }
+
+  if (normalized === "year") {
+    const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    return { gte: start, lte: end };
+  }
+
+  return null;
+}
+
+// List items for stock verification date tracking
+router.get("/stock-verification-dates", async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      category_id,
+      subcategory_id,
+      period = "all",
+      page = "1",
+      limit = "50",
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(String(limit), 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    const baseWhere: Record<string, unknown> = { status: "active" };
+
+    if (category_id && String(category_id) !== "all") {
+      baseWhere.categoryId = String(category_id);
+    }
+    if (subcategory_id && String(subcategory_id) !== "all") {
+      baseWhere.subcategoryId = String(subcategory_id);
+    }
+
+    const periodRange = getStockVerificationPeriodRange(String(period));
+    if (periodRange?.isNull) {
+      baseWhere.stockVerifiedAt = null;
+    } else if (periodRange?.gte || periodRange?.lte) {
+      const stockVerifiedAt: Record<string, Date> = {};
+      if (periodRange.gte) stockVerifiedAt.gte = periodRange.gte;
+      if (periodRange.lte) stockVerifiedAt.lte = periodRange.lte;
+      baseWhere.stockVerifiedAt = stockVerifiedAt;
+    }
+
+    const where =
+      search && String(search).trim()
+        ? await buildPartSearchWhereWithFamily(String(search).trim(), baseWhere)
+        : baseWhere;
+
+    // Cast avoids stale IDE Prisma client types missing stockVerifiedAt.
+    const partDelegate = prisma.part as any;
+    const [parts, total] = await Promise.all([
+      partDelegate.findMany({
+        where,
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          stockVerifiedAt: true,
+          categoryId: true,
+          subcategoryId: true,
+          Brand: { select: { name: true } },
+          Category: { select: { id: true, name: true } },
+          Subcategory: { select: { id: true, name: true } },
+        },
+        orderBy: [{ stockVerifiedAt: "desc" }, { partNo: "asc" }],
+        skip,
+        take: limitNum,
+      }),
+      partDelegate.count({ where }),
+    ]);
+
+    res.json({
+      data: (parts as any[]).map((p) => ({
+        id: p.id,
+        partNo: p.partNo,
+        description: p.description || "",
+        brand: p.Brand?.name || "",
+        categoryId: p.categoryId || p.Category?.id || null,
+        category: p.Category?.name || "Uncategorized",
+        subcategoryId: p.subcategoryId || p.Subcategory?.id || null,
+        subcategory: p.Subcategory?.name || "",
+        stockVerifiedAt: p.stockVerifiedAt
+          ? new Date(p.stockVerifiedAt).toISOString()
+          : null,
+      })),
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limitNum)),
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put(
+  "/stock-verification-dates/bulk",
+  async (req: Request, res: Response) => {
+    try {
+      const { category_id, subcategory_id, part_ids, verified_at } =
+        req.body || {};
+      const partIds = Array.isArray(part_ids)
+        ? part_ids.map((id: unknown) => String(id)).filter(Boolean)
+        : [];
+
+      if (!category_id && !subcategory_id && partIds.length === 0) {
+        return res.status(400).json({
+          error: "category_id, subcategory_id, or part_ids is required",
+        });
+      }
+
+      let stockVerifiedAt: Date | null = new Date();
+      if (verified_at === null || verified_at === "") {
+        stockVerifiedAt = null;
+      } else if (verified_at) {
+        const parsed = new Date(verified_at);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "Invalid verification date" });
+        }
+        stockVerifiedAt = parsed;
+      }
+
+      const where: Record<string, unknown> = { status: "active" };
+      if (partIds.length > 0) {
+        where.id = { in: partIds };
+      } else if (subcategory_id) {
+        where.subcategoryId = String(subcategory_id);
+        if (category_id) where.categoryId = String(category_id);
+      } else if (category_id) {
+        where.categoryId = String(category_id);
+      }
+
+      const result = await (prisma.part as any).updateMany({
+        where,
+        data: { stockVerifiedAt },
+      });
+
+      res.json({
+        data: {
+          updatedCount: result.count,
+          categoryId: category_id ? String(category_id) : null,
+          subcategoryId: subcategory_id ? String(subcategory_id) : null,
+          partIds: partIds.length > 0 ? partIds : null,
+          stockVerifiedAt: stockVerifiedAt
+            ? stockVerifiedAt.toISOString()
+            : null,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+router.put(
+  "/stock-verification-dates/:partId",
+  async (req: Request, res: Response) => {
+    try {
+      const { partId } = req.params;
+      const { verified_at } = req.body || {};
+
+      const part = await prisma.part.findUnique({
+        where: { id: partId },
+        select: { id: true, status: true },
+      });
+      if (!part || part.status !== "active") {
+        return res.status(404).json({ error: "Part not found" });
+      }
+
+      let stockVerifiedAt: Date | null = new Date();
+      if (verified_at === null || verified_at === "") {
+        stockVerifiedAt = null;
+      } else if (verified_at) {
+        const parsed = new Date(verified_at);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "Invalid verification date" });
+        }
+        stockVerifiedAt = parsed;
+      }
+
+      const updated = await (prisma.part as any).update({
+        where: { id: partId },
+        data: { stockVerifiedAt },
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          stockVerifiedAt: true,
+          categoryId: true,
+          subcategoryId: true,
+          Brand: { select: { name: true } },
+          Category: { select: { id: true, name: true } },
+          Subcategory: { select: { id: true, name: true } },
+        },
+      });
+
+      res.json({
+        data: {
+          id: updated.id,
+          partNo: updated.partNo,
+          description: updated.description || "",
+          brand: updated.Brand?.name || "",
+          categoryId: updated.categoryId || updated.Category?.id || null,
+          category: updated.Category?.name || "Uncategorized",
+          subcategoryId:
+            updated.subcategoryId || updated.Subcategory?.id || null,
+          subcategory: updated.Subcategory?.name || "",
+          stockVerifiedAt: updated.stockVerifiedAt
+            ? new Date(updated.stockVerifiedAt).toISOString()
+            : null,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
 // Get stock balance & valuation with store and location details
 router.get("/stock-balance-valuation", async (req: Request, res: Response) => {
   try {
@@ -2900,6 +3152,8 @@ router.post("/transfers", async (req: Request, res: Response) => {
         },
       },
       include: {
+        Store_Transfer_fromStoreIdToStore: { select: { id: true, name: true } },
+        Store_Transfer_toStoreIdToStore: { select: { id: true, name: true } },
         TransferItem: {
           include: {
             Part: true,
@@ -2907,6 +3161,11 @@ router.post("/transfers", async (req: Request, res: Response) => {
         },
       },
     } as any);
+
+    const fromStoreName =
+      (transfer as any).Store_Transfer_fromStoreIdToStore?.name || null;
+    const toStoreName =
+      (transfer as any).Store_Transfer_toStoreIdToStore?.name || null;
 
     res.status(201).json({
       id: transfer.id,
@@ -2916,6 +3175,21 @@ router.post("/transfers", async (req: Request, res: Response) => {
       status: transfer.status,
       total_qty: transfer.totalQty,
       items_count: (transfer as any).TransferItem.length,
+      from_store: fromStoreName,
+      to_store: toStoreName,
+      fromStoreName,
+      toStoreName,
+      TransferItem: ((transfer as any).TransferItem || []).map((item: any) => ({
+        partId: item.partId,
+        part_id: item.partId,
+        partNo: item.Part?.partNo || null,
+        quantity: item.quantity,
+      })),
+      items: ((transfer as any).TransferItem || []).map((item: any) => ({
+        part_id: item.partId,
+        partNo: item.Part?.partNo || null,
+        quantity: item.quantity,
+      })),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -3057,6 +3331,8 @@ router.put("/transfers/:id", async (req: Request, res: Response) => {
         }),
       },
       include: {
+        Store_Transfer_fromStoreIdToStore: { select: { id: true, name: true } },
+        Store_Transfer_toStoreIdToStore: { select: { id: true, name: true } },
         TransferItem: {
           include: {
             Part: true,
@@ -3074,6 +3350,11 @@ router.put("/transfers/:id", async (req: Request, res: Response) => {
       previousStatus: existingTransfer.status,
       total_qty: transfer.totalQty,
       items_count: (transfer as any).TransferItem.length,
+      from_store: (transfer as any).Store_Transfer_fromStoreIdToStore?.name || null,
+      to_store: (transfer as any).Store_Transfer_toStoreIdToStore?.name || null,
+      fromStoreName:
+        (transfer as any).Store_Transfer_fromStoreIdToStore?.name || null,
+      toStoreName: (transfer as any).Store_Transfer_toStoreIdToStore?.name || null,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -5805,6 +6086,7 @@ router.post("/purchase-orders", async (req: Request, res: Response) => {
     const orderWithItems = await prisma.purchaseOrder.findUnique({
       where: { id: order.id },
       include: {
+        Supplier: { select: { name: true, companyName: true } },
         PurchaseOrderItem: {
           include: {
             Part: true,
@@ -5813,6 +6095,11 @@ router.post("/purchase-orders", async (req: Request, res: Response) => {
       },
     });
 
+    const supplierName =
+      orderWithItems?.Supplier?.companyName ||
+      orderWithItems?.Supplier?.name ||
+      null;
+
     res.status(201).json({
       id: orderWithItems.id,
       po_number: orderWithItems.poNumber,
@@ -5820,6 +6107,23 @@ router.post("/purchase-orders", async (req: Request, res: Response) => {
       status: orderWithItems.status,
       total_amount: orderWithItems.totalAmount,
       items_count: orderWithItems.PurchaseOrderItem.length,
+      supplier_name: supplierName,
+      supplierName,
+      PurchaseOrderItem: orderWithItems.PurchaseOrderItem.map((item: any) => ({
+        partId: item.partId,
+        part_id: item.partId,
+        partNo: item.Part?.partNo || null,
+        quantity: item.quantity,
+        unitCost: item.unitCost,
+        totalCost: item.totalCost,
+      })),
+      items: orderWithItems.PurchaseOrderItem.map((item: any) => ({
+        part_id: item.partId,
+        partNo: item.Part?.partNo || null,
+        quantity: item.quantity,
+        unit_cost: item.unitCost,
+        total_cost: item.totalCost,
+      })),
     });
   } catch (error: any) {
     if (error.code === "P2002") {
@@ -9497,7 +9801,23 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
       return { order: newOrder, voucherStatus: voucherCreationStatus };
     });
 
-    res.status(201).json({ ...order, vouchers: voucherStatus });
+    let supplierName: string | null = null;
+    if (order?.supplierId) {
+      const supplier = await prisma.supplier.findUnique({
+        where: { id: order.supplierId },
+        select: { name: true, companyName: true },
+      });
+      supplierName = supplier?.companyName || supplier?.name || null;
+    }
+
+    res.status(201).json({
+      ...order,
+      vouchers: voucherStatus,
+      supplier_name: supplierName,
+      supplierName,
+      total_amount: order?.totalAmount ?? null,
+      dpo_number: order?.dpoNumber ?? null,
+    });
   } catch (error: any) {
     console.error("DPO POST Error:", error);
     res.status(500).json({ error: error.message });

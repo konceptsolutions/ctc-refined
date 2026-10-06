@@ -266,7 +266,7 @@ Chart of accounts: **Main Groups → Subgroups → Accounts**.
 - Add subgroup: use **Subgroup Name** (no separate code field on add form).
 - Account balances, opening balances, ledger views.
 - Typical Current Assets subgroups: **102 Cash**, **103 / 108 Bank**, receivables, inventory.
-- Cash discount ledger used by cash receipts: **701003 – Cash (Discount)**.
+- Cash discount ledger used by cash receipts: **701003 – RV Discount**.
 - Normal balance: assets / expenses increase on **Debit**; liabilities / income / capital increase on **Credit**.
 
 ## Financial Statements (/financial-statements)
@@ -309,7 +309,7 @@ On **Cash** receipt only (RVC):
 - Optional **Cash Discount** per line (cannot exceed that line’s Cr)
 - System posts:
   1. **Dr Cash** = Σ(Cr) − Σ(discount) ← cash actually received
-  2. **Dr 701003 Cash (Discount)** = Σ(discount)
+  2. **Dr 701003 RV Discount** = Σ(discount)
   3. **Cr Party** = Σ(Cr) only — *no extra credit for the discount*
 - UI: **Total Amount** = settlement; **Cash received (net)** when discount > 0
 - Example: Cr 1,700 + discount 200 → Dr Cash **1,500**, Dr Discount **200**, Cr Party **1,700**

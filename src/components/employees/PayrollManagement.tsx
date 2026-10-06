@@ -1,7 +1,7 @@
 import { PRINT_BUTTON_CLASS } from "@/components/ui/PrintPdfButton";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, Pencil, Plus, Printer, Receipt, Search } from "lucide-react";
+import { Banknote, Pencil, Plus, Printer, Receipt, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,19 +94,29 @@ type EmployeeOption = {
 const todayDateMax = () => getCurrentDatePakistan();
 const currentMonthMax = () => getCurrentDatePakistan().slice(0, 7);
 
+/** Latest selectable payroll month is the previous calendar month (current month blocked). */
+const previousMonthMax = () => {
+  const [yearStr, monthStr] = currentMonthMax().split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return currentMonthMax();
+  const prev = new Date(year, month - 2, 1);
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+};
+
 const isFutureDate = (value?: string | null) => {
   const v = String(value || "").trim();
   if (!v) return false;
   return v > todayDateMax();
 };
 
-const isFutureMonth = (value?: string | null) => {
+const isCurrentOrFutureMonth = (value?: string | null) => {
   const v = String(value || "").trim();
   if (!v) return false;
-  return v > currentMonthMax();
+  return v >= currentMonthMax();
 };
 
-const getCurrentPayrollMonth = () => currentMonthMax();
+const getDefaultPayrollMonth = () => previousMonthMax();
 
 const formatMoney = (value: number) =>
   Number(value || 0).toLocaleString("en-PK", {
@@ -133,7 +143,7 @@ const getStatusBadge = (status: PayrollRow["paymentStatus"]) => {
 
 export const PayrollManagement = () => {
   const { toast } = useToast();
-  const { canCreate, canEdit, canPrint } = usePageActions("employees.payroll");
+  const { canCreate, canEdit, canDelete, canPrint } = usePageActions("employees.payroll");
   const [rows, setRows] = useState<PayrollRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -150,7 +160,7 @@ export const PayrollManagement = () => {
   const [editingPaidAmount, setEditingPaidAmount] = useState(0);
   const [accrueEmployeeId, setAccrueEmployeeId] = useState("");
   const [accrueDate, setAccrueDate] = useState(() => getCurrentDatePakistan());
-  const [accruePayrollMonth, setAccruePayrollMonth] = useState(() => getCurrentPayrollMonth());
+  const [accruePayrollMonth, setAccruePayrollMonth] = useState(() => getDefaultPayrollMonth());
   const [accrueWorkingDays, setAccrueWorkingDays] = useState("26");
   const [accrueAbsentDays, setAccrueAbsentDays] = useState("0");
   const [accrueLeaves, setAccrueLeaves] = useState("0");
@@ -329,7 +339,7 @@ export const PayrollManagement = () => {
     setEditingPaidAmount(0);
     setAccrueEmployeeId("");
     setAccrueDate(getCurrentDatePakistan());
-    setAccruePayrollMonth(getCurrentPayrollMonth());
+    setAccruePayrollMonth(getDefaultPayrollMonth());
     setAccrueWorkingDays("26");
     setAccrueAbsentDays("0");
     setAccrueLeaves("0");
@@ -345,6 +355,48 @@ export const PayrollManagement = () => {
   const openAccrueDialog = () => {
     resetAccrueForm();
     setIsAccrueOpen(true);
+  };
+
+  const handleDeletePayroll = async (row: PayrollRow) => {
+    if (row.hasAccrual === false) {
+      toast({
+        title: "Cannot delete",
+        description: "Payment-only rows have no accrual to delete.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (Number(row.paidAmount || 0) > 0.01 || row.paymentStatus !== "pending") {
+      toast({
+        title: "Cannot delete",
+        description: "Payroll can only be deleted before any payment is posted.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const label = `${row.employee?.name || "employee"} — ${formatPayrollMonth(row.payrollMonth)}`;
+    if (!window.confirm(`Delete unpaid payroll for ${label}? This will reverse the accrual voucher.`)) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.deleteEmployeePayrollTransaction(row.id);
+      if ((response as any)?.error) {
+        throw new Error((response as any).error);
+      }
+      toast({
+        title: "Deleted",
+        description: `Payroll for ${label} was deleted.`,
+      });
+      await fetchPayroll();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || error?.error || "Failed to delete payroll.",
+        variant: "destructive",
+      });
+    }
   };
 
   const openEditPayrollDialog = (row: PayrollRow) => {
@@ -369,7 +421,7 @@ export const PayrollManagement = () => {
     setEditingPaidAmount(Number(row.paidAmount || 0));
     setAccrueEmployeeId(row.employeeId);
     setAccrueDate(String(row.date || "").split("T")[0] || getCurrentDatePakistan());
-    setAccruePayrollMonth(row.payrollMonth || getCurrentPayrollMonth());
+    setAccruePayrollMonth(row.payrollMonth || getDefaultPayrollMonth());
     setAccrueWorkingDays(String(Number(row.workingDays || row.employee?.workingDays || 26)));
     setAccrueAbsentDays(String(Number(row.absentDays || 0)));
     setAccrueLeaves(String(Number(row.leaves || 0)));
@@ -415,10 +467,10 @@ export const PayrollManagement = () => {
       return;
     }
 
-    if (isFutureMonth(accruePayrollMonth)) {
+    if (isCurrentOrFutureMonth(accruePayrollMonth)) {
       toast({
         title: "Validation",
-        description: "Payroll month cannot be in the future.",
+        description: "Payroll month cannot be the current or a future month. Select a previous month.",
         variant: "destructive",
       });
       return;
@@ -763,6 +815,20 @@ export const PayrollManagement = () => {
                               <Pencil className="h-4 w-4" />
                             </Button>
                           ) : null}
+                          {canDelete &&
+                          row.hasAccrual !== false &&
+                          row.paymentStatus === "pending" &&
+                          Number(row.paidAmount || 0) <= 0.01 ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              title="Delete unpaid payroll"
+                              onClick={() => handleDeletePayroll(row)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                           {canCreate && row.hasAccrual !== false && row.outstanding > 0.01 ? (
                             <Button size="sm" variant="outline" onClick={() => openPayDialog(row)}>
                               <Banknote className="h-3.5 w-3.5 mr-1" />
@@ -976,7 +1042,7 @@ export const PayrollManagement = () => {
                 <Label>Payroll Month *</Label>
                 <Input
                   type="month"
-                  max={currentMonthMax()}
+                  max={previousMonthMax()}
                   value={accruePayrollMonth}
                   disabled={editingPaidAmount > 0.01}
                   onChange={(e) => setAccruePayrollMonth(e.target.value)}

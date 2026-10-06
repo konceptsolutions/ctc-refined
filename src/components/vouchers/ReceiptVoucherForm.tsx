@@ -174,12 +174,19 @@ export const ReceiptVoucherForm = ({
     (sum, e) => sum + (Number(e.crAmount) || 0),
     0,
   );
-  const discountAmount = receiptKind === "cash"
-    ? entries.reduce((sum, e) => sum + (Number(e.cashDiscount) || 0), 0)
-    : 0;
-  // Cr is settlement; cash in hand is net of discount. Total voucher = settlement.
+  const discountAmount = entries.reduce(
+    (sum, e) => sum + (Number(e.cashDiscount) || 0),
+    0,
+  );
+  // Cr is settlement; cash/bank in hand is net of discount. Total voucher = settlement.
   const cashInHand = Math.max(0, totalReceived - discountAmount);
   const totalAmount = totalReceived;
+  const netReceivedLabel =
+    receiptKind === "bank"
+      ? "Bank received (net)"
+      : receiptKind === "cheque"
+        ? "Cheque received (net)"
+        : "Cash received (net)";
 
   const [saving, setSaving] = useState(false);
 
@@ -222,7 +229,7 @@ export const ReceiptVoucherForm = ({
         toast({
           title: "Error",
           description:
-            "Cash discount account (701003 – Cash (Discount)) is not configured",
+            "RV discount account (701003 – RV Discount) is not configured",
           variant: "destructive",
         });
         return;
@@ -235,7 +242,7 @@ export const ReceiptVoucherForm = ({
       if (invalidDiscountLine) {
         toast({
           title: "Error",
-          description: "Select Account Cr before applying cash discount",
+          description: "Select Account Cr before applying RV discount",
           variant: "destructive",
         });
         return;
@@ -249,7 +256,7 @@ export const ReceiptVoucherForm = ({
       if (overDiscountLine) {
         toast({
           title: "Error",
-          description: "Cash discount cannot be greater than Cr amount",
+          description: "RV discount cannot be greater than Cr amount",
           variant: "destructive",
         });
         return;
@@ -417,29 +424,27 @@ export const ReceiptVoucherForm = ({
 
       <div className="space-y-4">
         <div className="grid grid-cols-12 gap-4 items-center">
-          <div className={receiptKind === "cash" ? "col-span-3" : "col-span-4"}>
+          <div className="col-span-3">
             <Label className={`text-base font-medium ${crHeaderClass}`}>Account Cr</Label>
           </div>
           <div className="col-span-2">
             <Label className="text-base font-medium">Balance</Label>
           </div>
-          <div className={receiptKind === "cash" ? "col-span-2" : "col-span-3"}>
+          <div className="col-span-2">
             <Label className="text-base font-medium">Description</Label>
           </div>
           <div className="col-span-2">
             <Label className={`text-base font-medium ${crHeaderClass}`}>Cr</Label>
           </div>
-          {receiptKind === "cash" && (
-            <div className="col-span-2">
-              <Label className="text-base font-medium">Cash Discount</Label>
-            </div>
-          )}
+          <div className="col-span-2">
+            <Label className="text-base font-medium">RV Discount</Label>
+          </div>
           <div className="col-span-1"></div>
         </div>
 
         {entries.map((entry) => (
           <div key={entry.id} className="grid grid-cols-12 gap-4 items-center">
-            <div className={receiptKind === "cash" ? "col-span-3" : "col-span-4"}>
+            <div className="col-span-3">
               <SearchableSelect
                 options={receiptCrOptions}
                 value={entry.accountCr}
@@ -454,7 +459,7 @@ export const ReceiptVoucherForm = ({
                 balanceMap={balanceMap}
               />
             </div>
-            <div className={receiptKind === "cash" ? "col-span-2" : "col-span-3"}>
+            <div className="col-span-2">
               <Input
                 placeholder="Description"
                 value={entry.description}
@@ -479,22 +484,20 @@ export const ReceiptVoucherForm = ({
               />
             </div>
 
-            {receiptKind === "cash" && (
-              <div className="col-span-2">
-                <Input
-                  type="number"
-                  placeholder="discount"
-                  value={entry.cashDiscount || ""}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 0;
-                    updateEntry(entry.id, "cashDiscount", value);
-                  }}
-                  step="0.01"
-                  min="0"
-                  className="h-10"
-                />
-              </div>
-            )}
+            <div className="col-span-2">
+              <Input
+                type="number"
+                placeholder="discount"
+                value={entry.cashDiscount || ""}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  updateEntry(entry.id, "cashDiscount", value);
+                }}
+                step="0.01"
+                min="0"
+                className="h-10"
+              />
+            </div>
 
             <div className="col-span-1 flex justify-center">
               <Button
@@ -521,10 +524,10 @@ export const ReceiptVoucherForm = ({
       </div>
 
       <div className="flex flex-col items-end gap-2">
-        {receiptKind === "cash" && discountAmount > 0 && (
+        {discountAmount > 0 && (
           <div className="flex items-center gap-4">
             <Label className="text-sm text-muted-foreground">
-              Cash received (net)
+              {netReceivedLabel}
             </Label>
             <div className="w-48 text-right text-sm font-medium tabular-nums">
               {formatAmount(cashInHand)}

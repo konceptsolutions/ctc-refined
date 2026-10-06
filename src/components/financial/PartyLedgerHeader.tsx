@@ -78,12 +78,18 @@ export const PartyLedgerHeader = ({
   balance,
   balanceLabel = "Balance",
   formatBalance = formatDefaultBalance,
+  secondaryBalance,
+  secondaryBalanceLabel,
+  formatSecondaryBalance = formatDefaultBalance,
   className,
 }: {
   party: LedgerPartyDetails | null | undefined;
   balance?: number | null;
   balanceLabel?: string;
   formatBalance?: (value: number) => string;
+  secondaryBalance?: number | null;
+  secondaryBalanceLabel?: string;
+  formatSecondaryBalance?: (value: number) => string;
   className?: string;
 }) => {
   if (!party) return null;
@@ -92,6 +98,9 @@ export const PartyLedgerHeader = ({
   const contacts = parseContactPersons(party);
   const amount = Number(balance);
   const hasBalance = balance != null && Number.isFinite(amount);
+  const secondaryAmount = Number(secondaryBalance);
+  const hasSecondary =
+    secondaryBalance != null && Number.isFinite(secondaryAmount);
 
   return (
     <div
@@ -156,21 +165,42 @@ export const PartyLedgerHeader = ({
           </div>
         </div>
 
-        {hasBalance ? (
-          <div className="flex flex-col justify-center border-t border-slate-200 bg-slate-50 px-5 py-4 md:border-l md:border-t-0 dark:border-slate-700 dark:bg-slate-900">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {balanceLabel}
-            </p>
-            <p
-              className={cn(
-                "mt-1 text-3xl font-semibold tabular-nums leading-none",
-                amount === 0
-                  ? "text-slate-700 dark:text-slate-200"
-                  : balanceValueClass(amount),
-              )}
-            >
-              {formatBalance(amount)}
-            </p>
+        {hasBalance || hasSecondary ? (
+          <div className="flex flex-col justify-center gap-4 border-t border-slate-200 bg-slate-50 px-5 py-4 md:border-l md:border-t-0 dark:border-slate-700 dark:bg-slate-900">
+            {hasBalance ? (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {balanceLabel}
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-2xl font-semibold tabular-nums leading-none",
+                    amount === 0
+                      ? "text-slate-700 dark:text-slate-200"
+                      : balanceValueClass(amount),
+                  )}
+                >
+                  {formatBalance(amount)}
+                </p>
+              </div>
+            ) : null}
+            {hasSecondary ? (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {secondaryBalanceLabel || "Balance (FC)"}
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-2xl font-semibold tabular-nums leading-none",
+                    secondaryAmount === 0
+                      ? "text-slate-700 dark:text-slate-200"
+                      : balanceValueClass(secondaryAmount),
+                  )}
+                >
+                  {formatSecondaryBalance(secondaryAmount)}
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

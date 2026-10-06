@@ -67,9 +67,635 @@ interface ActivityLog {
   entityLabel?: string | null;
   ipAddress?: string;
   status: "success" | "warning" | "error";
-  details?: Record<string, string>;
+  details?: Record<string, unknown>;
 }
 
+const DETAIL_LABELS: Record<string, string> = {
+  accountName: "Account Name",
+  accountCode: "Account Code",
+  voucherNumber: "Voucher No",
+  voucherType: "Voucher Type",
+  narration: "Narration",
+  amount: "Amount",
+  invoiceNo: "Invoice No",
+  customer: "Customer",
+  supplier: "Supplier",
+  poNumber: "PO Number",
+  dpoNumber: "DPO Number",
+  transferNumber: "Transfer No",
+  fromStore: "From Store",
+  toStore: "To Store",
+  quantity: "Quantity",
+  items: "Items",
+  itemCount: "Item Count",
+  entryCount: "Entry Count",
+  entries: "Voucher Entries",
+  lineItems: "Line Items",
+  breakdown: "Payroll Breakdown",
+  quotationNo: "Quotation No",
+  requestNo: "Inquiry No",
+  partNo: "Part No",
+  employee: "Employee",
+  employeeCode: "Employee Code",
+  reference: "Reference",
+  status: "Status",
+  previousStatus: "Previous Status",
+  transactionType: "Transaction Type",
+  payrollMonth: "Payroll Month",
+  verifiedAt: "Verification Date",
+  updatedCount: "Items Updated",
+  performedBy: "Performed By",
+  performedByRole: "Performer Role",
+  sessionUser: "Session User",
+  sessionUserRole: "Session User Role",
+  number: "Number",
+  type: "Type",
+  date: "Date",
+  paymentStatus: "Payment Status",
+  remarks: "Remarks",
+  notes: "Notes",
+  month: "Month",
+  store: "Store",
+  currency: "Currency",
+};
+
+const HIDDEN_DETAIL_KEYS = new Set([
+  "method",
+  "path",
+  "entity",
+  "performedById",
+  "sessionUserId",
+  "documentType",
+  "header",
+  "lines",
+  "lineKind",
+]);
+
+const DOCUMENT_TYPE_TITLES: Record<string, string> = {
+  voucher: "Voucher",
+  sales_invoice: "Sales Invoice",
+  transfer_out: "Transfer Out",
+  purchase_order: "Purchase Order",
+  direct_purchase_order: "Direct Purchase Order",
+  transfer_in: "Transfer In",
+  stock_transfer: "Stock Transfer",
+  payroll: "Payroll",
+  employee: "Employee",
+};
+
+const HEADER_FIELD_ORDER = [
+  "number",
+  "type",
+  "date",
+  "customer",
+  "supplier",
+  "employee",
+  "employeeCode",
+  "month",
+  "fromStore",
+  "toStore",
+  "status",
+  "paymentStatus",
+  "amount",
+  "quantity",
+  "narration",
+  "remarks",
+  "notes",
+  "reference",
+  "invoiceNo",
+  "poNumber",
+  "dpoNumber",
+  "store",
+  "currency",
+];
+
+const looksLikeUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value.trim(),
+  );
+
+const formatDetailKey = (key: string) =>
+  DETAIL_LABELS[key] ||
+  key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+
+const MULTILINE_DETAIL_KEYS = new Set([
+  "entries",
+  "lineItems",
+  "breakdown",
+]);
+
+const formatDetailValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") return "—";
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).join("\n");
+  }
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const moneyText = (value: unknown): string | null => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const dateText = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toISOString().slice(0, 10);
+};
+
+type DocumentSnapshot = {
+  documentType: string;
+  header: Record<string, unknown>;
+  lines: Record<string, unknown>[];
+  lineKind?: string;
+};
+
+const canLiveFetchDocument = (log: ActivityLog): boolean => {
+  if (!log.entityId) return false;
+  const et = String(log.entityType || "").toLowerCase();
+  return (
+    et.includes("voucher") ||
+    et.includes("invoice") ||
+    et.includes("sale") ||
+    et === "transfer_out" ||
+    et.includes("purchase_order") ||
+    et === "direct_purchase_order" ||
+    et === "transfer_in" ||
+    et === "stock_transfer" ||
+    et === "employee"
+  );
+};
+
+const buildLiveDocumentSnapshot = async (
+  log: ActivityLog,
+): Promise<DocumentSnapshot | null> => {
+  if (!log.entityId) return null;
+  const et = String(log.entityType || "").toLowerCase();
+  const id = log.entityId;
+
+  try {
+    if (et.includes("voucher")) {
+      const res = await apiClient.getVoucher(id);
+      const v: any = (res as any)?.data ?? null;
+      if (!v || (res as any)?.error) return null;
+      const entries = Array.isArray(v.entries)
+        ? v.entries
+        : Array.isArray(v.VoucherEntry)
+          ? v.VoucherEntry
+          : [];
+      return {
+        documentType: "voucher",
+        lineKind: "voucher",
+        header: {
+          number: v.voucherNumber,
+          type: v.type,
+          date: dateText(v.date),
+          narration: v.narration || undefined,
+          status: v.status,
+          amount: moneyText(v.totalDebit ?? v.totalCredit),
+        },
+        lines: entries.map((e: any) => ({
+          account: e.accountName || e.Account?.name || e.account || "Account",
+          debit: moneyText(e.debit) || "0.00",
+          credit: moneyText(e.credit) || "0.00",
+          description: e.description || undefined,
+        })),
+      };
+    }
+
+    if (
+      et.includes("invoice") ||
+      et.includes("sale") ||
+      et === "transfer_out"
+    ) {
+      const res = await apiClient.getSalesInvoice(id);
+      const inv: any = (res as any)?.data ?? null;
+      if (!inv || (res as any)?.error) return null;
+      const items = Array.isArray(inv.SalesInvoiceItem)
+        ? inv.SalesInvoiceItem
+        : Array.isArray(inv.items)
+          ? inv.items
+          : [];
+      return {
+        documentType:
+          String(inv.customerType || "").toLowerCase() === "transfer" ||
+          et === "transfer_out"
+            ? "transfer_out"
+            : "sales_invoice",
+        lineKind: "items",
+        header: {
+          number: inv.invoiceNo,
+          customer: inv.customerName,
+          date: dateText(inv.invoiceDate),
+          status: inv.status,
+          paymentStatus: inv.paymentStatus,
+          amount: moneyText(inv.grandTotal),
+          remarks: inv.remarks || undefined,
+        },
+        lines: items.map((item: any) => ({
+          partNo: item.partNo || item.Part?.partNo || item.part_no || "Item",
+          qty: item.orderedQty ?? item.quantity ?? 0,
+          rate: moneyText(item.unitPrice ?? item.unit_price) || undefined,
+          amount: moneyText(item.lineTotal ?? item.amount) || undefined,
+        })),
+      };
+    }
+
+    if (et === "direct_purchase_order" || et === "transfer_in") {
+      const res = await apiClient.getDirectPurchaseOrder(id);
+      const dpo: any = (res as any)?.data ?? res?.data ?? res;
+      if (!dpo || (res as any)?.error) return null;
+      const items = Array.isArray(dpo.items)
+        ? dpo.items
+        : Array.isArray(dpo.DirectPurchaseOrderItem)
+          ? dpo.DirectPurchaseOrderItem
+          : [];
+      return {
+        documentType: et === "transfer_in" ? "transfer_in" : "direct_purchase_order",
+        lineKind: "items",
+        header: {
+          number: dpo.dpoNumber || dpo.dpo_number,
+          supplier: dpo.supplier_name || dpo.supplierName || dpo.Supplier?.name,
+          date: dateText(dpo.date),
+          status: dpo.status,
+          amount: moneyText(dpo.totalAmount || dpo.total_amount),
+        },
+        lines: items.map((item: any) => ({
+          partNo: item.part_no || item.partNo || item.Part?.partNo || "Item",
+          qty: item.quantity ?? 0,
+          rate: moneyText(item.purchase_price ?? item.purchasePrice) || undefined,
+          amount: moneyText(item.amount) || undefined,
+        })),
+      };
+    }
+
+    if (et.includes("purchase_order")) {
+      const res = await apiClient.getPurchaseOrder(id);
+      const po: any = (res as any)?.data ?? res;
+      if (!po || (res as any)?.error) return null;
+      const items = Array.isArray(po.items)
+        ? po.items
+        : Array.isArray(po.PurchaseOrderItem)
+          ? po.PurchaseOrderItem
+          : [];
+      return {
+        documentType: "purchase_order",
+        lineKind: "items",
+        header: {
+          number: po.poNumber || po.po_number,
+          supplier: po.supplier_name || po.supplierName || po.Supplier?.name,
+          date: dateText(po.date),
+          status: po.status,
+          amount: moneyText(po.totalAmount || po.total_amount),
+        },
+        lines: items.map((item: any) => ({
+          partNo: item.part_no || item.partNo || item.Part?.partNo || "Item",
+          qty: item.quantity ?? 0,
+          rate: moneyText(item.unit_cost ?? item.unitCost) || undefined,
+          amount: moneyText(item.total_cost ?? item.totalCost) || undefined,
+        })),
+      };
+    }
+
+    if (et === "stock_transfer") {
+      const res = await apiClient.getTransfer(id);
+      const t: any = (res as any)?.data ?? res;
+      if (!t || (res as any)?.error) return null;
+      const items = Array.isArray(t.items)
+        ? t.items
+        : Array.isArray(t.TransferItem)
+          ? t.TransferItem
+          : [];
+      return {
+        documentType: "stock_transfer",
+        lineKind: "transfer",
+        header: {
+          number: t.transferNumber || t.transfer_number,
+          fromStore:
+            t.from_store ||
+            t.fromStoreName ||
+            t.Store_Transfer_fromStoreIdToStore?.name,
+          toStore:
+            t.to_store ||
+            t.toStoreName ||
+            t.Store_Transfer_toStoreIdToStore?.name,
+          date: dateText(t.date),
+          status: t.status,
+          quantity: t.total_qty ?? t.totalQty,
+        },
+        lines: items.map((item: any) => ({
+          partNo: item.part_no || item.partNo || item.Part?.partNo || "Item",
+          qty: item.quantity ?? 0,
+        })),
+      };
+    }
+
+    if (et === "employee") {
+      const res = await apiClient.getEmployee(id);
+      const emp: any = (res as any)?.data ?? null;
+      if (!emp || (res as any)?.error) return null;
+      const lines: Record<string, unknown>[] = [];
+      const push = (label: string, value: unknown) => {
+        if (value === undefined || value === null || value === "") return;
+        lines.push({ label, value: String(value) });
+      };
+      push("CNIC", emp.cnic);
+      push("Contact", emp.contactNo);
+      push("Email", emp.email);
+      push("Designation", emp.designation);
+      push("Department", emp.department);
+      push("Monthly salary", moneyText(emp.monthlySalary));
+      push("Working days", emp.workingDays);
+      push("Joining date", dateText(emp.joiningDate));
+      push("Remarks", emp.remarks);
+      return {
+        documentType: "employee",
+        lineKind: "payroll",
+        header: {
+          number: emp.code,
+          employee: emp.name,
+          code: emp.code,
+          status: emp.status,
+          designation: emp.designation,
+          department: emp.department,
+          amount: moneyText(emp.monthlySalary),
+        },
+        lines,
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const getDocumentSnapshot = (
+  details?: Record<string, unknown> | null,
+): DocumentSnapshot | null => {
+  if (!details || typeof details !== "object") return null;
+  const documentType = details.documentType;
+  const header = details.header;
+  const lines = details.lines;
+  if (typeof documentType !== "string" || !documentType) return null;
+  if (!header || typeof header !== "object" || Array.isArray(header)) return null;
+  if (!Array.isArray(lines)) return null;
+  return {
+    documentType,
+    header: header as Record<string, unknown>,
+    lines: lines as Record<string, unknown>[],
+    lineKind: typeof details.lineKind === "string" ? details.lineKind : undefined,
+  };
+};
+
+const getVisibleDetails = (
+  details?: Record<string, unknown> | null,
+  overrideSnapshot?: DocumentSnapshot | null,
+): [string, unknown][] => {
+  if (!details || typeof details !== "object") return [];
+  const primaryKeys = [
+    "invoiceNo",
+    "voucherNumber",
+    "poNumber",
+    "dpoNumber",
+    "transferNumber",
+    "accountName",
+    "employee",
+    "partNo",
+  ];
+  const primaryValues = new Set(
+    primaryKeys
+      .map((k) => details[k])
+      .filter((v) => v !== null && v !== undefined && v !== "")
+      .map((v) => String(v)),
+  );
+  const snapshot = overrideSnapshot || getDocumentSnapshot(details);
+  const headerKeys = snapshot ? new Set(Object.keys(snapshot.header)) : new Set<string>();
+
+  return Object.entries(details).filter(([key, value]) => {
+    if (HIDDEN_DETAIL_KEYS.has(key)) return false;
+    if (typeof value === "object" && value !== null) return false;
+    if (typeof value === "string" && looksLikeUuid(value)) return false;
+    // Avoid duplicating fields already shown in the document header
+    if (snapshot) {
+      if (key === "amount" && headerKeys.has("amount")) return false;
+      if (key === "status" && headerKeys.has("status")) return false;
+      if (key === "voucherNumber" && headerKeys.has("number")) return false;
+      if (key === "invoiceNo" && headerKeys.has("number")) return false;
+      if (key === "poNumber" && (headerKeys.has("number") || headerKeys.has("poNumber"))) return false;
+      if (key === "dpoNumber" && (headerKeys.has("number") || headerKeys.has("dpoNumber"))) return false;
+      if (key === "transferNumber" && headerKeys.has("number")) return false;
+      if (key === "customer" && headerKeys.has("customer")) return false;
+      if (key === "supplier" && headerKeys.has("supplier")) return false;
+      if (key === "employee" && headerKeys.has("employee")) return false;
+      if (key === "payrollMonth" && headerKeys.has("month")) return false;
+      if (key === "voucherType" && headerKeys.has("type")) return false;
+      if (key === "transactionType" && headerKeys.has("type")) return false;
+      if (key === "fromStore" && headerKeys.has("fromStore")) return false;
+      if (key === "toStore" && headerKeys.has("toStore")) return false;
+      if (key === "quantity" && headerKeys.has("quantity")) return false;
+      if (key === "narration" && headerKeys.has("narration")) return false;
+      if (key === "itemCount" || key === "entryCount") return false;
+      if (key === "entries" || key === "lineItems" || key === "breakdown") return false;
+    }
+    if (
+      key === "reference" &&
+      typeof value === "string" &&
+      primaryValues.has(value)
+    ) {
+      return false;
+    }
+    return true;
+  });
+};
+
+const orderedHeaderEntries = (
+  header: Record<string, unknown>,
+): [string, unknown][] => {
+  const entries = Object.entries(header).filter(
+    ([, value]) => value !== null && value !== undefined && value !== "",
+  );
+  const rank = (key: string) => {
+    const idx = HEADER_FIELD_ORDER.indexOf(key);
+    return idx === -1 ? 1000 : idx;
+  };
+  return entries.sort((a, b) => rank(a[0]) - rank(b[0]));
+};
+
+const DocumentDetailsPanel = ({ snapshot }: { snapshot: DocumentSnapshot }) => {
+  const title =
+    DOCUMENT_TYPE_TITLES[snapshot.documentType] ||
+    formatDetailKey(snapshot.documentType);
+  const headerEntries = orderedHeaderEntries(snapshot.header);
+  const lineKind = snapshot.lineKind || (
+    snapshot.documentType === "voucher"
+      ? "voucher"
+      : snapshot.documentType === "stock_transfer"
+        ? "transfer"
+        : snapshot.documentType === "payroll"
+          ? "payroll"
+          : "items"
+  );
+
+  return (
+    <div className="rounded-lg border bg-background overflow-hidden">
+      <div className="px-3 py-2 border-b bg-muted/40 flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{title}</p>
+        {snapshot.header.number != null && snapshot.header.number !== "" && (
+          <p className="text-sm font-medium text-muted-foreground">
+            {String(snapshot.header.number)}
+          </p>
+        )}
+      </div>
+
+      {headerEntries.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 p-3 text-sm">
+          {headerEntries.map(([key, value]) => (
+            <div
+              key={key}
+              className={
+                key === "narration" || key === "remarks" || key === "notes"
+                  ? "col-span-2 sm:col-span-3"
+                  : undefined
+              }
+            >
+              <p className="text-xs text-muted-foreground">{formatDetailKey(key)}</p>
+              <p className="font-medium break-words">{formatDetailValue(value)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {snapshot.lines.length > 0 && (
+        <div className="border-t">
+          <div className="px-3 py-1.5 bg-muted/30">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {lineKind === "voucher"
+                ? "Entries"
+                : lineKind === "payroll"
+                  ? "Breakdown"
+                  : "Line Items"}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {lineKind === "voucher" && (
+                    <>
+                      <TableHead>Account</TableHead>
+                      <TableHead className="text-right">Debit</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      <TableHead>Description</TableHead>
+                    </>
+                  )}
+                  {lineKind === "items" && (
+                    <>
+                      <TableHead>Part No</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Rate</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </>
+                  )}
+                  {lineKind === "transfer" && (
+                    <>
+                      <TableHead>Part No</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                    </>
+                  )}
+                  {lineKind === "payroll" && (
+                    <>
+                      <TableHead>Field</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                    </>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {snapshot.lines.map((line, idx) => (
+                  <TableRow key={idx}>
+                    {lineKind === "voucher" && (
+                      <>
+                        <TableCell className="font-medium">
+                          {formatDetailValue(line.account)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.debit)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.credit)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDetailValue(line.description)}
+                        </TableCell>
+                      </>
+                    )}
+                    {lineKind === "items" && (
+                      <>
+                        <TableCell className="font-medium">
+                          {formatDetailValue(line.partNo)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.qty)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.rate)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.amount)}
+                        </TableCell>
+                      </>
+                    )}
+                    {lineKind === "transfer" && (
+                      <>
+                        <TableCell className="font-medium">
+                          {formatDetailValue(line.partNo)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatDetailValue(line.qty)}
+                        </TableCell>
+                      </>
+                    )}
+                    {lineKind === "payroll" && (
+                      <>
+                        <TableCell>{formatDetailValue(line.label)}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {formatDetailValue(line.value)}
+                        </TableCell>
+                      </>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const actionIcons: Record<string, React.ReactNode> = {
   login: <LogIn className="w-4 h-4" />,
@@ -122,6 +748,8 @@ export const ActivityLogsTab = () => {
   const [actionFilter, setActionFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(() => getCurrentDatePakistan());
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
+  const [liveSnapshot, setLiveSnapshot] = useState<DocumentSnapshot | null>(null);
+  const [liveSnapshotLoading, setLiveSnapshotLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
   const [total, setTotal] = useState(0);
@@ -206,6 +834,42 @@ export const ActivityLogsTab = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, moduleFilter, actionFilter, searchQuery, dateFilter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLiveSnapshot(null);
+
+    if (!selectedLog) {
+      setLiveSnapshotLoading(false);
+      return;
+    }
+
+    const stored = getDocumentSnapshot(selectedLog.details);
+    // Prefer live fetch when we have an id, so older logs also show full lines
+    if (!canLiveFetchDocument(selectedLog)) {
+      setLiveSnapshotLoading(false);
+      return;
+    }
+
+    setLiveSnapshotLoading(true);
+    void buildLiveDocumentSnapshot(selectedLog)
+      .then((snap) => {
+        if (!cancelled) {
+          setLiveSnapshot(snap || stored);
+          setLiveSnapshotLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLiveSnapshot(stored);
+          setLiveSnapshotLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLog]);
 
   const getInitials = (name?: string | null) => {
     const parts = String(name || "")
@@ -442,17 +1106,15 @@ export const ActivityLogsTab = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {(log.details || log.entityType || log.userId) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        onClick={() => setSelectedLog(log)}
-                        title="View"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => setSelectedLog(log)}
+                      title="View details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               )))}
@@ -493,7 +1155,7 @@ export const ActivityLogsTab = () => {
 
       {/* Details Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="w-5 h-5" />
@@ -505,48 +1167,136 @@ export const ActivityLogsTab = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">User</p>
-                  <p className="font-medium">{selectedLog.user}</p>
-                  {selectedLog.userId && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectedLog.userId}</p>
+                  <p className="font-medium">{selectedLog.user || "—"}</p>
+                  {selectedLog.userRole && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {selectedLog.userRole}
+                    </p>
                   )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Action</p>
-                  <p className="font-medium capitalize">{selectedLog.action}</p>
+                  <p className="font-medium">{selectedLog.action || "—"}</p>
+                  {selectedLog.actionType && (
+                    <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                      {selectedLog.actionType.replace(/_/g, " ")}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Module</p>
-                  <p className="font-medium">{selectedLog.module}</p>
+                  <p className="font-medium">{selectedLog.module || "—"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Timestamp</p>
-                  <p className="font-medium">{selectedLog.timestamp ? formatUiDateTime(selectedLog.timestamp) : 'N/A'}</p>
+                  <p className="font-medium">
+                    {selectedLog.timestamp
+                      ? formatUiDateTime(selectedLog.timestamp) || selectedLog.timestamp
+                      : "N/A"}
+                  </p>
                 </div>
                 <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <Badge
+                    variant="outline"
+                    className={`mt-1 capitalize ${statusColors[selectedLog.status] || ""}`}
+                  >
+                    {selectedLog.status || "—"}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">IP Address</p>
+                  <p className="font-medium">{selectedLog.ipAddress || "—"}</p>
+                </div>
+                <div className="col-span-2">
                   <p className="text-xs text-muted-foreground">Entity</p>
-                  <p className="font-medium">{selectedLog.entityLabel || selectedLog.entityType || '—'}</p>
-                  {selectedLog.entityId && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectedLog.entityId}</p>
+                  <p className="font-medium">
+                    {selectedLog.entityLabel ||
+                      selectedLog.entityType?.replace(/_/g, " ") ||
+                      "—"}
+                  </p>
+                  {selectedLog.entityType && selectedLog.entityLabel && (
+                    <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                      {selectedLog.entityType.replace(/_/g, " ")}
+                    </p>
                   )}
+                  {selectedLog.entityId &&
+                    selectedLog.entityId !== selectedLog.entityLabel &&
+                    !looksLikeUuid(selectedLog.entityId) && (
+                      <p className="text-xs text-muted-foreground mt-0.5 break-all">
+                        ID: {selectedLog.entityId}
+                      </p>
+                    )}
                 </div>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Description</p>
-                <p className="text-sm">{selectedLog.description}</p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {selectedLog.description || "—"}
+                </p>
               </div>
-              {selectedLog.details && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Additional Details</p>
-                  <div className="bg-muted/50 rounded-lg p-3 space-y-1">
-                    {Object.entries(selectedLog.details).map(([key, value]) => (
-                      <div key={key} className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{key}:</span>
-                        <span className="font-medium">{String(value)}</span>
+              {(() => {
+                const storedSnapshot = getDocumentSnapshot(selectedLog.details);
+                const snapshot = liveSnapshot || storedSnapshot;
+                const visibleDetails = getVisibleDetails(
+                  selectedLog.details,
+                  snapshot,
+                );
+                if (
+                  !snapshot &&
+                  !liveSnapshotLoading &&
+                  visibleDetails.length === 0
+                ) {
+                  return null;
+                }
+                return (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      {snapshot ? "Document View" : "Additional Details"}
+                    </p>
+                    {liveSnapshotLoading && !snapshot && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading document details…
                       </div>
-                    ))}
+                    )}
+                    {snapshot && <DocumentDetailsPanel snapshot={snapshot} />}
+                    {visibleDetails.length > 0 && (
+                      <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                        {visibleDetails.map(([key, value]) => {
+                          const text = formatDetailValue(value);
+                          const isMultiline =
+                            MULTILINE_DETAIL_KEYS.has(key) ||
+                            text.includes("\n");
+                          return (
+                            <div
+                              key={key}
+                              className={
+                                isMultiline
+                                  ? "space-y-1 text-sm"
+                                  : "flex justify-between gap-3 text-sm"
+                              }
+                            >
+                              <span className="text-muted-foreground shrink-0">
+                                {formatDetailKey(key)}
+                              </span>
+                              {isMultiline ? (
+                                <pre className="text-xs font-medium whitespace-pre-wrap break-all bg-background/60 rounded p-2 font-mono">
+                                  {text}
+                                </pre>
+                              ) : (
+                                <span className="font-medium text-right break-all">
+                                  {text}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </DialogContent>

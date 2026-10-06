@@ -43,7 +43,6 @@ interface Account {
   code: string;
   name: string;
   status: "Active" | "Inactive";
-  canDelete: boolean;
 }
 
 const mainGroupOptions = [
@@ -85,10 +84,10 @@ export const AccountsTab = () => {
   const {
     canCreate,
     canEdit,
-    canDelete,
     canExport,
     canPrint,
     canMenuMore,
+    canStatus,
   } = usePageActions("accounting.chart");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +117,7 @@ export const AccountsTab = () => {
     name: "",
     description: "",
     accountName: "",
+    status: "Active" as "Active" | "Inactive",
   });
 
   // Since we're fetching filtered data from API, use accounts directly
@@ -241,7 +241,6 @@ export const AccountsTab = () => {
             name: acc.name,
             status: acc.status || 'Active',
             balance: acc.currentBalance || 0,
-            canDelete: acc.canDelete !== undefined ? acc.canDelete : true,
           };
         });
 
@@ -520,6 +519,7 @@ export const AccountsTab = () => {
       name: account.name,
       description: account.name,
       accountName: "",
+      status: account.status === "Inactive" ? "Inactive" : "Active",
     });
     setIsEditDialogOpen(true);
   };
@@ -550,7 +550,7 @@ export const AccountsTab = () => {
         subgroupId: subgroup.id,
         name: formData.name,
         description: formData.description || formData.name,
-        status: editingAccount.status,
+        status: formData.status === "Inactive" ? "Inactive" : "Active",
       });
 
       if (result.data) {
@@ -567,18 +567,41 @@ export const AccountsTab = () => {
     }
   };
 
-  const handleDeleteAccount = async (id: string) => {
+  const handleToggleAccountStatus = async (account: Account) => {
+    const nextStatus = account.status === "Active" ? "Inactive" : "Active";
     try {
-      const result = await apiClient.delete<any>(`/accounting/accounts/${id}`);
+      let subgroup = subGroups.find(
+        (sg: any) => sg.name === account.subGroup || sg.id === (account as any).subgroupId,
+      );
+      if (!subgroup) {
+        const result = await apiClient.get<any>("/accounting/subgroups");
+        const subgroups = result.data || [];
+        subgroup = subgroups.find((sg: any) => sg.name === account.subGroup);
+      }
+      if (!subgroup) {
+        toast.error("Subgroup not found");
+        return;
+      }
+
+      const result = await apiClient.put<any>(`/accounting/accounts/${account.id}`, {
+        subgroupId: subgroup.id,
+        name: account.name,
+        description: account.name,
+        status: nextStatus,
+      });
 
       if (result.data) {
         await fetchAccounts();
-        toast.success("Account deleted successfully!");
+        toast.success(
+          nextStatus === "Inactive"
+            ? "Account deactivated successfully!"
+            : "Account activated successfully!",
+        );
       } else if (result.error) {
-        toast.error(result.error || "Failed to delete account");
+        toast.error(result.error || "Failed to update account status");
       }
-    } catch (error) {
-      toast.error("Error deleting account");
+    } catch (error: any) {
+      toast.error(error.message || "Error updating account status");
     }
   };
 
@@ -589,6 +612,7 @@ export const AccountsTab = () => {
       name: "",
       description: "",
       accountName: "",
+      status: "Active",
     });
   };
 
@@ -887,7 +911,11 @@ export const AccountsTab = () => {
                         />
                       </td>
                       <td className="p-3">
-                        <div className="w-3 h-3 rounded-full bg-success"></div>
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            account.status === "Active" ? "bg-success" : "bg-muted-foreground/40"
+                          }`}
+                        ></div>
                       </td>
                       <td className="p-3 text-primary font-medium">{account.group}</td>
                       <td className="p-3 text-primary font-medium">{account.subGroup}</td>
@@ -918,18 +946,6 @@ export const AccountsTab = () => {
                               </Button>
                             </ActionButtonTooltip>
                           )}
-                          {canDelete && account.canDelete && (
-                            <ActionButtonTooltip label="Delete" variant="delete">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive/80"
-                                onClick={() => handleDeleteAccount(account.id)}
-                              >
-                                <Trash className="h-4 w-4" />
-                              </Button>
-                            </ActionButtonTooltip>
-                          )}
                           {canMenuMore && (
                             <DropdownMenu>
                               <ActionButtonTooltip label="More Actions" variant="more">
@@ -946,6 +962,14 @@ export const AccountsTab = () => {
                                 <DropdownMenuItem onClick={() => handleViewTransactions(account)} className="cursor-pointer">
                                   View Transactions
                                 </DropdownMenuItem>
+                                {(canStatus || canEdit) && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleToggleAccountStatus(account)}
+                                    className="cursor-pointer"
+                                  >
+                                    {account.status === "Active" ? "Deactivate" : "Activate"}
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           )}
@@ -1276,6 +1300,26 @@ export const AccountsTab = () => {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Enter description"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    status: value === "Inactive" ? "Inactive" : "Active",
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border z-50">
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter className="flex justify-between sm:justify-between">

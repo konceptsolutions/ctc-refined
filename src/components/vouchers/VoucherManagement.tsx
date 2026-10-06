@@ -631,7 +631,7 @@ export const VoucherManagement = () => {
       const grossReceived =
         Number(data.totalReceived ?? data.totalAmount ?? 0) || 0;
 
-      // Cash discount is per-line on the receipt form (cash receipt vouchers only).
+      // RV discount is per-line on the receipt form (cash / bank / cheque).
       const discountLines = paymentReceiptEntries
         .map((entry: any) => ({
           accountCr: entry.accountCr ?? entry.account,
@@ -644,7 +644,7 @@ export const VoucherManagement = () => {
         (sum: number, l: any) => sum + (Number(l.discount) || 0),
         0,
       );
-      // Cr amount is the settlement (party credit). Cash in hand is net of discount.
+      // Cr amount is the settlement (party credit). Cash/bank in hand is net of discount.
       const cashReceived = Math.max(0, grossReceived - cashDiscount);
       const voucherTotal = grossReceived;
 
@@ -668,13 +668,13 @@ export const VoucherManagement = () => {
         credit: 0,
       });
 
-      // Cash discount: Dr Cash (Discount) only — party already credited at full Cr
+      // RV discount: Dr 701003 only — party already credited at full Cr
       if (cashDiscount > 0 && data.cashDiscountAccount) {
         for (const line of discountLines) {
           entries.push({
             id: `dr-disc-${Date.now()}-${String(line.accountCr)}`,
             account: data.cashDiscountAccount,
-            description: "Cash discount",
+            description: "RV discount",
             debit: line.discount,
             credit: 0,
           });

@@ -1,6 +1,6 @@
 export type CashBankPaymentMode = "cash" | "online";
 
-const BANK_SUBGROUP_CODES = new Set(["103", "108"]);
+const BANK_SUBGROUP_CODES = new Set(["103"]);
 
 function getMainGroupType(account: {
   Subgroup?: {
@@ -23,9 +23,20 @@ function isAssetCashBankChart(account: {
   return mainType === "asset" || mainType === "";
 }
 
+function isLoanOrAdvanceSubgroup(subgroupName: string): boolean {
+  return (
+    subgroupName.includes("loan") ||
+    subgroupName.includes("advance") ||
+    subgroupName.includes("drawing")
+  );
+}
+
 function isBankSubgroup(code: string, subgroupName: string): boolean {
+  if (isLoanOrAdvanceSubgroup(subgroupName)) return false;
   if (BANK_SUBGROUP_CODES.has(code)) return true;
   if (code === "102" && subgroupName.includes("bank")) return true;
+  // Legacy charts sometimes used 108 for bank — only treat as bank if name says so
+  if (code === "108" && subgroupName.includes("bank")) return true;
   if (
     subgroupName.includes("bank account") ||
     subgroupName === "bank" ||
@@ -37,6 +48,7 @@ function isBankSubgroup(code: string, subgroupName: string): boolean {
 }
 
 function isCashSubgroup(code: string, subgroupName: string): boolean {
+  if (isLoanOrAdvanceSubgroup(subgroupName)) return false;
   if (code === "101") return true;
   if (subgroupName.includes("cash") && !subgroupName.includes("receivable")) {
     return true;

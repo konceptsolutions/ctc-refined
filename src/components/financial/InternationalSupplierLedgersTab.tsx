@@ -28,13 +28,6 @@ import {
   SearchableSelectOption,
 } from "@/components/ui/searchable-select";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   fcHeaderClass,
   fcValueClass,
   lcHeaderClass,
@@ -45,8 +38,6 @@ import {
   PartyLedgerHeader,
   type LedgerPartyDetails,
 } from "@/components/financial/PartyLedgerHeader";
-
-type CurrencyMode = "local" | "foreign";
 
 interface LedgerEntry {
   id: number | string;
@@ -76,7 +67,6 @@ interface SupplierAccountOption {
 export const InternationalSupplierLedgersTab = () => {
   const { toast } = useToast();
   const [selectedAccount, setSelectedAccount] = useState("");
-  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("local");
   const [fromDate, setFromDate] = useState<Date | undefined>(() => {
     const d = new Date();
     d.setDate(1);
@@ -87,7 +77,6 @@ export const InternationalSupplierLedgersTab = () => {
   const [selectedEntries, setSelectedEntries] = useState<(number | string)[]>([]);
   const [accounts, setAccounts] = useState<SupplierAccountOption[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currencyName, setCurrencyName] = useState("USD");
   const [viewingVoucher, setViewingVoucher] = useState<{
     id?: string | null;
     number?: string | null;
@@ -124,7 +113,7 @@ export const InternationalSupplierLedgersTab = () => {
     [accounts],
   );
 
-  const formatLocalNumber = (num: number | null) => {
+  const formatLocalNumber = (num: number | null | undefined) => {
     if (num === null || num === undefined) return "-";
     return num.toLocaleString("en-PK", {
       minimumFractionDigits: 2,
@@ -132,16 +121,13 @@ export const InternationalSupplierLedgersTab = () => {
     });
   };
 
-  const formatForeignNumber = (num: number | null) => {
+  const formatForeignNumber = (num: number | null | undefined) => {
     if (num === null || num === undefined) return "-";
-    return `$ ${num.toLocaleString("en-US", {
+    return num.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    })}`;
+    });
   };
-
-  const formatAmount = (num: number | null) =>
-    currencyMode === "foreign" ? formatForeignNumber(num) : formatLocalNumber(num);
 
   const formatExchangeRate = (rate?: number | null) => {
     const value = Number(rate);
@@ -151,15 +137,6 @@ export const InternationalSupplierLedgersTab = () => {
       maximumFractionDigits: 4,
     });
   };
-
-  const getDebit = (entry: LedgerEntry) =>
-    currencyMode === "foreign" ? entry.debitFc : entry.debit;
-
-  const getCredit = (entry: LedgerEntry) =>
-    currencyMode === "foreign" ? entry.creditFc : entry.credit;
-
-  const getBalance = (entry: LedgerEntry) =>
-    currencyMode === "foreign" ? entry.balanceFc : entry.balance;
 
   const formatDisplayValue = (value: string | number | null) => {
     if (value === null || value === undefined) return "-";
@@ -211,7 +188,6 @@ export const InternationalSupplierLedgersTab = () => {
       }
 
       setEntries(response.data || []);
-      setCurrencyName(response.meta?.currencyName || "USD");
       setPartyDetails(response.meta?.party || null);
       const rows = response.data || [];
       setCurrentBalanceLc(
@@ -237,16 +213,18 @@ export const InternationalSupplierLedgersTab = () => {
   };
 
   const handleExportCSV = () => {
-    const modeLabel = currencyMode === "foreign" ? "FC" : "LC";
     const headers = [
       "T_Id",
       "Voucher No",
       "Time Stamp",
       "Description",
-      ...(currencyMode === "foreign" ? ["Exchange Rate"] : []),
-      `Debit (${modeLabel})`,
-      `Credit (${modeLabel})`,
-      `Balance (${modeLabel})`,
+      "Exchange Rate",
+      "Debit (FC)",
+      "Credit (FC)",
+      "Balance (FC)",
+      "Debit (LC)",
+      "Credit (LC)",
+      "Balance (LC)",
     ];
     const csvContent = [
       headers.join(","),
@@ -256,12 +234,13 @@ export const InternationalSupplierLedgersTab = () => {
           entry.voucherNo,
           entry.timeStamp,
           `"${String(entry.description || "").replace(/"/g, '""')}"`,
-          ...(currencyMode === "foreign"
-            ? [entry.conversionRate ?? ""]
-            : []),
-          getDebit(entry) ?? "",
-          getCredit(entry) ?? "",
-          getBalance(entry),
+          entry.conversionRate ?? "",
+          entry.debitFc ?? "",
+          entry.creditFc ?? "",
+          entry.balanceFc,
+          entry.debit ?? "",
+          entry.credit ?? "",
+          entry.balance,
         ].join(","),
       ),
     ].join("\n");
@@ -280,10 +259,6 @@ export const InternationalSupplierLedgersTab = () => {
   };
 
   const handlePrint = () => {
-    const modeLabel =
-      currencyMode === "foreign"
-        ? `Foreign Currency (${currencyName})`
-        : "Local Currency";
     const selectedAccountLabel =
       accountOptions.find((a) => a.value === selectedAccount)?.label ||
       selectedAccount;
@@ -292,22 +267,25 @@ export const InternationalSupplierLedgersTab = () => {
       fromDate,
       toDate,
       accountLabel: selectedAccountLabel || undefined,
-      subtitle: `Currency mode: ${modeLabel}`,
-      showExchangeRate: currencyMode === "foreign",
+      subtitle: "Foreign Currency (FC) and Local Currency (LC)",
+      dualCurrency: true,
       party: partyDetails,
-      currentBalance:
-        currencyMode === "foreign" ? currentBalanceFc : currentBalanceLc,
-      balanceLabel:
-        currencyMode === "foreign" ? `Balance (${currencyName})` : "Balance (LC)",
+      currentBalance: currentBalanceLc,
+      balanceLabel: "Balance (LC)",
+      currentBalanceFc,
+      balanceFcLabel: "Balance (FC)",
       entries: entries.map((entry) => ({
         tId: entry.tId,
         voucherNo: entry.voucherNo,
         timeStamp: entry.timeStamp,
         description: entry.description,
-        debit: getDebit(entry),
-        credit: getCredit(entry),
-        balance: getBalance(entry),
+        debit: entry.debit,
+        credit: entry.credit,
+        balance: entry.balance,
         exchangeRate: entry.conversionRate,
+        debitFc: entry.debitFc,
+        creditFc: entry.creditFc,
+        balanceFc: entry.balanceFc,
       })),
     });
     if (!opened) {
@@ -318,6 +296,8 @@ export const InternationalSupplierLedgersTab = () => {
       });
     }
   };
+
+  const colSpan = 14;
 
   return (
     <Card>
@@ -352,21 +332,6 @@ export const InternationalSupplierLedgersTab = () => {
               }}
               placeholder="Select international supplier account..."
             />
-          </div>
-          <div className="space-y-2">
-            <Label>Currency</Label>
-            <Select
-              value={currencyMode}
-              onValueChange={(value) => setCurrencyMode(value as CurrencyMode)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="local">Local Currency (LC)</SelectItem>
-                <SelectItem value="foreign">Foreign Currency (FC)</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
 
@@ -428,20 +393,21 @@ export const InternationalSupplierLedgersTab = () => {
 
         <PartyLedgerHeader
           party={partyDetails}
-          balance={currencyMode === "foreign" ? currentBalanceFc : currentBalanceLc}
-          balanceLabel={
-            currencyMode === "foreign" ? `Balance (${currencyName})` : "Balance (LC)"
-          }
-          formatBalance={formatAmount}
+          balance={currentBalanceLc}
+          balanceLabel="Balance (LC)"
+          formatBalance={formatLocalNumber}
+          secondaryBalance={currentBalanceFc}
+          secondaryBalanceLabel="Balance (FC)"
+          formatSecondaryBalance={formatForeignNumber}
         />
 
-        {currencyMode === "foreign" ? (
-          <p className="text-xs text-muted-foreground">
-            Foreign amounts are derived as LC ÷ voucher exchange rate. Displayed with $ sign.
-          </p>
-        ) : null}
+        <p className="text-xs text-muted-foreground">
+          FC and LC are shown together. Import vouchers may use USD or the supplier
+          currency, so foreign amounts are labeled FC (not a specific currency).
+          FC is derived as LC ÷ voucher exchange rate.
+        </p>
 
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -457,33 +423,38 @@ export const InternationalSupplierLedgersTab = () => {
                 <TableHead className="font-semibold underline">T_Id</TableHead>
                 <TableHead className="font-semibold underline">Voucher No</TableHead>
                 <TableHead className="font-semibold underline">Time Stamp</TableHead>
-                <TableHead className="font-semibold underline">Description</TableHead>
-                {currencyMode === "foreign" ? (
-                  <TableHead className="font-semibold underline text-right">
-                    Exchange Rate
-                  </TableHead>
-                ) : null}
-                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Dr</TableHead>
-                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Cr</TableHead>
-                <TableHead className={`font-semibold underline text-right ${currencyMode === "foreign" ? fcHeaderClass : lcHeaderClass}`}>Balance</TableHead>
+                <TableHead className="font-semibold underline min-w-[180px]">Description</TableHead>
+                <TableHead className="font-semibold underline text-right">Exch. Rate</TableHead>
+                <TableHead className={`font-semibold underline text-right ${fcHeaderClass}`}>
+                  Dr (FC)
+                </TableHead>
+                <TableHead className={`font-semibold underline text-right ${fcHeaderClass}`}>
+                  Cr (FC)
+                </TableHead>
+                <TableHead className={`font-semibold underline text-right ${fcHeaderClass}`}>
+                  Bal (FC)
+                </TableHead>
+                <TableHead className={`font-semibold underline text-right ${lcHeaderClass}`}>
+                  Dr (LC)
+                </TableHead>
+                <TableHead className={`font-semibold underline text-right ${lcHeaderClass}`}>
+                  Cr (LC)
+                </TableHead>
+                <TableHead className={`font-semibold underline text-right ${lcHeaderClass}`}>
+                  Bal (LC)
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={currencyMode === "foreign" ? 10 : 9}
-                    className="text-center py-8 text-muted-foreground"
-                  >
+                  <TableCell colSpan={colSpan} className="text-center py-8 text-muted-foreground">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : entries.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={currencyMode === "foreign" ? 10 : 9}
-                    className="text-center py-8"
-                  >
+                  <TableCell colSpan={colSpan} className="text-center py-8">
                     <div className="flex flex-col items-center gap-2">
                       <Users className="h-12 w-12 text-muted-foreground/50" />
                       <p className="text-muted-foreground font-medium">
@@ -535,37 +506,52 @@ export const InternationalSupplierLedgersTab = () => {
                       </TableCell>
                       <TableCell>{formatDisplayValue(entry.timeStamp)}</TableCell>
                       <TableCell>{entry.description}</TableCell>
-                      {currencyMode === "foreign" ? (
-                        <TableCell className="text-right">
-                          {formatExchangeRate(entry.conversionRate)}
-                        </TableCell>
-                      ) : null}
-                      <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(getDebit(entry)) : lcValueClass(getDebit(entry))}`}>
-                        {formatAmount(getDebit(entry))}
+                      <TableCell className="text-right">
+                        {formatExchangeRate(entry.conversionRate)}
                       </TableCell>
-                      <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(getCredit(entry)) : lcValueClass(getCredit(entry))}`}>
-                        {formatAmount(getCredit(entry))}
+                      <TableCell className={`text-right ${fcValueClass(entry.debitFc)}`}>
+                        {formatForeignNumber(entry.debitFc)}
                       </TableCell>
-                      <TableCell className={`text-right font-medium ${currencyMode === "foreign" ? fcValueClass(getBalance(entry)) : lcValueClass(getBalance(entry))}`}>
-                        {formatAmount(getBalance(entry))}
+                      <TableCell className={`text-right ${fcValueClass(entry.creditFc)}`}>
+                        {formatForeignNumber(entry.creditFc)}
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${fcValueClass(entry.balanceFc)}`}>
+                        {formatForeignNumber(entry.balanceFc)}
+                      </TableCell>
+                      <TableCell className={`text-right ${lcValueClass(entry.debit)}`}>
+                        {formatLocalNumber(entry.debit)}
+                      </TableCell>
+                      <TableCell className={`text-right ${lcValueClass(entry.credit)}`}>
+                        {formatLocalNumber(entry.credit)}
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${lcValueClass(entry.balance)}`}>
+                        {formatLocalNumber(entry.balance)}
                       </TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="bg-muted font-bold">
-                    <TableCell
-                      colSpan={currencyMode === "foreign" ? 7 : 6}
-                      className="text-right"
-                    >
+                    <TableCell colSpan={7} className="text-right">
                       Total:
                     </TableCell>
-                    <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(1, true) : lcValueClass(1, true)}`}>
-                      {formatAmount(
-                        entries.reduce((sum, e) => sum + (getDebit(e) || 0), 0),
+                    <TableCell className={`text-right ${fcValueClass(1, true)}`}>
+                      {formatForeignNumber(
+                        entries.reduce((sum, e) => sum + (e.debitFc || 0), 0),
                       )}
                     </TableCell>
-                    <TableCell className={`text-right ${currencyMode === "foreign" ? fcValueClass(1, true) : lcValueClass(1, true)}`}>
-                      {formatAmount(
-                        entries.reduce((sum, e) => sum + (getCredit(e) || 0), 0),
+                    <TableCell className={`text-right ${fcValueClass(1, true)}`}>
+                      {formatForeignNumber(
+                        entries.reduce((sum, e) => sum + (e.creditFc || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className={`text-right ${lcValueClass(1, true)}`}>
+                      {formatLocalNumber(
+                        entries.reduce((sum, e) => sum + (e.debit || 0), 0),
+                      )}
+                    </TableCell>
+                    <TableCell className={`text-right ${lcValueClass(1, true)}`}>
+                      {formatLocalNumber(
+                        entries.reduce((sum, e) => sum + (e.credit || 0), 0),
                       )}
                     </TableCell>
                     <TableCell />

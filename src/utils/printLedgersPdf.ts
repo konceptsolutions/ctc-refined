@@ -19,6 +19,9 @@ export type LedgerPrintEntry = {
   credit?: number | null;
   balance: number;
   exchangeRate?: number | null;
+  debitFc?: number | null;
+  creditFc?: number | null;
+  balanceFc?: number | null;
 };
 
 export type LedgerPrintParty = {
@@ -36,9 +39,14 @@ export type LedgerPrintInput = {
   accountLabel?: string;
   subtitle?: string;
   showExchangeRate?: boolean;
+  /** Show FC + LC amount columns in one table */
+  dualCurrency?: boolean;
+  currencyName?: string;
   party?: LedgerPrintParty | null;
   currentBalance?: number | null;
   balanceLabel?: string;
+  currentBalanceFc?: number | null;
+  balanceFcLabel?: string;
   entries: LedgerPrintEntry[];
 };
 
@@ -116,14 +124,38 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
         align: "right",
       });
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
+      doc.setFontSize(12);
       doc.setTextColor(15, 23, 42);
       doc.text(
         formatAmount(Number(input.currentBalance)),
         pageWidth - marginX - 4,
-        y + 9,
+        y + 8,
         { align: "right" },
       );
+      if (
+        input.dualCurrency &&
+        input.currentBalanceFc != null &&
+        Number.isFinite(Number(input.currentBalanceFc))
+      ) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          (input.balanceFcLabel || "Balance (FC)").toUpperCase(),
+          pageWidth - marginX - 4,
+          y + 12,
+          { align: "right" },
+        );
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(15, 23, 42);
+        doc.text(
+          formatAmount(Number(input.currentBalanceFc)),
+          pageWidth - marginX - 4,
+          y + 17,
+          { align: "right" },
+        );
+      }
     }
 
     doc.setFont("helvetica", "normal");
@@ -156,9 +188,24 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
     doc.text(input.subtitle, marginX, y);
   }
 
-  const head = input.showExchangeRate
-    ? [["T_Id", "Voucher No", "Time Stamp", "Description", "Exchange Rate", "Dr", "Cr", "Balance"]]
-    : [["T_Id", "Voucher No", "Time Stamp", "Description", "Dr", "Cr", "Balance"]];
+  const fcLabel = input.currencyName ? `FC (${input.currencyName})` : "FC";
+  const head = input.dualCurrency
+    ? [[
+        "T_Id",
+        "Voucher No",
+        "Time Stamp",
+        "Description",
+        "Exch. Rate",
+        `Dr ${fcLabel}`,
+        `Cr ${fcLabel}`,
+        `Bal ${fcLabel}`,
+        "Dr LC",
+        "Cr LC",
+        "Bal LC",
+      ]]
+    : input.showExchangeRate
+      ? [["T_Id", "Voucher No", "Time Stamp", "Description", "Exchange Rate", "Dr", "Cr", "Balance"]]
+      : [["T_Id", "Voucher No", "Time Stamp", "Description", "Dr", "Cr", "Balance"]];
 
   const body = input.entries.map((entry) => {
     const base = [
@@ -167,6 +214,20 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
       entry.timeStamp || "",
       entry.description || "",
     ];
+    if (input.dualCurrency) {
+      base.push(
+        entry.exchangeRate == null || entry.exchangeRate === undefined
+          ? ""
+          : Number(entry.exchangeRate).toFixed(4),
+        formatAmount(entry.debitFc),
+        formatAmount(entry.creditFc),
+        formatAmount(entry.balanceFc),
+        formatAmount(entry.debit),
+        formatAmount(entry.credit),
+        formatAmount(entry.balance),
+      );
+      return base;
+    }
     if (input.showExchangeRate) {
       base.push(
         entry.exchangeRate == null || entry.exchangeRate === undefined
@@ -182,6 +243,10 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
     return base;
   });
 
+  const emptyDual = ["", "", "", "No entries", "", "", "", "", "", "", ""];
+  const emptyFx = ["", "", "", "No entries", "", "", "", ""];
+  const emptyLc = ["", "", "", "No entries", "", "", ""];
+
   autoTable(doc, {
     startY: y + 7,
     margin: { left: marginX, right: marginX },
@@ -189,11 +254,11 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
     body:
       body.length > 0
         ? body
-        : [input.showExchangeRate ? ["", "", "", "No entries", "", "", "", ""] : ["", "", "", "No entries", "", "", ""]],
+        : [input.dualCurrency ? emptyDual : input.showExchangeRate ? emptyFx : emptyLc],
     styles: {
       font: "helvetica",
-      fontSize: 8,
-      cellPadding: 1.5,
+      fontSize: input.dualCurrency ? 7 : 8,
+      cellPadding: 1.2,
       textColor: [17, 17, 17],
       lineColor: [221, 221, 221],
       lineWidth: 0.2,
@@ -203,22 +268,39 @@ export const printLedgers = (input: LedgerPrintInput): boolean => {
       fillColor: [30, 58, 138],
       textColor: [255, 255, 255],
       fontStyle: "bold",
-      fontSize: 8,
+      fontSize: input.dualCurrency ? 7 : 8,
     },
     alternateRowStyles: { fillColor: [249, 249, 249] },
-    columnStyles: input.showExchangeRate
+    columnStyles: input.dualCurrency
       ? {
-          4: { halign: "right", cellWidth: 28 },
-          5: { halign: "right", cellWidth: 28 },
-          6: { halign: "right", cellWidth: 28 },
-          7: { halign: "right", cellWidth: 30 },
+          4: { halign: "right", cellWidth: 18 },
+          5: { halign: "right", cellWidth: 22 },
+          6: { halign: "right", cellWidth: 22 },
+          7: { halign: "right", cellWidth: 22 },
+          8: { halign: "right", cellWidth: 22 },
+          9: { halign: "right", cellWidth: 22 },
+          10: { halign: "right", cellWidth: 24 },
         }
-      : {
-          4: { halign: "right", cellWidth: 30 },
-          5: { halign: "right", cellWidth: 30 },
-          6: { halign: "right", cellWidth: 32 },
-        },
+      : input.showExchangeRate
+        ? {
+            4: { halign: "right", cellWidth: 28 },
+            5: { halign: "right", cellWidth: 28 },
+            6: { halign: "right", cellWidth: 28 },
+            7: { halign: "right", cellWidth: 30 },
+          }
+        : {
+            4: { halign: "right", cellWidth: 30 },
+            5: { halign: "right", cellWidth: 30 },
+            6: { halign: "right", cellWidth: 32 },
+          },
     didParseCell: (data) => {
+      if (input.dualCurrency) {
+        applyPdfDrCrColors(data, 5, 6);
+        applyPdfBalanceColor(data, 7);
+        applyPdfDrCrColors(data, 8, 9);
+        applyPdfBalanceColor(data, 10);
+        return;
+      }
       const debitCol = input.showExchangeRate ? 5 : 4;
       const creditCol = input.showExchangeRate ? 6 : 5;
       const balanceCol = input.showExchangeRate ? 7 : 6;

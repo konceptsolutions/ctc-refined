@@ -34,15 +34,19 @@ export function isActiveLedgerAccount(account: RawAccount): boolean {
   return status === "active";
 }
 
-/** Cash discount ledger (701003 – Cash (Discount)). */
+/** RV discount ledger (701003 – RV Discount). Also matches legacy Cash (Discount). */
 export function findCashDiscountAccount(
   rawAccounts: RawAccount[],
 ): RawAccount | undefined {
-  return rawAccounts.find(
-    (acc) =>
-      String(acc.code ?? "").trim() === "701003" ||
-      /cash\s*\(discount\)/i.test(String(acc.name ?? "")),
-  );
+  return rawAccounts.find((acc) => {
+    const code = String(acc.code ?? "").trim();
+    const name = String(acc.name ?? "");
+    return (
+      code === "701003" ||
+      /rv\s*\(?\s*discount\s*\)?/i.test(name) ||
+      /cash\s*\(discount\)/i.test(name)
+    );
+  });
 }
 
 /** Map of accountId → ledger balance for display in voucher forms. */

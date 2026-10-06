@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
-import { TrendingUp, BarChart2, Clock, Ban, Search, Download, Printer, Settings } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ClipboardCheck, Search, Loader2, Check, Layers } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -13,11 +14,9 @@ import {
 import {
   ListNumberHeader,
   ListNumberCell,
-  getListRowNumber,
   LIST_NUMBER_HEAD_CLASS,
   LIST_NUMBER_CELL_CLASS,
 } from "@/components/ui/list-table-number";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -25,617 +24,754 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
-import apiClient from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
-import { openPrintHtml } from "@/utils/printUtils";
+import apiClient from "@/lib/api";
+import {
+  performedByPayload,
+  StoreOperatorAuthProvider,
+  useStoreOperatorAuth,
+} from "@/hooks/useStoreOperatorAuth";
 import { usePageActions } from "@/permissions/pageActions";
 
-interface StockItem {
+interface VerificationRow {
   id: string;
   partNo: string;
   description: string;
-  category: string; 
-  quantity: number;
-  value: number;
-  daysIdle: number;
-  turnover: number;
-  classification: "Fast" | "Normal" | "Slow" | "Dead";
+  brand: string;
+  categoryId: string | null;
+  category: string;
+  subcategoryId: string | null;
+  subcategory: string;
+  stockVerifiedAt: string | null;
 }
 
-type Classification = "Fast" | "Normal" | "Slow" | "Dead";
+interface NamedOption {
+  id: string;
+  name: string;
+}
 
-export const StockAnalysis = () => {
-  const { canExport, canPrint } = usePageActions("inventory.stock-analysis");
-  // Configuration state
-  const [fastMovingDays, setFastMovingDays] = useState(30);
-  const [slowMovingDays, setSlowMovingDays] = useState(90);
-  const [deadStockDays, setDeadStockDays] = useState(180);
-  const [analysisPeriod, setAnalysisPeriod] = useState(6);
+type PeriodFilter = "all" | "week" | "month" | "year" | "never";
 
-  // Filter state
+const todayLocal = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const toDateInput = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const formatDisplayDate = (iso: string | null) => {
+  if (!iso) return "Never verified";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Never verified";
+  return d.toLocaleDateString();
+};
+
+const normalizeOptions = (result: any): NamedOption[] => {
+  const list = Array.isArray(result)
+    ? result
+    : Array.isArray(result?.data)
+      ? result.data
+      : [];
+  return list
+    .map((c: any) => ({ id: c.id, name: c.name }))
+    .filter((c: NamedOption) => c.id && c.name)
+    .sort((a: NamedOption, b: NamedOption) => a.name.localeCompare(b.name));
+};
+
+export const StockAnalysis = () => (
+  <StoreOperatorAuthProvider>
+    <StockAnalysisInner />
+  </StoreOperatorAuthProvider>
+);
+
+const StockAnalysisInner = () => {
+  const { canEdit } = usePageActions("inventory.stock-analysis");
+  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState<"All" | Classification>("All");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [period, setPeriod] = useState<PeriodFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
-
-  // Pagination state
+  const [subcategoryFilter, setSubcategoryFilter] = useState("all");
+  const [categories, setCategories] = useState<NamedOption[]>([]);
+  const [filterSubcategories, setFilterSubcategories] = useState<NamedOption[]>([]);
+  const [bulkSubcategories, setBulkSubcategories] = useState<NamedOption[]>([]);
+  const [items, setItems] = useState<VerificationRow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [dateDrafts, setDateDrafts] = useState<Record<string, string>>({});
+  const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  // Data state
-  const [stockData, setStockData] = useState<StockItem[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [bulkSubcategoryId, setBulkSubcategoryId] = useState("");
+  const [bulkDate, setBulkDate] = useState(todayLocal());
+  const [selectedBulkDate, setSelectedBulkDate] = useState(todayLocal());
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [selectedSaving, setSelectedSaving] = useState(false);
 
-  // Fetch stock analysis data
-  const fetchStockAnalysis = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const result = await apiClient.getCategories();
+        setCategories(normalizeOptions(result));
+      } catch {
+        setCategories([]);
+      }
+    };
+    loadCategories();
+  }, []);
+
+  useEffect(() => {
+    const loadFilterSubcategories = async () => {
+      if (categoryFilter === "all") {
+        setFilterSubcategories([]);
+        setSubcategoryFilter("all");
+        return;
+      }
+      try {
+        const result = await apiClient.getSubcategories(categoryFilter);
+        setFilterSubcategories(normalizeOptions(result));
+        setSubcategoryFilter("all");
+      } catch {
+        setFilterSubcategories([]);
+        setSubcategoryFilter("all");
+      }
+    };
+    loadFilterSubcategories();
+  }, [categoryFilter]);
+
+  useEffect(() => {
+    const loadBulkSubcategories = async () => {
+      if (!bulkCategoryId) {
+        setBulkSubcategories([]);
+        setBulkSubcategoryId("");
+        return;
+      }
+      try {
+        const result = await apiClient.getSubcategories(bulkCategoryId);
+        setBulkSubcategories(normalizeOptions(result));
+        setBulkSubcategoryId("");
+      } catch {
+        setBulkSubcategories([]);
+        setBulkSubcategoryId("");
+      }
+    };
+    loadBulkSubcategories();
+  }, [bulkCategoryId]);
+
+  const fetchItems = async () => {
     try {
       setLoading(true);
       const params: any = {
-        fast_moving_days: fastMovingDays,
-        slow_moving_days: slowMovingDays,
-        dead_stock_days: deadStockDays,
-        analysis_period: analysisPeriod,
+        period,
+        page: currentPage,
+        limit: itemsPerPage,
       };
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (categoryFilter !== "all") params.category_id = categoryFilter;
+      if (subcategoryFilter !== "all") params.subcategory_id = subcategoryFilter;
 
-      if (searchTerm) {
-        params.search = searchTerm;
-      }
-
-      if (categoryFilter && categoryFilter !== "all") {
-        params.category = categoryFilter;
-      }
-
-      if (activeTab && activeTab !== "All") {
-        params.classification = activeTab;
-      }
-
-      const result = await apiClient.getStockAnalysis(params);
-
+      const result = await apiClient.getStockVerificationDates(params);
       if (result.error) {
         toast.error(result.error);
-        setStockData([]);
+        setItems([]);
+        setTotal(0);
+        setTotalPages(1);
+        setSelectedIds(new Set());
         return;
       }
 
-      const data = result.data || [];
-      setStockData(data);
-
-      // Extract unique categories
-      const uniqueCategories = [...new Set(data.map((item: StockItem) => item.category))].sort();
-      setCategories(uniqueCategories);
-    } catch (error: any) {
-      toast.error('Failed to fetch stock analysis data');
-      setStockData([]);
+      const rows: VerificationRow[] = result.data || [];
+      setItems(rows);
+      setSelectedIds(new Set());
+      setTotal(result.pagination?.total ?? rows.length);
+      setTotalPages(result.pagination?.totalPages ?? 1);
+      setDateDrafts(() => {
+        const next: Record<string, string> = {};
+        for (const row of rows) {
+          next[row.id] = toDateInput(row.stockVerifiedAt) || todayLocal();
+        }
+        return next;
+      });
+    } catch {
+      toast.error("Failed to load stock verification items");
+      setItems([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch data when configuration or filters change
   useEffect(() => {
-    fetchStockAnalysis();
-  }, [fastMovingDays, slowMovingDays, deadStockDays, analysisPeriod, searchTerm, categoryFilter, activeTab]);
-
-  // Calculate summary stats
-  const stats = useMemo(() => {
-    const totalValue = stockData.reduce((sum, item) => sum + item.value, 0);
-    const fastItems = stockData.filter(i => i.classification === "Fast");
-    const normalItems = stockData.filter(i => i.classification === "Normal");
-    const slowItems = stockData.filter(i => i.classification === "Slow");
-    const deadItems = stockData.filter(i => i.classification === "Dead");
-
-    return {
-      fast: {
-        count: fastItems.length,
-        value: fastItems.reduce((sum, i) => sum + i.value, 0),
-        percentage: totalValue > 0 ? ((fastItems.reduce((sum, i) => sum + i.value, 0) / totalValue) * 100).toFixed(1) : "0",
-      },
-      normal: {
-        count: normalItems.length,
-        value: normalItems.reduce((sum, i) => sum + i.value, 0),
-        percentage: totalValue > 0 ? ((normalItems.reduce((sum, i) => sum + i.value, 0) / totalValue) * 100).toFixed(1) : "0",
-      },
-      slow: {
-        count: slowItems.length,
-        value: slowItems.reduce((sum, i) => sum + i.value, 0),
-        percentage: totalValue > 0 ? ((slowItems.reduce((sum, i) => sum + i.value, 0) / totalValue) * 100).toFixed(1) : "0",
-      },
-      dead: {
-        count: deadItems.length,
-        value: deadItems.reduce((sum, i) => sum + i.value, 0),
-        percentage: totalValue > 0 ? ((deadItems.reduce((sum, i) => sum + i.value, 0) / totalValue) * 100).toFixed(1) : "0",
-      },
-    };
-  }, [stockData]);
-
-  // Filter items (already filtered by API, but keep for client-side if needed)
-  const filteredItems = useMemo(() => {
-    return stockData;
-  }, [stockData]);
-
-  // Pagination
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredItems.slice(start, start + itemsPerPage);
-  }, [filteredItems, currentPage, itemsPerPage]);
-
-  // Reset page when filters change
-  const handleTabChange = (tab: typeof activeTab) => {
-    setActiveTab(tab);
     setCurrentPage(1);
-  };
+  }, [debouncedSearch, period, categoryFilter, subcategoryFilter, itemsPerPage]);
 
-  const handleCategoryChange = (category: string) => {
-    setCategoryFilter(category);
-    setCurrentPage(1);
-  };
+  useEffect(() => {
+    fetchItems();
+  }, [
+    debouncedSearch,
+    period,
+    categoryFilter,
+    subcategoryFilter,
+    currentPage,
+    itemsPerPage,
+  ]);
 
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
-  };
+  const allPageSelected =
+    items.length > 0 && items.every((item) => selectedIds.has(item.id));
+  const somePageSelected =
+    items.some((item) => selectedIds.has(item.id)) && !allPageSelected;
 
-  // Export functions
-  const handleExportCSV = () => {
-    const headers = ["SR", "Part No", "Description", "Category", "Quantity", "Value (Rs)", "Days Idle", "Turnover", "Status"];
-    const csvContent = [
-      headers.join(","),
-      ...filteredItems.map((item, index) => 
-        [
-          index + 1,
-          item.partNo,
-          `"${item.description}"`,
-          `"${item.category}"`,
-          item.quantity,
-          item.value,
-          item.daysIdle,
-          `${item.turnover}/mo`,
-          item.classification
-        ].join(",")
-      ),
-    ].join("\n");
-    
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock-analysis-report-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("CSV exported successfully");
-  };
-
-  const handlePrintPDF = () => {
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Stock Movement Analysis Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #333; }
-            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }
-            .card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            .fast { background-color: #d1fae5; }
-            .normal { background-color: #dbeafe; }
-            .slow { background-color: #fed7aa; }
-            .dead { background-color: #fee2e2; }
-            @media print {
-              body { margin: 0; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <h1>Stock Movement Analysis Report</h1>
-          <p>Generated on: ${new Date().toLocaleString()}</p>
-          <p><strong>Configuration:</strong> Fast Moving: ≤${fastMovingDays} days, Slow Moving: ≥${slowMovingDays} days, Dead Stock: ≥${deadStockDays} days, Analysis Period: ${analysisPeriod} months</p>
-          
-          <div class="summary">
-            <div class="card">
-              <h3>Fast Moving</h3>
-              <p>Count: ${stats.fast.count}</p>
-              <p>Value: ${formatCurrency(stats.fast.value)}</p>
-              <p>${stats.fast.percentage}% of total</p>
-            </div>
-            <div class="card">
-              <h3>Normal Moving</h3>
-              <p>Count: ${stats.normal.count}</p>
-              <p>Value: ${formatCurrency(stats.normal.value)}</p>
-              <p>${stats.normal.percentage}% of total</p>
-            </div>
-            <div class="card">
-              <h3>Slow Moving</h3>
-              <p>Count: ${stats.slow.count}</p>
-              <p>Value: ${formatCurrency(stats.slow.value)}</p>
-              <p>${stats.slow.percentage}% of total</p>
-            </div>
-            <div class="card">
-              <h3>Dead Stock</h3>
-              <p>Count: ${stats.dead.count}</p>
-              <p>Value: ${formatCurrency(stats.dead.value)}</p>
-              <p>${stats.dead.percentage}% of total</p>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th class="w-12 min-w-[3rem] text-center text-xs font-medium whitespace-nowrap">#</th>
-                <th>Part No</th>
-                <th>Description</th>
-                <th>Category</th>
-                <th>Quantity</th>
-                <th>Value (Rs)</th>
-                <th>Days Idle</th>
-                <th>Turnover</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredItems.map((item, index) => `
-                <tr class="${item.classification.toLowerCase()}">
-                  <td>${index + 1}</td>
-                  <td>${item.partNo}</td>
-                  <td>${item.description}</td>
-                  <td>${item.category}</td>
-                  <td>${item.quantity}</td>
-                  <td>${formatCurrency(item.value)}</td>
-                  <td>${item.daysIdle}</td>
-                  <td>${item.turnover}/mo</td>
-                  <td>${item.classification}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </body>
-      </html>
-    `;
-
-    const started = openPrintHtml(printContent, {
-      onBlocked: () => toast.error("Please allow popups to print"),
+  const toggleSelectAllPage = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const item of items) next.add(item.id);
+      } else {
+        for (const item of items) next.delete(item.id);
+      }
+      return next;
     });
-    if (started) {
-      toast.success("Print dialog opened");
+  };
+
+  const toggleSelectOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const handleUpdateItem = async (item: VerificationRow, dateValue?: string) => {
+    if (!canEdit) {
+      toast.error("You do not have permission to update verification dates");
+      return;
+    }
+    const verifiedAt = dateValue ?? dateDrafts[item.id] ?? todayLocal();
+    if (!verifiedAt) {
+      toast.error("Select a verification date");
+      return;
+    }
+
+    try {
+      setSavingIds((prev) => ({ ...prev, [item.id]: true }));
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+      const result = await apiClient.updateStockVerificationDate(item.id, {
+        verified_at: verifiedAt,
+        ...by,
+      });
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const updated = result.data as VerificationRow;
+      setItems((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, ...updated } : row)),
+      );
+      setDateDrafts((prev) => ({
+        ...prev,
+        [item.id]: toDateInput(updated.stockVerifiedAt) || verifiedAt,
+      }));
+      toast.success(
+        operator?.name
+          ? `Verified ${item.partNo} as ${operator.name}`
+          : `Verified ${item.partNo}`,
+      );
+    } catch {
+      toast.error("Failed to update verification date");
+    } finally {
+      setSavingIds((prev) => ({ ...prev, [item.id]: false }));
     }
   };
 
-  const classificationColors: Record<Classification, string> = {
-    Fast: "bg-emerald-50 text-emerald-600 border-emerald-200",
-    Normal: "bg-blue-50 text-blue-600 border-blue-200",
-    Slow: "bg-amber-50 text-amber-600 border-amber-200",
-    Dead: "bg-red-50 text-red-600 border-red-200",
+  const handleBulkUpdate = async () => {
+    if (!canEdit) {
+      toast.error("You do not have permission to update verification dates");
+      return;
+    }
+    if (!bulkCategoryId) {
+      toast.error("Select a category for bulk update");
+      return;
+    }
+    if (!bulkDate) {
+      toast.error("Select a verification date");
+      return;
+    }
+
+    const categoryName =
+      categories.find((c) => c.id === bulkCategoryId)?.name || "selected category";
+    const subcategoryName = bulkSubcategories.find(
+      (s) => s.id === bulkSubcategoryId,
+    )?.name;
+
+    try {
+      setBulkSaving(true);
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+      const result = await apiClient.bulkUpdateStockVerificationDates({
+        category_id: bulkCategoryId,
+        subcategory_id: bulkSubcategoryId || undefined,
+        verified_at: bulkDate,
+        ...by,
+      });
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const count = result.data?.updatedCount ?? 0;
+      const scope = subcategoryName
+        ? `${categoryName} / ${subcategoryName}`
+        : categoryName;
+      toast.success(
+        operator?.name
+          ? `Updated ${count} item(s) in ${scope} as ${operator.name}`
+          : `Updated ${count} item(s) in ${scope}`,
+      );
+      await fetchItems();
+    } catch {
+      toast.error("Failed to bulk update verification dates");
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
-  const formatCurrency = (value: number) => {
-    return `Rs ${value.toLocaleString("en-PK")}.00`;
+  const handleSelectedBulkUpdate = async (dateValue?: string) => {
+    if (!canEdit) {
+      toast.error("You do not have permission to update verification dates");
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) {
+      toast.error("Select at least one item");
+      return;
+    }
+    const verifiedAt = dateValue ?? selectedBulkDate;
+    if (!verifiedAt) {
+      toast.error("Select a verification date");
+      return;
+    }
+
+    try {
+      setSelectedSaving(true);
+      const operator = await requestOperatorAuth();
+      if (requiresOperatorAuth && !operator) {
+        return;
+      }
+      const by = performedByPayload(operator);
+      const result = await apiClient.bulkUpdateStockVerificationDates({
+        part_ids: ids,
+        verified_at: verifiedAt,
+        ...by,
+      });
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const count = result.data?.updatedCount ?? 0;
+      toast.success(
+        operator?.name
+          ? `Updated ${count} selected item(s) as ${operator.name}`
+          : `Updated ${count} selected item(s)`,
+      );
+      setSelectedIds(new Set());
+      await fetchItems();
+    } catch {
+      toast.error("Failed to update selected items");
+    } finally {
+      setSelectedSaving(false);
+    }
   };
+
+  const periodLabel = useMemo(() => {
+    switch (period) {
+      case "week":
+        return "This week";
+      case "month":
+        return "This month";
+      case "year":
+        return "This year";
+      case "never":
+        return "Never verified";
+      default:
+        return "All items";
+    }
+  }, [period]);
+
+  const colSpan = canEdit ? 9 : 7;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <BarChart2 className="w-5 h-5 text-primary" />
+            <ClipboardCheck className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-foreground">Stock Movement Analysis</h2>
-            <p className="text-sm text-muted-foreground">Fast, Slow, and Dead Stock Analysis</p>
+            <h2 className="text-xl font-semibold text-foreground">Stock Verification</h2>
+            <p className="text-sm text-muted-foreground">
+              Update verification dates per item, selected items, or category
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {canExport && (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV} disabled={loading || filteredItems.length === 0}>
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
-          )}
-          {canPrint && (
-            <PrintPdfButton
-              onPrint={handlePrintPDF}
-              disabled={loading || filteredItems.length === 0}
-              className="gap-1.5 text-primary border-primary hover:bg-primary/10"
-            />
-          )}
-        </div>
+        <Badge variant="outline">{periodLabel}</Badge>
       </div>
 
-      {/* Analysis Configuration */}
-      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <Settings className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-medium text-primary">Analysis Configuration</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="text-xs font-medium text-primary block mb-1.5">Fast Moving (≤ days)</label>
-            <Input
-              type="number"
-              value={fastMovingDays}
-              onChange={(e) => setFastMovingDays(Number(e.target.value))}
-              className="h-9 bg-background"
-              min="1"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Items with activity within these days</p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-primary block mb-1.5">Slow Moving (≥ days)</label>
-            <Input
-              type="number"
-              value={slowMovingDays}
-              onChange={(e) => setSlowMovingDays(Number(e.target.value))}
-              className="h-9 bg-background"
-              min="1"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Items idle for these many days</p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-primary block mb-1.5">Dead Stock (≥ days)</label>
-            <Input
-              type="number"
-              value={deadStockDays}
-              onChange={(e) => setDeadStockDays(Number(e.target.value))}
-              className="h-9 bg-background"
-              min="1"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Items with no movement</p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-primary block mb-1.5">Analysis Period (months)</label>
-            <Input
-              type="number"
-              value={analysisPeriod}
-              onChange={(e) => setAnalysisPeriod(Number(e.target.value))}
-              className="h-9 bg-background"
-              min="1"
-            />
-            <p className="text-xs text-muted-foreground mt-1">Period for turnover calculation</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Fast Moving */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium text-green-600 mb-1">Fast Moving</p>
-              <p className="text-2xl font-bold text-foreground">{stats.fast.count}</p>
-              <p className="text-sm text-green-600 font-medium">{formatCurrency(stats.fast.value)}</p>
-              <p className="text-xs text-green-600">{stats.fast.percentage}% of value</p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        {/* Normal Moving */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium text-yellow-600 mb-1">Normal Moving</p>
-              <p className="text-2xl font-bold text-foreground">{stats.normal.count}</p>
-              <p className="text-sm text-yellow-600 font-medium">{formatCurrency(stats.normal.value)}</p>
-              <p className="text-xs text-yellow-600">{stats.normal.percentage}% of value</p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
-              <BarChart2 className="w-5 h-5 text-yellow-600" />
-            </div>
-          </div>
-        </div>
-
-        {/* Slow Moving */}
+      {canEdit && (
         <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium text-primary mb-1">Slow Moving</p>
-              <p className="text-2xl font-bold text-foreground">{stats.slow.count}</p>
-              <p className="text-sm text-primary font-medium">{formatCurrency(stats.slow.value)}</p>
-              <p className="text-xs text-primary">{stats.slow.percentage}% of value</p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-primary" />
-            </div>
+          <div className="flex items-center gap-2 mb-3">
+            <Layers className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-medium text-primary">
+              Bulk update by category / subcategory
+            </h3>
           </div>
-        </div>
-
-        {/* Dead Stock */}
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <p className="text-xs font-medium text-red-600 mb-1">Dead Stock</p>
-              <p className="text-2xl font-bold text-foreground">{stats.dead.count}</p>
-              <p className="text-sm text-red-600 font-medium">{formatCurrency(stats.dead.value)}</p>
-              <p className="text-xs text-red-600">{stats.dead.percentage}% of value</p>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-              <Ban className="w-5 h-5 text-red-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Stock Details Section */}
-      <div className="bg-card border border-border rounded-lg">
-        {/* Filters Row */}
-        <div className="p-4 border-b border-border">
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-            {/* Tabs */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-foreground">Stock Details</span>
-              <div className="flex items-center gap-1 ml-2">
-                {(["All", "Fast", "Normal", "Slow", "Dead"] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => handleTabChange(tab)}
-                    className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                      activeTab === tab
-                        ? tab === "All"
-                          ? "bg-primary text-primary-foreground"
-                          : tab === "Fast"
-                          ? "bg-green-500 text-white"
-                          : tab === "Normal"
-                          ? "bg-blue-500 text-white"
-                          : tab === "Slow"
-                          ? "bg-amber-500 text-white"
-                          : "bg-red-500 text-white"
-                        : "text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Search and Category Filter */}
-            <div className="flex items-center gap-3 w-full lg:w-auto">
-              <div className="relative flex-1 lg:w-48">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  value={searchTerm}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Search..."
-                  className="pl-9 h-9"
-                />
-              </div>
-              <Select value={categoryFilter} onValueChange={handleCategoryChange}>
-                <SelectTrigger className="w-full lg:w-40 h-9">
-                  <SelectValue placeholder="All Categories" />
+              <Label className="text-xs mb-1.5 block">Category</Label>
+              <Select
+                value={bulkCategoryId || undefined}
+                onValueChange={setBulkCategoryId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Subcategory (optional)</Label>
+              <Select
+                value={bulkSubcategoryId || "all"}
+                onValueChange={(v) => setBulkSubcategoryId(v === "all" ? "" : v)}
+                disabled={!bulkCategoryId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All subcategories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All subcategories</SelectItem>
+                  {bulkSubcategories.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs mb-1.5 block">Verification date</Label>
+              <Input
+                type="date"
+                value={bulkDate}
+                onChange={(e) => setBulkDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                className="w-full"
+                onClick={handleBulkUpdate}
+                disabled={bulkSaving || !bulkCategoryId}
+              >
+                {bulkSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4 mr-2" />
+                )}
+                {bulkSubcategoryId ? "Apply to subcategory" : "Apply to category"}
+              </Button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30">
-                <ListNumberHeader />
-                <TableHead className="text-xs font-medium">PART NO</TableHead>
-                <TableHead className="text-xs font-medium">DESCRIPTION</TableHead>
-                <TableHead className="text-xs font-medium">CATEGORY</TableHead>
-                <TableHead className="text-xs font-medium text-right">QUANTITY</TableHead>
-                <TableHead className="text-xs font-medium text-right">VALUE</TableHead>
-                <TableHead className="text-xs font-medium text-right">DAYS IDLE</TableHead>
-                <TableHead className="text-xs font-medium text-right">TURNOVER</TableHead>
-                <TableHead className="text-xs font-medium text-center">STATUS</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : paginatedItems.length > 0 ? (
-                paginatedItems.map((item, index) => (
-                  <TableRow key={item.id} className="hover:bg-muted/20 transition-colors">
-                    <ListNumberCell
-                      index={index}
-                      page={currentPage}
-                      pageSize={itemsPerPage}
-                      total={filteredItems.length}
-                    />
-                    <TableCell className="text-sm font-medium text-foreground">{item.partNo}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{item.description}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>
-                    <TableCell className="text-sm font-medium text-foreground text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-sm font-medium text-green-600 text-right">{formatCurrency(item.value)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground text-right">{item.daysIdle}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground text-right">{item.turnover}/mo</TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className={cn("text-xs", classificationColors[item.classification])}>
-                        {item.classification === "Fast" ? "Fast Moving" : item.classification === "Slow" ? "Slow Moving" : item.classification}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                    No items found matching your criteria
-                  </TableCell>
-                </TableRow>
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search part no / description..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-full lg:w-48">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={subcategoryFilter}
+          onValueChange={setSubcategoryFilter}
+          disabled={categoryFilter === "all"}
+        >
+          <SelectTrigger className="w-full lg:w-48">
+            <SelectValue placeholder="Subcategory" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All subcategories</SelectItem>
+            {filterSubcategories.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
+          <SelectTrigger className="w-full lg:w-40">
+            <SelectValue placeholder="Period" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="week">This week</SelectItem>
+            <SelectItem value="month">This month</SelectItem>
+            <SelectItem value="year">This year</SelectItem>
+            <SelectItem value="never">Never verified</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={String(itemsPerPage)}
+          onValueChange={(v) => setItemsPerPage(Number(v))}
+        >
+          <SelectTrigger className="w-full lg:w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="25">25</SelectItem>
+            <SelectItem value="50">50</SelectItem>
+            <SelectItem value="100">100</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {canEdit && selectedIds.size > 0 && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 rounded-lg border border-primary/30 bg-card p-3">
+          <Badge variant="secondary">{selectedIds.size} selected</Badge>
+          <Input
+            type="date"
+            className="sm:w-[160px]"
+            value={selectedBulkDate}
+            onChange={(e) => setSelectedBulkDate(e.target.value)}
+          />
+          <Button
+            onClick={() => handleSelectedBulkUpdate()}
+            disabled={selectedSaving}
+          >
+            {selectedSaving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Check className="w-4 h-4 mr-2" />
+            )}
+            Update selected
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleSelectedBulkUpdate(todayLocal())}
+            disabled={selectedSaving}
+          >
+            Mark selected as today
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+            disabled={selectedSaving}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <div className="border rounded-lg overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {canEdit && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={
+                      allPageSelected
+                        ? true
+                        : somePageSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={(v) => toggleSelectAllPage(v === true)}
+                    aria-label="Select all on page"
+                  />
+                </TableHead>
               )}
-            </TableBody>
-          </Table>
-        </div>
+              <ListNumberHeader className={LIST_NUMBER_HEAD_CLASS} />
+              <TableHead>Part No</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Brand</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Subcategory</TableHead>
+              <TableHead>Last verified</TableHead>
+              {canEdit && <TableHead className="w-[280px]">Set date</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={colSpan} className="h-24 text-center">
+                  <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                  Loading...
+                </TableCell>
+              </TableRow>
+            ) : items.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={colSpan}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  No items found for the selected filters
+                </TableCell>
+              </TableRow>
+            ) : (
+              items.map((item, index) => (
+                <TableRow
+                  key={item.id}
+                  data-state={selectedIds.has(item.id) ? "selected" : undefined}
+                >
+                  {canEdit && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(item.id)}
+                        onCheckedChange={(v) =>
+                          toggleSelectOne(item.id, v === true)
+                        }
+                        aria-label={`Select ${item.partNo}`}
+                      />
+                    </TableCell>
+                  )}
+                  <ListNumberCell
+                    className={LIST_NUMBER_CELL_CLASS}
+                    index={index}
+                    page={currentPage}
+                    pageSize={itemsPerPage}
+                    total={total}
+                  />
+                  <TableCell className="font-medium">{item.partNo}</TableCell>
+                  <TableCell className="max-w-[240px] truncate">
+                    {item.description || "—"}
+                  </TableCell>
+                  <TableCell>{item.brand || "—"}</TableCell>
+                  <TableCell>{item.category}</TableCell>
+                  <TableCell>{item.subcategory || "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={item.stockVerifiedAt ? "secondary" : "outline"}>
+                      {formatDisplayDate(item.stockVerifiedAt)}
+                    </Badge>
+                  </TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="date"
+                          className="h-8 w-[150px]"
+                          value={dateDrafts[item.id] || todayLocal()}
+                          onChange={(e) =>
+                            setDateDrafts((prev) => ({
+                              ...prev,
+                              [item.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!!savingIds[item.id]}
+                          onClick={() => handleUpdateItem(item)}
+                        >
+                          {savingIds[item.id] ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={!!savingIds[item.id]}
+                          onClick={() => handleUpdateItem(item, todayLocal())}
+                        >
+                          Today
+                        </Button>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-        {/* Pagination */}
-        <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredItems.length > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredItems.length)} of {filteredItems.length} items
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1 || filteredItems.length === 0}
-            >
-              First
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1 || filteredItems.length === 0}
-            >
-              Prev
-            </Button>
-            <span className="px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded">
-              {currentPage} / {totalPages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || filteredItems.length === 0}
-            >
-              Next
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages || filteredItems.length === 0}
-            >
-              Last
-            </Button>
-            <Select value={String(itemsPerPage)} onValueChange={(v) => { setItemsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="w-20 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="25">25</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {total} item{total === 1 ? "" : "s"}
+          {selectedIds.size > 0 ? ` · ${selectedIds.size} selected` : ""}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1 || loading}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages || loading}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+          >
+            Next
+          </Button>
         </div>
       </div>
     </div>

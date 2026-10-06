@@ -171,7 +171,7 @@ Create DPO with supplier, store, items, and expenses. Can be opened pre-filled f
 - **JV** — Journal
 - **CV** — Contra (cash/bank transfer)
 
-**Chart:** Cash = subgroup **102**, Bank = **103/108**, Cash discount = **701003**.
+**Chart:** Cash = subgroup **102**, Bank = **103/108**, RV discount = **701003**.
 
 Describe a scenario with amounts and I'll give the exact Dr/Cr lines.`,
   },

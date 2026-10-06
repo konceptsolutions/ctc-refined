@@ -638,7 +638,10 @@ export const SalesInvoice = ({
   const navigate = useNavigate();
   const isQuotation = documentKind === "quotation";
   const isTransferOut = documentKind === "transfer-out";
-  const showInquiryViewColumn = isAdminRole() && !isTransferOut;
+  const isAdminUser = isAdminRole();
+  // All invoice/quotation users can open Sales Inquiry; only admins see cost/avg/purchase prices inside it.
+  const showInquiryViewColumn = !isTransferOut;
+  const hideSalesInquiryPrices = !isAdminUser;
   const pageId = isQuotation
     ? "sales.quotation"
     : isTransferOut
@@ -1241,11 +1244,7 @@ export const SalesInvoice = ({
       setSelectedCustomerId("");
       setSelectedCustomerName(draft.customerName || "");
       setInlineItems(mappedItems);
-      setRemarks(
-        draft.inquiryNo
-          ? `Converted from Inquiry ${draft.inquiryNo}`
-          : "Converted from Sales Inquiry",
-      );
+      setRemarks(String(draft.description || "").trim());
       setQuotationStatus("pending");
       setShowBackToInquiry(true);
       sessionStorage.removeItem("salesInquiryConversionDraft");
@@ -1893,8 +1892,12 @@ export const SalesInvoice = ({
     return v != null ? v : null;
   };
 
-  const formatInlinePriceButton = (val: number) =>
-    isTransferOut ? val.toFixed(2) : val.toFixed(0);
+  const formatInlinePriceButton = (val: number) => val.toFixed(0);
+
+  const formatInvoiceMoney = (val: number) =>
+    isTransferOut
+      ? Math.round(Number(val || 0)).toLocaleString("en-PK")
+      : Number(val || 0).toLocaleString();
 
   const lineUnitCostLabel = "Unit Cost";
   const linePriceALabel = isTransferOut ? "Avg Price" : "Price A";
@@ -9089,12 +9092,12 @@ export const SalesInvoice = ({
                             {/* Column 9: Total */}
                             <TableCell className="md:table-cell block p-0 md:p-2 md:text-center align-top font-bold min-w-0">
                               <div className="flex md:flex-col justify-between items-center bg-primary/5 p-3 md:p-0 rounded border border-primary/10 md:border-0 md:bg-transparent">
-                                <span className="md:hidden text-xs font-bold text-primary uppercase">
-                                  Total
-                                </span>
-                                <span className="text-lg md:text-base text-primary">
-                                  Rs {calculateLineTotal(item).toLocaleString()}
-                                </span>
+                                    <span className="md:hidden text-xs font-bold text-primary uppercase">
+                                      Total
+                                    </span>
+                                    <span className="text-lg md:text-base text-primary">
+                                      Rs {formatInvoiceMoney(calculateLineTotal(item))}
+                                    </span>
                                 {partImageSrc ? (
                                   <button
                                     type="button"
@@ -10032,7 +10035,7 @@ export const SalesInvoice = ({
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Amount:</span>
                   <span className="font-medium">
-                    Rs {calculateTotalAmount().toLocaleString()}
+                    Rs {formatInvoiceMoney(calculateTotalAmount())}
                   </span>
                 </div>
                 {!isTransferOut && taxType === "With GST" && (
@@ -10043,59 +10046,59 @@ export const SalesInvoice = ({
                     </div>
                     <div className="flex justify-between text-blue-600">
                       <span>GST Amount:</span>
-                      <span>Rs {calculateTax().toLocaleString()}</span>
+                      <span>Rs {formatInvoiceMoney(calculateTax())}</span>
                     </div>
                     <div className="flex justify-between font-bold text-green-600">
                       <span>Total after GST:</span>
                       <span>
-                        Rs {calculateTotalAfterGst().toLocaleString()}
+                        Rs {formatInvoiceMoney(calculateTotalAfterGst())}
                       </span>
                     </div>
                   </>
                 )}
                 <div className="flex justify-between text-destructive border-t pt-2">
                   <span>Discount:</span>
-                  <span>-Rs {discount.toLocaleString()}</span>
+                  <span>-Rs {formatInvoiceMoney(discount)}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">After Discount:</span>
                   <span className="font-bold">
-                    Rs {calculateAfterDiscount().toLocaleString()}
+                    Rs {formatInvoiceMoney(calculateAfterDiscount())}
                   </span>
                 </div>
                 <div className="flex justify-between text-blue-700 hidden">
                   <span>Freight Charges:</span>
-                  <span>+Rs {freightCharges.toLocaleString()}</span>
+                  <span>+Rs {formatInvoiceMoney(freightCharges)}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 font-bold text-lg">
                   <span>Grand Total:</span>
                   <span className="text-green-600">
-                    Rs {calculateAmountAfterDiscount().toLocaleString()}
+                    Rs {formatInvoiceMoney(calculateAmountAfterDiscount())}
                   </span>
                 </div>
                 {!isQuotation ? (
                 <div className="flex justify-between text-green-600">
                   <span>Received:</span>
-                  <span>Rs {calculateTotalReceived().toLocaleString()}</span>
+                  <span>Rs {formatInvoiceMoney(calculateTotalReceived())}</span>
                 </div>
                 ) : null}
                 {selectedBankAccount && bankAmount > 0 && (
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span className="ml-4"> Bank:</span>
-                    <span>Rs {bankAmount.toLocaleString()}</span>
+                    <span>Rs {formatInvoiceMoney(bankAmount)}</span>
                   </div>
                 )}
                 {selectedCashAccount && cashAmount > 0 && (
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span className="ml-4"> Cash:</span>
-                    <span>Rs {cashAmount.toLocaleString()}</span>
+                    <span>Rs {formatInvoiceMoney(cashAmount)}</span>
                   </div>
                 )}
                 {!isQuotation ? (
                 <div className="flex justify-between border-t pt-2">
                   <span className="font-medium">Due Amount:</span>
                   <span className="text-xl font-bold text-primary">
-                    Rs {calculateDueAmount().toLocaleString()}
+                    Rs {formatInvoiceMoney(calculateDueAmount())}
                   </span>
                 </div>
                 ) : null}
@@ -10832,12 +10835,12 @@ export const SalesInvoice = ({
                             ? `${Number(inv.taxPercentage)}%`
                             : "-"}
                         </TableCell>
-                        <TableCell className="md:table-cell block p-0 md:p-4 md:text-right font-medium">
-                          <span className="md:hidden text-xs text-muted-foreground block mb-1">
-                            Total
-                          </span>
-                          Rs {inv.grandTotal.toLocaleString()}
-                        </TableCell>
+                          <TableCell className="md:table-cell block p-0 md:p-4 md:text-right font-medium">
+                            <span className="md:hidden text-xs text-muted-foreground block mb-1">
+                              Total
+                            </span>
+                            Rs {formatInvoiceMoney(inv.grandTotal)}
+                          </TableCell>
                         {!isQuotation && !isTransferOut ? (
                           <TableCell className="md:table-cell block p-0 md:p-4">
                             <span className="md:hidden text-xs text-muted-foreground block mb-1">
@@ -11469,12 +11472,16 @@ export const SalesInvoice = ({
                           )}
                           <TableCell className="text-center">
                             {item.unitPrice
-                              ? item.unitPrice.toFixed(2)
-                              : "0.00"}
+                              ? isTransferOut
+                                ? Math.round(item.unitPrice).toFixed(0)
+                                : item.unitPrice.toFixed(2)
+                              : isTransferOut
+                                ? "0"
+                                : "0.00"}
                           </TableCell>
-                          <TableCell className="text-right">
-                            Rs {item.lineTotal.toFixed(2)}
-                          </TableCell>
+                            <TableCell className="text-right">
+                              Rs {formatInvoiceMoney(item.lineTotal)}
+                            </TableCell>
                           {!isQuotation ? (
                           <TableCell className="text-center">
                             {selectedInvoice.customerType === "registered" &&
@@ -11535,11 +11542,11 @@ export const SalesInvoice = ({
                 <div className="text-right">
                   <p className="text-sm text-muted-foreground">Sub Total</p>
                   <p className="text-base font-semibold">
-                    Rs {(selectedInvoice.subtotal || 0).toLocaleString()}
+                    Rs {formatInvoiceMoney(selectedInvoice.subtotal || 0)}
                   </p>
                   <p className="text-sm text-muted-foreground">Discount</p>
                   <p className="text-base font-semibold text-primary">
-                    Rs {(selectedInvoice.overallDiscount || 0).toLocaleString()}
+                    Rs {formatInvoiceMoney(selectedInvoice.overallDiscount || 0)}
                   </p>
                   {Number(selectedInvoice.tax || 0) > 0 && (
                     <>
@@ -11551,17 +11558,17 @@ export const SalesInvoice = ({
                           : ""}
                       </p>
                       <p className="text-base font-semibold">
-                        Rs {Number(selectedInvoice.tax || 0).toLocaleString()}
+                        Rs {formatInvoiceMoney(Number(selectedInvoice.tax || 0))}
                       </p>
                     </>
                   )}
                   <p className="text-sm text-muted-foreground">Grand Total</p>
                   <p className="text-2xl font-bold text-primary">
-                    Rs {selectedInvoice.grandTotal.toLocaleString()}
+                    Rs {formatInvoiceMoney(selectedInvoice.grandTotal)}
                   </p>
                   {!isQuotation ? (
                   <p className="text-sm text-muted-foreground">
-                    Paid: Rs {selectedInvoice.paidAmount.toLocaleString()}
+                    Paid: Rs {formatInvoiceMoney(selectedInvoice.paidAmount)}
                   </p>
                   ) : null}
                 </div>
@@ -13299,6 +13306,7 @@ export const SalesInvoice = ({
                   initialPartId={salesInquiryPopupPartId}
                   linkedLineId={salesInquiryPopupLineId}
                   hideShortcuts
+                  hidePrices={hideSalesInquiryPrices}
                   embeddedPopup
                   onPartReplaced={handleSalesInquiryPartReplaced}
                   onActivePartChange={handleSalesInquiryActivePartChange}

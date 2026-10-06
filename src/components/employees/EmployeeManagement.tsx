@@ -134,19 +134,29 @@ const formatDate = (value?: string | null) => formatUiDate(value) || "—";
 const todayDateMax = () => getCurrentDatePakistan();
 const currentMonthMax = () => getCurrentDatePakistan().slice(0, 7);
 
+/** Latest selectable payroll month is the previous calendar month (current month blocked). */
+const previousMonthMax = () => {
+  const [yearStr, monthStr] = currentMonthMax().split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return currentMonthMax();
+  const prev = new Date(year, month - 2, 1);
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+};
+
 const isFutureDate = (value?: string | null) => {
   const v = String(value || "").trim();
   if (!v) return false;
   return v > todayDateMax();
 };
 
-const isFutureMonth = (value?: string | null) => {
+const isCurrentOrFutureMonth = (value?: string | null) => {
   const v = String(value || "").trim();
   if (!v) return false;
-  return v > currentMonthMax();
+  return v >= currentMonthMax();
 };
 
-const getCurrentPayrollMonth = () => currentMonthMax();
+const getDefaultPayrollMonth = () => previousMonthMax();
 
 export const EmployeeManagement = () => {
   const { toast } = useToast();
@@ -168,7 +178,7 @@ export const EmployeeManagement = () => {
   const [txEmployee, setTxEmployee] = useState<EmployeeRow | null>(null);
   const [txType, setTxType] = useState<string>("salary_payment");
   const [txDate, setTxDate] = useState(() => getCurrentDatePakistan());
-  const [txPayrollMonth, setTxPayrollMonth] = useState(() => getCurrentPayrollMonth());
+  const [txPayrollMonth, setTxPayrollMonth] = useState(() => getDefaultPayrollMonth());
   const [txAmount, setTxAmount] = useState("");
   const [txWorkingDays, setTxWorkingDays] = useState("26");
   const [txAbsentDays, setTxAbsentDays] = useState("");
@@ -353,7 +363,7 @@ export const EmployeeManagement = () => {
     setTxEmployee(employee);
     setTxType(type);
     setTxDate(getCurrentDatePakistan());
-    setTxPayrollMonth(getCurrentPayrollMonth());
+    setTxPayrollMonth(getDefaultPayrollMonth());
     setTxAmount("");
     setTxWorkingDays(String(Number(employee.workingDays || 26)));
     setTxAbsentDays("0");
@@ -527,11 +537,12 @@ export const EmployeeManagement = () => {
 
     if (
       (txType === "salary_accrual" || txType === "salary_payment") &&
-      isFutureMonth(txPayrollMonth)
+      isCurrentOrFutureMonth(txPayrollMonth)
     ) {
       toast({
         title: "Validation",
-        description: "Payroll month cannot be in the future.",
+        description:
+          "Payroll month cannot be the current or a future month. Select a previous month.",
         variant: "destructive",
       });
       return;
@@ -1082,7 +1093,7 @@ export const EmployeeManagement = () => {
                 <Label>Payroll Month</Label>
                 <Input
                   type="month"
-                  max={currentMonthMax()}
+                  max={previousMonthMax()}
                   value={txPayrollMonth}
                   onChange={(e) => setTxPayrollMonth(e.target.value)}
                 />

@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import prisma from "../config/database";
 import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
+import { isCashBankAccount } from "../utils/cashBankMode";
 import { randomUUID } from "crypto";
 
 const router = express.Router();
@@ -1146,7 +1147,7 @@ router.get("/payment-accounts", async (_req: Request, res: Response) => {
       where: {
         status: "Active",
         OR: [
-          { Subgroup: { code: { in: ["102", "103", "108"] } } },
+          { Subgroup: { code: { in: ["102", "103"] } } },
           {
             Subgroup: {
               name: { contains: "cash", mode: "insensitive" },
@@ -1169,7 +1170,10 @@ router.get("/payment-accounts", async (_req: Request, res: Response) => {
       orderBy: { code: "asc" },
     });
 
-    res.json({ data: accounts });
+    // Exclude staff loan / advance / drawings even if name loosely matches
+    const paymentAccounts = accounts.filter((acc) => isCashBankAccount(acc));
+
+    res.json({ data: paymentAccounts });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

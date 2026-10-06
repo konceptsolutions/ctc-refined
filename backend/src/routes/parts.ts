@@ -455,7 +455,19 @@ const buildKitOperationDetails = async (kitPartId: string) => {
           type: "single",
           status: "active",
         },
-        select: { id: true, partNo: true },
+        select: {
+          id: true,
+          partNo: true,
+          description: true,
+          cost: true,
+          avgCost: true,
+          purchasePrice: true,
+          priceA: true,
+          priceB: true,
+          origin: true,
+          MasterPart: { select: { masterPartNo: true } },
+          Brand: { select: { name: true } },
+        },
       })
     : [];
 
@@ -466,6 +478,12 @@ const buildKitOperationDetails = async (kitPartId: string) => {
           id: true,
           partNo: true,
           description: true,
+          cost: true,
+          avgCost: true,
+          purchasePrice: true,
+          priceA: true,
+          priceB: true,
+          origin: true,
           MasterPart: { select: { masterPartNo: true } },
           Brand: { select: { name: true } },
         },
@@ -481,6 +499,7 @@ const buildKitOperationDetails = async (kitPartId: string) => {
   const stockByPartId = await getCurrentStockByPartIds(stockPartIds);
 
   const stockByPartNo = new Map<string, number>();
+  const legacyByPartNo = new Map<string, (typeof legacyParts)[number]>();
   legacyParts.forEach((row) => {
     const partNo = String(row.partNo || "").trim();
     if (!partNo) return;
@@ -488,6 +507,7 @@ const buildKitOperationDetails = async (kitPartId: string) => {
       partNo,
       (stockByPartNo.get(partNo) || 0) + Number(stockByPartId.get(row.id) || 0),
     );
+    if (!legacyByPartNo.has(partNo)) legacyByPartNo.set(partNo, row);
   });
 
   const kitItems = kitItemRows
@@ -495,31 +515,75 @@ const buildKitOperationDetails = async (kitPartId: string) => {
       const cid = kitComponentPartId(row);
       const linked = cid ? componentById.get(cid) : undefined;
       const legacyMatch = !cid
-        ? legacyParts.find((p) => p.partNo === row.partNo)
+        ? legacyByPartNo.get(String(row.partNo || "").trim())
         : undefined;
       const itemPartId = cid || legacyMatch?.id || "";
       if (!itemPartId) return null;
 
-      const partNo = linked?.partNo || String(row.partNo || "").trim();
+      const partNo =
+        linked?.partNo || legacyMatch?.partNo || String(row.partNo || "").trim();
       const stock = cid
         ? Number(stockByPartId.get(cid) || 0)
         : Number(stockByPartNo.get(partNo) || 0);
+      const costCandidates = [
+        linked?.cost,
+        linked?.avgCost,
+        linked?.purchasePrice,
+        legacyMatch?.cost,
+        legacyMatch?.avgCost,
+        legacyMatch?.purchasePrice,
+        row.costPerUnit,
+      ];
+      const unitCost =
+        costCandidates
+          .map((v) => Number(v))
+          .find((n) => Number.isFinite(n) && n > 0) ??
+        costCandidates
+          .map((v) => Number(v))
+          .find((n) => Number.isFinite(n)) ??
+        0;
+      const priceA = Number(
+        linked?.priceA ?? legacyMatch?.priceA ?? 0,
+      );
+      const priceB = Number(
+        linked?.priceB ?? legacyMatch?.priceB ?? 0,
+      );
 
       return {
         item_part_id: itemPartId,
-        master_part_no: linked?.MasterPart?.masterPartNo || "",
+        master_part_no:
+          linked?.MasterPart?.masterPartNo ||
+          legacyMatch?.MasterPart?.masterPartNo ||
+          "",
         item_part_no: partNo,
         item_description:
-          linked?.description || row.partName || partNo,
-        brand_name: linked?.Brand?.name || "",
+          linked?.description ||
+          legacyMatch?.description ||
+          row.partName ||
+          partNo,
+        brand_name: linked?.Brand?.name || legacyMatch?.Brand?.name || "",
+        origin: linked?.origin || legacyMatch?.origin || "",
         quantity: Math.max(1, Number(row.quantity || 1)),
         stock,
+        cost: unitCost,
+        cost_per_unit: Number(row.costPerUnit || 0),
+        price_a: priceA,
+        price_b: priceB,
       };
     })
     .filter(Boolean);
 
   return {
     kit_stock: Number(stockByPartId.get(kitPartId) || 0),
+    kit_cost: Number(kitPart.cost ?? kitPart.avgCost ?? kitPart.purchasePrice ?? 0),
+    kit_avg_cost: Number(kitPart.avgCost ?? kitPart.cost ?? 0),
+    kit_price_a: Number(kitPart.priceA ?? 0),
+    kit_price_b: Number(kitPart.priceB ?? 0),
+    // camelCase aliases for clients that normalize keys
+    kitCost: Number(kitPart.cost ?? kitPart.avgCost ?? kitPart.purchasePrice ?? 0),
+    kitAvgCost: Number(kitPart.avgCost ?? kitPart.cost ?? 0),
+    kitPriceA: Number(kitPart.priceA ?? 0),
+    kitPriceB: Number(kitPart.priceB ?? 0),
     kit_items: kitItems,
   };
 };
@@ -2687,6 +2751,21 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Quantity must be at least 1" });
     }
 
+    const parseOptionalPrice = (value: unknown) => {
+      if (value === undefined || value === null || value === "") return undefined;
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? n : undefined;
+    };
+    const overrideCost = parseOptionalPrice(
+      req.body?.cost ?? req.body?.cost_price,
+    );
+    const overridePriceA = parseOptionalPrice(
+      req.body?.priceA ?? req.body?.price_a,
+    );
+    const overridePriceB = parseOptionalPrice(
+      req.body?.priceB ?? req.body?.price_b,
+    );
+
     const kitPart = await prisma.part.findUnique({
       where: { id },
       include: { KitItem: true },
@@ -2946,7 +3025,12 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
 
       await tx.part.update({
         where: { id },
-        data: { avgCost: newKitAvg },
+        data: {
+          avgCost: newKitAvg,
+          ...(overrideCost !== undefined ? { cost: overrideCost } : {}),
+          ...(overridePriceA !== undefined ? { priceA: overridePriceA } : {}),
+          ...(overridePriceB !== undefined ? { priceB: overridePriceB } : {}),
+        },
       });
     });
 
@@ -2961,6 +3045,9 @@ router.post("/:id/make-kit", async (req: Request, res: Response) => {
         current_stock_before: currentKitStock,
         avg_cost_before: currentKitAvg,
         avg_cost_after: newKitAvg,
+        cost: overrideCost ?? kitPart.cost ?? null,
+        price_a: overridePriceA ?? kitPart.priceA ?? null,
+        price_b: overridePriceB ?? kitPart.priceB ?? null,
       },
     });
   } catch (error: any) {

@@ -5612,7 +5612,13 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           : savedOrderConversionRate > 0
             ? savedOrderConversionRate
             : 1;
-    const isReceived = String(order.status || "").trim().toLowerCase() === "received";
+    const statusLowerForLoad = String(order.status || "").trim().toLowerCase();
+    // After Purchase Import / Invoice has been saved, always trust DB receive qty
+    // (including explicit 0) instead of falling back to order qty.
+    const importAlreadySaved =
+      statusLowerForLoad === "purchase invoice pending" ||
+      statusLowerForLoad === "stock receiving pending" ||
+      statusLowerForLoad === "received";
 
     const baseItems = order.PurchaseOrderItem.map((poItem) => {
       const partId = String(poItem.partId);
@@ -5630,12 +5636,34 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       const requestItem = requestItemByPartId.get(partId);
       const orderQty = Number(poItem.quantity) || 0;
       const savedFcRate = Number((poItem as any).fcRate || 0);
-      const useSavedAmounts = isReceived || savedFcRate > 0;
+      const savedReceivedQty = Math.max(0, Math.floor(Number(poItem.receivedQty) || 0));
+      const savedBackQty = Number((poItem as any).backQty || 0);
+      const savedAdditionalQty = Number((poItem as any).additionalQty || 0);
+      // Treat as saved once receive qty / variance / rates were written (including receive=0)
+      const useSavedAmounts =
+        importAlreadySaved ||
+        savedFcRate > 0 ||
+        savedReceivedQty > 0 ||
+        savedBackQty > 0 ||
+        savedAdditionalQty > 0;
       const partPriceA = Number(poItem.Part?.priceA || 0);
       const partPriceB = Number(poItem.Part?.priceB || 0);
 
       if (useSavedAmounts) {
-        const receiveQty = Number(poItem.receivedQty) || orderQty;
+        // Keep explicit 0 — do not fall back to orderQty (0 means nothing received).
+        // If receivedQty was historically coerced to orderQty but back/additional
+        // still reflect the real variance, rebuild receive from those fields.
+        const rawReceiveQty = Math.max(0, Math.floor(Number(poItem.receivedQty) || 0));
+        const varianceReceive = Math.max(
+          0,
+          orderQty - savedBackQty + savedAdditionalQty,
+        );
+        const receiveQty =
+          (savedBackQty > 0 || savedAdditionalQty > 0) &&
+          rawReceiveQty === orderQty &&
+          varianceReceive !== rawReceiveQty
+            ? varianceReceive
+            : rawReceiveQty;
         return {
           id: poItem.id,
           partId,

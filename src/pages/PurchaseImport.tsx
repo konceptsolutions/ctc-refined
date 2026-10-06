@@ -10923,10 +10923,30 @@ const PurchaseOrderTab = ({
       );
       const lines = (orderData.items || []).map((item: any) => {
         const orderQty = Number(item.orderQty ?? item.quantity) || 0;
-        const existingReceive =
-          Number(item.receivedQty ?? item.received_qty) > 0
-            ? Number(item.receivedQty ?? item.received_qty)
-            : orderQty;
+        const savedReceiveRaw = item.receivedQty ?? item.received_qty;
+        const savedReceiveNum = Math.max(0, Math.floor(Number(savedReceiveRaw) || 0));
+        const savedBackQty = Number(item.backQty ?? item.back_qty ?? 0) || 0;
+        const savedAdditionalQty =
+          Number(item.additionalQty ?? item.additional_qty ?? 0) || 0;
+        // After import/invoice save, keep explicit receive qty (including 0).
+        // Only default to order qty for never-saved lines.
+        const receiveWasRecorded =
+          detailImportSaved ||
+          savedReceiveNum > 0 ||
+          savedBackQty > 0 ||
+          savedAdditionalQty > 0 ||
+          Number(item.fcRate || 0) > 0;
+        // Prefer variance fields when present — guards against APIs that coerce
+        // receivedQty 0 → orderQty while still returning the real backQty.
+        const varianceReceive = Math.max(
+          0,
+          orderQty - savedBackQty + savedAdditionalQty,
+        );
+        const existingReceive = !receiveWasRecorded
+          ? orderQty
+          : savedBackQty > 0 || savedAdditionalQty > 0
+            ? varianceReceive
+            : savedReceiveNum;
         const variance = computeImportReceiveVariance(orderQty, existingReceive);
         const fcRate = roundFc(item.fcRate || 0);
         const lcRate = roundImportWhole(
@@ -12242,15 +12262,40 @@ const PurchaseOrderTab = ({
                         invoiceLc,
                         conversionRate,
                       );
+                const viewImportSaved = isImportPurchaseOrderSaved({
+                  importSaved: viewOrder.importSaved,
+                  status: viewOrder.status,
+                });
                 const viewDistributedExpenses = isInvoiceMode
                   ? computeImportPoDistributedExpenses(
                       viewItems.map((row: any) => {
-                        const rowReceived = Number(
-                          row.receivedQty ?? row.received_qty ?? 0,
-                        );
                         const rowOrder = Number(row.orderQty ?? row.quantity ?? 0);
+                        const rowReceivedRaw = row.receivedQty ?? row.received_qty;
+                        const rowReceivedNum = Math.max(
+                          0,
+                          Math.floor(Number(rowReceivedRaw) || 0),
+                        );
+                        const rowBackQty = Number(row.backQty ?? row.back_qty ?? 0);
+                        const rowAdditionalQty = Number(
+                          row.additionalQty ?? row.additional_qty ?? 0,
+                        );
+                        const rowHasReceiveRecord =
+                          viewImportSaved ||
+                          rowReceivedNum > 0 ||
+                          rowBackQty > 0 ||
+                          rowAdditionalQty > 0 ||
+                          Number(row.fcRate || 0) > 0;
+                        const varianceReceive = Math.max(
+                          0,
+                          rowOrder - rowBackQty + rowAdditionalQty,
+                        );
+                        const receiveQty = !rowHasReceiveRecord
+                          ? rowOrder
+                          : rowBackQty > 0 || rowAdditionalQty > 0
+                            ? varianceReceive
+                            : rowReceivedNum;
                         return {
-                          receiveQty: rowReceived > 0 ? rowReceived : rowOrder,
+                          receiveQty,
                           weight: Number(row.weight || 0),
                         };
                       }),
@@ -12292,8 +12337,11 @@ const PurchaseOrderTab = ({
                   <tbody>
                     {viewItems.map((item: any, itemIndex: number) => {
                       const orderQty = Number(item.orderQty ?? item.quantity ?? 0);
-                      const receivedQty = Number(
-                        item.receivedQty ?? item.received_qty ?? 0,
+                      const receivedQty = Math.max(
+                        0,
+                        Math.floor(
+                          Number(item.receivedQty ?? item.received_qty ?? 0) || 0,
+                        ),
                       );
                       const additionalQty = Number(
                         item.additionalQty ?? item.additional_qty ?? 0,
@@ -12314,7 +12362,24 @@ const PurchaseOrderTab = ({
                           item.total_cost ??
                           lcRate * orderQty,
                       );
-                      const qtyForCost = receivedQty > 0 ? receivedQty : orderQty;
+                      const receiveWasRecorded =
+                        viewImportSaved ||
+                        receivedQty > 0 ||
+                        backQty > 0 ||
+                        additionalQty > 0 ||
+                        fcRate > 0;
+                      const varianceReceive = Math.max(
+                        0,
+                        orderQty - backQty + additionalQty,
+                      );
+                      const displayReceived = !receiveWasRecorded
+                        ? orderQty
+                        : backQty > 0 || additionalQty > 0
+                          ? varianceReceive
+                          : receivedQty;
+                      const qtyForCost = receiveWasRecorded
+                        ? displayReceived
+                        : orderQty;
                       const distributedExpense = roundImportMoney(
                         viewDistributedExpenses[itemIndex] ?? 0,
                       );
@@ -12359,7 +12424,7 @@ const PurchaseOrderTab = ({
                           />
                         </td>
                         <td className="p-2 text-right tabular-nums">{orderQty}</td>
-                        <td className="p-2 text-right tabular-nums">{receivedQty}</td>
+                        <td className="p-2 text-right tabular-nums">{displayReceived}</td>
                         <td className="p-2 text-right tabular-nums">
                           {additionalQty > 0 ? additionalQty : "-"}
                         </td>
@@ -12893,18 +12958,20 @@ const PurchaseOrderTab = ({
                   {receiveLines.length > 0 ? (
                     <tfoot>
                       <tr className="bg-muted/40 font-semibold border-t">
-                        <td className="p-2" />
-                        <td className="p-2">Totals</td>
                         {isInvoiceMode ? (
                           <>
+                            <td className="p-2" />
+                            <td className="p-2">Totals</td>
                             <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
                               {receiveTotals.receiveQty}
                             </td>
                             <td className="p-2" />
+                            <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                               {formatFcTotal(receiveTotals.fcAmount)}
                             </td>
+                            <td className="p-2" />
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                               {formatImportPoWhole(receiveTotals.lcAmount)}
@@ -12940,18 +13007,25 @@ const PurchaseOrderTab = ({
                           </>
                         ) : (
                           <>
-                            <td className="p-2" colSpan={3} />
+                            <td className="p-2" />
+                            <td className="p-2">Totals</td>
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
                             <td className="p-2 text-right tabular-nums">
                               {receiveTotals.orderQty}
                             </td>
                             <td className="p-2 text-right tabular-nums">
                               {receiveTotals.receiveQty}
                             </td>
-                            <td className="p-2" colSpan={2} />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
                               {formatFcTotal(receiveTotals.fcAmount)}
                             </td>
+                            <td className="p-2" />
                             <td className="p-2" />
                             <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                               {formatImportPoWhole(receiveTotals.lcAmount)}

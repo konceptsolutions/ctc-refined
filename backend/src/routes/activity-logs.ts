@@ -158,11 +158,20 @@ router.get("/", async (req, res) => {
     ]);
 
     const formattedLogs = logs.map((log) => {
-      let details: Record<string, string> | undefined;
+      let details: Record<string, unknown> | undefined;
       try {
-        details = log.details ? JSON.parse(log.details) : undefined;
+        if (!log.details) {
+          details = undefined;
+        } else if (typeof log.details === "object") {
+          details = log.details as Record<string, unknown>;
+        } else {
+          details = JSON.parse(String(log.details));
+        }
       } catch {
-        details = undefined;
+        details =
+          typeof log.details === "string" && log.details.trim()
+            ? { raw: String(log.details) }
+            : undefined;
       }
 
       const timestamp =

@@ -67,7 +67,7 @@ const tabs: TabConfig[] = [
   { id: "stock-in-out", label: "Stock Movement", icon: ArrowRightLeft, description: "Record stock movements", permission: "page.inventory.stock-in-out" },
   { id: "adjust-item", label: "Adjust Item", icon: Settings2, description: "Stock quantity adjustments", permission: "page.inventory.adjust-item" },
   { id: "multi-dimensional", label: "Multi-Dimensional", icon: Layers, description: "Multi-dimensional analysis", permission: "page.inventory.multi-dimensional" },
-  { id: "stock-analysis", label: "Stock Analysis", icon: Activity, description: "Fast, slow & dead stock", permission: "page.inventory.stock-analysis" },
+  { id: "stock-analysis", label: "Stock Verification", icon: Activity, description: "Verify stock dates by item/category", permission: "page.inventory.stock-analysis" },
   { id: "local-inquiry", label: "Local Inquiry", icon: ClipboardCheck, description: "Local purchase inquiries", permission: "page.inventory.local-inquiry" },
   { id: "direct-purchase-order", label: "Local Purchase", icon: FileText, description: "Local purchase orders", permission: "page.inventory.direct-purchase-order" },
   { id: "dpo-return", label: "LPO Return", icon: Undo2, description: "Manage LPO returns", permission: "page.inventory.dpo-return" },

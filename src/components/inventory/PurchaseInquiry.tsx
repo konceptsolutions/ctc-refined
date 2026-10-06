@@ -812,13 +812,6 @@ export const PurchaseInquiry = ({
     [activePartId, activatePart],
   );
 
-  const handleAddItem = useCallback(() => {
-    setPartSearch("");
-    setSearchResults([]);
-    setShowDropdown(false);
-    requestAnimationFrame(() => searchInputRef.current?.focus());
-  }, []);
-
   const handleRemoveItem = useCallback(
     (partId: string) => {
       const remaining = items.filter((p) => p.id !== partId);
@@ -1159,12 +1152,6 @@ export const PurchaseInquiry = ({
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-lg">Purchase Inquiry</CardTitle>
-            {canCreate && (
-              <Button type="button" size="sm" className="h-8 gap-1.5" onClick={handleAddItem}>
-                <Plus className="w-4 h-4" />
-                Add Item
-              </Button>
-            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2194,7 +2181,6 @@ export const PurchaseInquiry = ({
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
               <Search className="w-10 h-10 mb-3 opacity-30" />
               <p className="text-sm">Search for a part to view purchase inquiry details</p>
-              <p className="text-xs mt-1">Use Add Item to inquire multiple parts</p>
             </div>
           )}
 
