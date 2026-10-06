@@ -9483,10 +9483,12 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                 storeId: movementStoreId,
                 rackId: movementRackId,
                 shelfId: movementShelfId,
-                referenceType: "direct_purchase",
+                referenceType: isTransferIn ? "transfer_in" : "direct_purchase",
                 referenceId: dpoId,
                 supplierId: supplier_id,
-                notes: `Direct Purchase Order: ${dpo_number}`,
+                notes: isTransferIn
+                  ? `Transfer In: ${dpo_number}`
+                  : `Direct Purchase Order: ${dpo_number}`,
               } as any,
             });
 
@@ -10226,7 +10228,11 @@ router.put(
           if (isApprovedStatus(newStatus)) {
             // Re-create stock movements. Delete existing movements first to avoid duplication
             const oldMovements = await tx.stockMovement.findMany({
-              where: { referenceType: "direct_purchase", referenceId: id, type: "in" },
+              where: {
+                referenceType: { in: ["direct_purchase", "transfer_in"] },
+                referenceId: id,
+                type: "in",
+              },
             });
             // Reverse old direct purchase impact from PartRackShelf
             for (const mv of oldMovements) {
@@ -10251,7 +10257,10 @@ router.put(
               }
             }
             await tx.stockMovement.deleteMany({
-              where: { referenceType: "direct_purchase", referenceId: id },
+              where: {
+                referenceType: { in: ["direct_purchase", "transfer_in"] },
+                referenceId: id,
+              },
             });
 
             for (const item of sourceItems) {
@@ -10284,10 +10293,12 @@ router.put(
                   storeId: movementStoreId,
                   rackId: movementRackId,
                   shelfId: movementShelfId,
-                  referenceType: "direct_purchase",
+                  referenceType: isTransferIn ? "transfer_in" : "direct_purchase",
                   referenceId: id,
                   supplierId: supplier_id || existingOrder.supplierId,
-                  notes: `Updated DPO: ${dpo_number || existingOrder.dpoNumber}`,
+                  notes: isTransferIn
+                    ? `Updated Transfer In: ${dpo_number || existingOrder.dpoNumber}`
+                    : `Updated DPO: ${dpo_number || existingOrder.dpoNumber}`,
                 } as any,
               });
 
@@ -10876,7 +10887,7 @@ router.delete(
       // Delete associated stock movements
       await prisma.stockMovement.deleteMany({
         where: {
-          referenceType: "direct_purchase",
+          referenceType: { in: ["direct_purchase", "transfer_in"] },
           referenceId: id,
         },
       });

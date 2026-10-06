@@ -187,6 +187,37 @@ export const AI_DB_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "get_top_customers_by_sales",
+      description:
+        "Rank customers by total sales amount for a date range. Use for questions like maximum/top/highest sale customer, best customer, customer ranking by sales — NEVER guess from a partial invoice list.",
+      parameters: {
+        type: "object",
+        properties: {
+          dateFrom: {
+            type: "string",
+            description: "Start date YYYY-MM-DD (required for month/period questions)",
+          },
+          dateTo: {
+            type: "string",
+            description: "End date YYYY-MM-DD inclusive",
+          },
+          limit: {
+            type: "number",
+            description: "How many top customers to return (default 10, max 50)",
+          },
+          order: {
+            type: "string",
+            enum: ["desc", "asc"],
+            description: "desc = highest sales first (default), asc = lowest first",
+          },
+        },
+        required: ["dateFrom", "dateTo"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "export_data",
       description:
         "Create a downloadable Excel (.xlsx) or PDF file from live ERP data or a custom table. Use when the user asks for PDF/Excel/export/report/download. Prefer entity+filters for live data; or pass columns+rows from prior tool results.",
@@ -241,6 +272,26 @@ function parseDate(v?: string): Date | undefined {
   if (!v) return undefined;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/** Parse YYYY-MM-DD (or ISO) as local calendar day start/end — avoids UTC off-by-one. */
+function parseDateBound(v: string | undefined, endOfDay: boolean): Date | undefined {
+  if (!v) return undefined;
+  const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    const dt = endOfDay
+      ? new Date(y, mo, d, 23, 59, 59, 999)
+      : new Date(y, mo, d, 0, 0, 0, 0);
+    return Number.isNaN(dt.getTime()) ? undefined : dt;
+  }
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return undefined;
+  if (endOfDay) d.setHours(23, 59, 59, 999);
+  else d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 function contains(q: string) {
@@ -419,8 +470,8 @@ async function queryErp(args: {
   const paymentStatus = args.paymentStatus
     ? String(args.paymentStatus).trim()
     : "";
-  const dateFrom = parseDate(args.dateFrom);
-  const dateTo = parseDate(args.dateTo);
+  const dateFrom = parseDateBound(args.dateFrom, false) ?? parseDate(args.dateFrom);
+  const dateTo = parseDateBound(args.dateTo, true) ?? parseDate(args.dateTo);
 
   switch (entity) {
     case "customers": {
@@ -1214,6 +1265,113 @@ async function toolGetInvoiceDetail(args: {
   };
 }
 
+const SALES_RANK_STATUSES = [
+  "approved",
+  "partially_delivered",
+  "fully_delivered",
+  "delivered",
+  "return",
+];
+
+async function toolGetTopCustomersBySales(args: {
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  order?: string;
+}) {
+  const from = parseDateBound(args.dateFrom, false);
+  const to = parseDateBound(args.dateTo, true);
+  if (!from || !to) {
+    return {
+      found: false,
+      message: "Provide dateFrom and dateTo as YYYY-MM-DD.",
+    };
+  }
+  if (from.getTime() > to.getTime()) {
+    return { found: false, message: "dateFrom must be on or before dateTo." };
+  }
+
+  const take = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
+  const orderDesc = String(args.order || "desc").toLowerCase() !== "asc";
+
+  const invoices = await prisma.salesInvoice.findMany({
+    where: {
+      invoiceDate: { gte: from, lte: to },
+      status: { in: SALES_RANK_STATUSES },
+      customerType: { not: "transfer" },
+      NOT: { customerName: { contains: "demo", mode: "insensitive" } },
+    },
+    select: {
+      customerId: true,
+      customerName: true,
+      grandTotal: true,
+      Customer: { select: { id: true, name: true, code: true } },
+    },
+  });
+
+  const map = new Map<
+    string,
+    {
+      customerId: string | null;
+      customerName: string;
+      customerCode: string | null;
+      invoiceCount: number;
+      totalSales: number;
+    }
+  >();
+
+  for (const inv of invoices) {
+    const name =
+      (inv.Customer?.name || inv.customerName || "Unknown").trim() || "Unknown";
+    const key = inv.customerId
+      ? `id:${inv.customerId}`
+      : `name:${name.toLowerCase()}`;
+    const existing = map.get(key);
+    const amount = Number(inv.grandTotal) || 0;
+    if (existing) {
+      existing.invoiceCount += 1;
+      existing.totalSales = money(existing.totalSales + amount);
+    } else {
+      map.set(key, {
+        customerId: inv.customerId || inv.Customer?.id || null,
+        customerName: name,
+        customerCode: inv.Customer?.code || null,
+        invoiceCount: 1,
+        totalSales: money(amount),
+      });
+    }
+  }
+
+  const ranked = Array.from(map.values()).sort((a, b) =>
+    orderDesc ? b.totalSales - a.totalSales : a.totalSales - b.totalSales,
+  );
+
+  const top = ranked.slice(0, take).map((row, i) => ({
+    rank: i + 1,
+    ...row,
+  }));
+
+  const periodTotal = money(
+    ranked.reduce((sum, r) => sum + r.totalSales, 0),
+  );
+
+  return {
+    found: true,
+    period: {
+      dateFrom: args.dateFrom,
+      dateTo: args.dateTo,
+    },
+    customerCount: ranked.length,
+    invoiceCount: invoices.length,
+    periodTotalSales: periodTotal,
+    topCustomers: top,
+    note:
+      ranked.length === 0
+        ? "No sales invoices in this period (transfers/demo excluded)."
+        : undefined,
+  };
+}
+
 async function toolExportData(args: {
   format?: string;
   title?: string;
@@ -1351,6 +1509,13 @@ export async function executeAiDbTool(
         return await toolGetInvoiceDetail({
           invoiceId: args.invoiceId ? String(args.invoiceId) : undefined,
           invoiceNo: args.invoiceNo ? String(args.invoiceNo) : undefined,
+        });
+      case "get_top_customers_by_sales":
+        return await toolGetTopCustomersBySales({
+          dateFrom: args.dateFrom != null ? String(args.dateFrom) : undefined,
+          dateTo: args.dateTo != null ? String(args.dateTo) : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+          order: args.order != null ? String(args.order) : undefined,
         });
       case "export_data":
         return await toolExportData({

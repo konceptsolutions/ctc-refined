@@ -3301,6 +3301,24 @@ class ApiClient {
     return this.request(`/reports/dashboard/recent-activity${queryParams}`);
   }
 
+  async getTopCustomersBySales(params: {
+    from_date: string;
+    to_date: string;
+    limit?: number;
+    order?: "asc" | "desc";
+  }) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value) !== "") {
+        queryParams.append(key, String(value));
+      }
+    });
+    const queryString = queryParams.toString();
+    return this.request(
+      `/reports/sales/top-customers${queryString ? `?${queryString}` : ""}`,
+    );
+  }
+
   async getSalesReport(params?: {
     from_date?: string;
     to_date?: string;

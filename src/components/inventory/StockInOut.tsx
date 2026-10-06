@@ -640,6 +640,29 @@ export const StockInOut = () => {
             const actualQty = isReserved ? 0 : movement.quantity || 0;
 
             if (
+              referenceType.includes("transfer_out") ||
+              (referenceType.includes("transfer") && type === "out" &&
+                !referenceType.includes("transfer_in"))
+            ) {
+              transaction = "Stock Out by Transfer Out";
+            } else if (
+              referenceType.includes("transfer_in") ||
+              (referenceType.includes("transfer") && type === "in")
+            ) {
+              transaction = "Stock In by Transfer In";
+            } else if (
+              referenceType.includes("location_transfer") ||
+              (!referenceType &&
+                String(movement.notes || "")
+                  .toLowerCase()
+                  .includes("transfer"))
+            ) {
+              // Location / rack-shelf transfers historically had null referenceType
+              transaction =
+                type === "in"
+                  ? "Stock In by Location Transfer"
+                  : "Stock Out by Location Transfer";
+            } else if (
               referenceType.includes("dpo") ||
               referenceType.includes("direct_purchase") ||
               referenceType.includes("direct purchase")
@@ -663,11 +686,6 @@ export const StockInOut = () => {
                 type === "in"
                   ? "Stock In by Adjustment"
                   : "Stock Out by Adjustment";
-            } else if (referenceType.includes("transfer")) {
-              transaction =
-                type === "in"
-                  ? "Stock In by Transfer"
-                  : "Stock Out by Transfer";
             } else if (
               referenceType.includes("purchase_order") ||
               referenceType.includes("purchase order")

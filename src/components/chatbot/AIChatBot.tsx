@@ -45,6 +45,8 @@ import {
   isCustomerWiseReportQuery,
   isCustomerWiseItemAnalyticsQuery,
   isCustomerWiseInvoiceReportQuery,
+  isTopCustomerSalesQuery,
+  parseTopCustomerSalesQuery,
   parseCustomerTypeFromText,
   parseReportDateRange,
   parseItemReportSpecFromQuery,
@@ -402,6 +404,10 @@ const AIChatBot: React.FC = () => {
 
     if (isCustomerWiseReportQuery(message)) {
       return { type: 'customer_wise_report', data: { query: message }, confidence: 0.98 };
+    }
+
+    if (isTopCustomerSalesQuery(message)) {
+      return { type: 'top_customer_sales', data: { query: message }, confidence: 0.98 };
     }
     const poCreationKeywords = [
       'create purchase order', 'create me purchase order', 'create po', 'make purchase order',
@@ -2314,6 +2320,94 @@ const AIChatBot: React.FC = () => {
     [conversationFlow, finalizeCustomerWiseReport],
   );
 
+  const handleTopCustomerSalesQuery = useCallback(
+    async (query: string) => {
+      const parsed = parseTopCustomerSalesQuery(query);
+      if (!parsed) {
+        setIsTyping(false);
+        return;
+      }
+
+      try {
+        setIsTyping(true);
+        const response: any = await apiClient.getTopCustomersBySales({
+          from_date: parsed.from,
+          to_date: parsed.to,
+          limit: parsed.limit,
+          order: parsed.order,
+        });
+        const payload = response?.data ?? response;
+        const rows: Array<{
+          rank: number;
+          customerName: string;
+          customerCode?: string | null;
+          invoiceCount: number;
+          totalSales: number;
+        }> = Array.isArray(payload?.topCustomers)
+          ? payload.topCustomers
+          : Array.isArray(payload?.data?.topCustomers)
+            ? payload.data.topCustomers
+            : [];
+
+        const invoiceCount =
+          payload?.invoiceCount ?? payload?.data?.invoiceCount ?? 0;
+        const periodTotal =
+          payload?.periodTotalSales ?? payload?.data?.periodTotalSales ?? 0;
+
+        const formatRs = (n: number) =>
+          Number(n || 0).toLocaleString('en-PK', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+
+        let content: string;
+        if (!rows.length) {
+          content = `No sales invoices found for **${parsed.label}** (${parsed.from} to ${parsed.to}).`;
+        } else {
+          const winner = rows[0];
+          const direction =
+            parsed.order === 'asc' ? 'Lowest' : 'Highest';
+          const list = rows
+            .map(
+              (r) =>
+                `${r.rank}. **${r.customerName}**${
+                  r.customerCode ? ` (${r.customerCode})` : ''
+                } — Rs ${formatRs(r.totalSales)} · ${r.invoiceCount} invoice(s)`,
+            )
+            .join('\n');
+          content =
+            `🏆 **${direction} sale customer — ${parsed.label}**\n\n` +
+            `**${winner.customerName}** with **Rs ${formatRs(winner.totalSales)}** ` +
+            `(${winner.invoiceCount} invoice${winner.invoiceCount === 1 ? '' : 's'}).\n\n` +
+            `Top ${rows.length}:\n${list}\n\n` +
+            `_Period total: Rs ${formatRs(Number(periodTotal))} across ${invoiceCount} invoice(s)._`;
+        }
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (err: any) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content:
+            err?.message ||
+            'Could not load top customers by sales. Please try again.',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+      } finally {
+        setIsTyping(false);
+        setTimeout(() => scrollToBottom(true), 200);
+      }
+    },
+    [scrollToBottom],
+  );
+
   const startCustomerWiseSalesFlow = useCallback(
     (query: string) => {
       const range =
@@ -2489,7 +2583,8 @@ const AIChatBot: React.FC = () => {
         if (
           isSalesAnalyticsStyleQuery(currentInput) ||
           isItemAnalyticsReportQuery(currentInput) ||
-          isCustomerWiseReportQuery(currentInput)
+          isCustomerWiseReportQuery(currentInput) ||
+          isTopCustomerSalesQuery(currentInput)
         ) {
           setConversationFlow({ type: null, step: 0, data: {} });
         } else {
@@ -2505,6 +2600,11 @@ const AIChatBot: React.FC = () => {
 
       if (isCustomerWiseReportQuery(currentInput)) {
         startCustomerWiseSalesFlow(currentInput);
+        return;
+      }
+
+      if (isTopCustomerSalesQuery(currentInput)) {
+        await handleTopCustomerSalesQuery(currentInput);
         return;
       }
 
@@ -2559,6 +2659,11 @@ const AIChatBot: React.FC = () => {
 
       if (intent.type === 'customer_wise_report') {
         startCustomerWiseSalesFlow(currentInput);
+        return;
+      }
+
+      if (intent.type === 'top_customer_sales') {
+        await handleTopCustomerSalesQuery(currentInput);
         return;
       }
 
@@ -2773,7 +2878,7 @@ const AIChatBot: React.FC = () => {
       setTimeout(() => scrollToBottom(true), 200);
       toast.error('AI service unavailable. Check LongCat API settings.');
     }
-  }, [input, messages, processUserIntent, generateSmartResponse, getSystemPrompt, navigate, longCatConfigured, scrollToBottom, conversationFlow, handlePurchaseOrderCreationFlow, handlePurchaseOrderReceivingFlow, handleItemAnalyticsReportRequest, handleCustomerWiseFlowResponse, startCustomerWiseSalesFlow, handleCustomerLastInvoiceQuery, handleCustomerLastInvoiceFlowResponse, handleCustomerSelectedForLastInvoice, handleItemStockQuery, handleItemStockFlowResponse, handleItemSelectedForStock]);
+  }, [input, messages, processUserIntent, generateSmartResponse, getSystemPrompt, navigate, longCatConfigured, scrollToBottom, conversationFlow, handlePurchaseOrderCreationFlow, handlePurchaseOrderReceivingFlow, handleItemAnalyticsReportRequest, handleCustomerWiseFlowResponse, startCustomerWiseSalesFlow, handleTopCustomerSalesQuery, handleCustomerLastInvoiceQuery, handleCustomerLastInvoiceFlowResponse, handleCustomerSelectedForLastInvoice, handleItemStockQuery, handleItemStockFlowResponse, handleItemSelectedForStock]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

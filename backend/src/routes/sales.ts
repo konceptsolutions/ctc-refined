@@ -4239,6 +4239,11 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
           "Cannot record stock out on an invoice with sales returns (return / partially return).",
       });
     }
+    // Branch transfer-out must not look like a normal sales invoice on Stock Movement.
+    const stockRefType =
+      String(invoice.customerType || "").toLowerCase() === "transfer"
+        ? "transfer_out"
+        : "sales_invoice";
     // Delivery can be recorded for both Cash Sale (walking) and Party Sale (registered) invoices
     // Validate request items
     for (const item of items) {
@@ -4367,7 +4372,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
                 storeId: null,
                 rackId: null,
                 shelfId: null,
-                referenceType: "sales_invoice",
+                referenceType: stockRefType,
                 referenceId: id,
                 notes: `Delivery - Invoice ${invoice.invoiceNo} (unallocated stock out)`,
               } as any,
@@ -4397,7 +4402,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
                 storeId: prs.storeId,
                 rackId: prs.rackId,
                 shelfId: prs.shelfId,
-                referenceType: "sales_invoice",
+                referenceType: stockRefType,
                 referenceId: id,
                 notes: `Delivery - Invoice ${invoice.invoiceNo} (stock out)`,
               } as any,
@@ -4457,7 +4462,7 @@ router.post("/invoices/:id/delivery", async (req: Request, res: Response) => {
                 storeId: reservation.storeId,
                 rackId: reservation.rackId,
                 shelfId: reservation.shelfId,
-                referenceType: "sales_invoice",
+                referenceType: stockRefType,
                 referenceId: id,
                 notes: `Delivery - Invoice ${invoice.invoiceNo}`,
               } as any,
@@ -4982,7 +4987,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         const outMovements = await prisma.stockMovement.findMany({
           where: {
             type: "out",
-            referenceType: "sales_invoice",
+            referenceType: { in: ["sales_invoice", "transfer_out"] },
             referenceId: id,
           } as any,
         });
@@ -5008,7 +5013,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         await prisma.stockMovement.deleteMany({
           where: {
             type: "out",
-            referenceType: "sales_invoice",
+            referenceType: { in: ["sales_invoice", "transfer_out"] },
             referenceId: id,
           } as any,
         });
@@ -5089,7 +5094,10 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
               shelfId: loc.shelfId,
               type: "out",
               quantity: loc.quantity,
-              referenceType: "sales_invoice",
+              referenceType:
+                String(invoice.customerType || "").toLowerCase() === "transfer"
+                  ? "transfer_out"
+                  : "sales_invoice",
               referenceId: id,
               notes: `Invoice ${invoice.invoiceNo} placed on hold`,
             } as any,
@@ -5104,7 +5112,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
       const holdMovements = await prisma.stockMovement.findMany({
         where: {
           type: "out",
-          referenceType: "sales_invoice",
+          referenceType: { in: ["sales_invoice", "transfer_out"] },
           referenceId: id,
           notes: { contains: "placed on hold" },
         } as any,
@@ -5132,7 +5140,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
       await prisma.stockMovement.deleteMany({
         where: {
           type: "out",
-          referenceType: "sales_invoice",
+          referenceType: { in: ["sales_invoice", "transfer_out"] },
           referenceId: id,
           notes: { contains: "placed on hold" },
         } as any,
@@ -5163,14 +5171,14 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
       }
 
       const existingOut = await prisma.stockMovement.findFirst({
-        where: { referenceType: "sales_invoice", referenceId: id, type: "out" },
+        where: { referenceType: { in: ["sales_invoice", "transfer_out"] }, referenceId: id, type: "out" },
       });
       // On approve we do NOT keep stock out. Stock goes out only when delivery is recorded.
       // If we're approving from on_hold, restore PartRackShelf and remove "out" movements so stock is only out on delivery.
       if (existingOut && status === "approved") {
         const outMovements = await prisma.stockMovement.findMany({
           where: {
-            referenceType: "sales_invoice",
+            referenceType: { in: ["sales_invoice", "transfer_out"] },
             referenceId: id,
             type: "out",
           } as any,
@@ -5193,7 +5201,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
         }
         await prisma.stockMovement.deleteMany({
           where: {
-            referenceType: "sales_invoice",
+            referenceType: { in: ["sales_invoice", "transfer_out"] },
             referenceId: id,
             type: "out",
           } as any,
@@ -5216,7 +5224,7 @@ router.put("/invoices/:id/status", async (req: Request, res: Response) => {
           await prisma.stockMovement.deleteMany({
             where: {
               type: "hold",
-              referenceType: "sales_invoice",
+              referenceType: { in: ["sales_invoice", "transfer_out"] },
               referenceId: id,
             } as any,
           });

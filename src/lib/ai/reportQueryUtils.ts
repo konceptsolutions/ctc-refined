@@ -115,11 +115,13 @@ export function parseReportDateRange(query: string): ReportDateRange | null {
   const fyRange = parsePakistanFinancialYearFromQuery(q);
   if (fyRange) return fyRange;
 
+  const pakistanYear = parseInt(getCurrentDatePakistan().slice(0, 4), 10);
+
   for (let i = 0; i < MONTHS.length; i += 1) {
     const monthPattern = new RegExp(`\\b(${MONTHS[i]}|${MONTH_SHORT[i]})\\b`, "i");
     if (monthPattern.test(q)) {
       const yearMatch = q.match(/\b(20\d{2})\b/);
-      const year = yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+      const year = yearMatch ? parseInt(yearMatch[1], 10) : pakistanYear;
       const from = new Date(year, i, 1);
       const to = new Date(year, i + 1, 0);
       const label = `${MONTHS[i].charAt(0).toUpperCase()}${MONTHS[i].slice(1)} ${year}`;
@@ -466,6 +468,41 @@ export function isCustomerWiseReportQuery(query: string): boolean {
   return (
     isCustomerWiseItemAnalyticsQuery(query) || isCustomerWiseInvoiceReportQuery(query)
   );
+}
+
+/**
+ * "maximum sale customer", "top customer by sales", "highest sales customer in September"
+ * — ranking across customers (not the interactive single-customer report flow).
+ */
+export function isTopCustomerSalesQuery(query: string): boolean {
+  if (isCustomerWiseReportQuery(query)) return false;
+  const q = normalizeQueryForMatching(query);
+  if (!/\bcustomer\b/.test(q)) return false;
+
+  const hasRank =
+    /\b(maximum|max|highest|top|best|lowest|least|minimum|min)\b/.test(q) ||
+    /\bmost\s+(sale|sales)\b/.test(q);
+
+  const hasSales =
+    /\b(sale|sales|revenue|turnover)\b/.test(q) ||
+    /\bselling\b/.test(q);
+
+  return hasRank && hasSales;
+}
+
+export function parseTopCustomerSalesQuery(
+  query: string,
+): (ReportDateRange & { order: "asc" | "desc"; limit: number }) | null {
+  if (!isTopCustomerSalesQuery(query)) return null;
+  const range =
+    parseReportDateRange(query) ?? getCurrentPakistanFinancialYearRange();
+  const q = normalizeQueryForMatching(query);
+  const order: "asc" | "desc" =
+    /\b(lowest|least|minimum|min|bottom|worst)\b/.test(q) &&
+    !/\b(maximum|max|highest|top|best|most)\b/.test(q)
+      ? "asc"
+      : "desc";
+  return { ...range, order, limit: 5 };
 }
 
 export function parseCustomerWiseItemAnalyticsQuery(

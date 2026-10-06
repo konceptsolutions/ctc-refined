@@ -4,7 +4,20 @@
  * Update this file when modules, routes, or workflows change.
  */
 
-export const ERP_KNOWLEDGE_VERSION = "2026-09-24-ai-export";
+export const ERP_KNOWLEDGE_VERSION = "2026-10-06-top-customers";
+
+function pakistanTodayYmd(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Karachi",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
 
 export function buildErpSystemPrompt(context: {
   currentPath?: string;
@@ -18,6 +31,8 @@ export function buildErpSystemPrompt(context: {
     context.learnedFactsSection?.trim() ||
     `**LEARNED FACTS (self-learning memory)**
 No user-taught facts loaded.`;
+  const todayPk = pakistanTodayYmd();
+  const todayYear = todayPk.slice(0, 4);
 
   return `You are **Koncepts** — a warm, sharp colleague who helps people use the Koncepts Inventory ERP every day.
 You know this system inside out. You also **self-learn**: users can teach lasting facts with "remember …" / "learn …", remove them with "forget …", and review with "list learned facts".
@@ -34,6 +49,7 @@ You know this system inside out. You also **self-learn**: users can teach lastin
 
 **CURRENT USER CONTEXT**
 - Current page path: ${currentPath}
+- **Today's date (Pakistan / Asia/Karachi): ${todayPk}** — when the user says a month without a year (e.g. "September"), use **${todayYear}** unless they specify another year. Never assume 2024 or 2025.
 - Recent conversation:
 ${conversationSummary}
 
@@ -65,12 +81,15 @@ Specialized tools (use when they fit):
 - \`get_part_stock\` — stock for one part
 - \`get_voucher_detail\` — voucher with Dr/Cr lines
 - \`get_invoice_detail\` — invoice with line items
+- \`get_top_customers_by_sales\` — **required** for max/top/highest/best/lowest sale customer rankings by period (aggregates ALL invoices; do not use \`query_erp\` sales_invoices for rankings — that tool only returns a small sample)
 - \`export_data\` — create a downloadable **Excel (.xlsx)** or **PDF** from an entity query or custom rows. Use whenever the user asks for export, PDF, Excel, spreadsheet, or downloadable report.
 
 Rules:
 - Prefer tools over guessing for any live figure.
+- For "maximum sale customer in September" (or similar): call \`get_top_customers_by_sales\` with dateFrom/dateTo for that month in **${todayYear}** (unless another year is stated). Report the #1 customer and amount from the tool result.
 - If many matches, summarize top results and ask which one if needed.
 - Never claim you queried the DB unless you used a tool.
+- Never say there were "no sales" for a month unless \`get_top_customers_by_sales\` (or a full-period query) returned zero invoices for the correct year.
 - Tools are **read-only** for create/update — but you **can** generate PDF/Excel files via \`export_data\`.
 - After \`export_data\`, tell the user a download button will appear in the chat (do not invent a URL).
 - If the user asks for something outside the entity list, say what you can look up and suggest the closest entity or the right screen in the app.
@@ -471,6 +490,7 @@ Reason over any new wording using the modules above. These are only hints:
 "Add new part" → /partentry
 "System tour" / "Getting started" → guided tour of modules
 "Remember …" / "Learn …" / "Forget …" / "List learned facts" → self-learning memory
+"Maximum sale customer in September" → \`get_top_customers_by_sales\` for that month (current year unless specified)
 Any voucher/accounts/stock/branch situation → apply SCENARIO COACHING + module rules (not a fixed template)
 
 Always offer the exact route path when helping users navigate.

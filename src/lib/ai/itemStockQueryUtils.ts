@@ -3,6 +3,7 @@ import {
   containsItemMetricPhrase,
   containsReportIntentPhrase,
 } from "@/lib/ai/queryNormalize";
+import { isTopCustomerSalesQuery } from "@/lib/ai/reportQueryUtils";
 
 const GENERIC_PART_PLACEHOLDERS = new Set([
   "",
@@ -30,6 +31,7 @@ export function isGenericPartPlaceholder(term: string): boolean {
 
 /** Sales / analytics questions must not be treated as single-item stock lookup. */
 export function isSalesAnalyticsStyleQuery(query: string): boolean {
+  if (isTopCustomerSalesQuery(query)) return false;
   const q = normalizeQueryForMatching(query);
   if (containsItemMetricPhrase(query) && containsReportIntentPhrase(query)) {
     return true;

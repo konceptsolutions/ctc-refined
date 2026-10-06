@@ -816,6 +816,98 @@ router.get('/dashboard/recent-activity', async (req: Request, res: Response) => 
   }
 });
 
+// Top customers by sales amount (for AI / rankings)
+router.get('/sales/top-customers', async (req: Request, res: Response) => {
+  try {
+    const { from_date, to_date, limit = '10', order = 'desc' } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ error: 'from_date and to_date are required.' });
+    }
+
+    const fromDate = new Date(String(from_date));
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(String(to_date));
+    toDate.setHours(23, 59, 59, 999);
+
+    const take = Math.min(Math.max(parseInt(String(limit), 10) || 10, 1), 50);
+    const orderDesc = String(order).toLowerCase() !== 'asc';
+
+    const invoices = await prisma.salesInvoice.findMany({
+      where: {
+        invoiceDate: { gte: fromDate, lte: toDate },
+        status: { in: SALES_REPORT_INVOICE_STATUSES },
+        customerType: { not: 'transfer' },
+        NOT: { customerName: { contains: 'demo', mode: 'insensitive' } },
+      },
+      select: {
+        customerId: true,
+        customerName: true,
+        grandTotal: true,
+        Customer: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    const map = new Map<
+      string,
+      {
+        customerId: string | null;
+        customerName: string;
+        customerCode: string | null;
+        invoiceCount: number;
+        totalSales: number;
+      }
+    >();
+
+    for (const inv of invoices) {
+      const name =
+        (inv.Customer?.name || inv.customerName || 'Unknown').trim() || 'Unknown';
+      const key = inv.customerId
+        ? `id:${inv.customerId}`
+        : `name:${name.toLowerCase()}`;
+      const amount = Number(inv.grandTotal) || 0;
+      const existing = map.get(key);
+      if (existing) {
+        existing.invoiceCount += 1;
+        existing.totalSales = Math.round((existing.totalSales + amount) * 100) / 100;
+      } else {
+        map.set(key, {
+          customerId: inv.customerId || inv.Customer?.id || null,
+          customerName: name,
+          customerCode: inv.Customer?.code || null,
+          invoiceCount: 1,
+          totalSales: Math.round(amount * 100) / 100,
+        });
+      }
+    }
+
+    const ranked = Array.from(map.values()).sort((a, b) =>
+      orderDesc ? b.totalSales - a.totalSales : a.totalSales - b.totalSales,
+    );
+
+    const topCustomers = ranked.slice(0, take).map((row, i) => ({
+      rank: i + 1,
+      ...row,
+    }));
+
+    const periodTotalSales = Math.round(
+      ranked.reduce((sum, r) => sum + r.totalSales, 0) * 100,
+    ) / 100;
+
+    res.json({
+      data: {
+        topCustomers,
+        customerCount: ranked.length,
+        invoiceCount: invoices.length,
+        periodTotalSales,
+      },
+      meta: { from_date, to_date, order: orderDesc ? 'desc' : 'asc' },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Sales Report
 // Sales Report — invoice list from SalesInvoice (not purchases)
 router.get('/sales', async (req: Request, res: Response) => {
