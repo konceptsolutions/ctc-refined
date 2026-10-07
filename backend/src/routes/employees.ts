@@ -12,6 +12,7 @@ import {
   getEmployeeAccountByRole,
   postEmployeeVoucher,
   reverseEmployeeVoucher,
+  rebuildAccountBalanceFromPostedEntries,
   postOpeningBalanceJv,
   type EmployeeAccountRole,
 } from "../utils/employeeAccounting";
@@ -1310,6 +1311,23 @@ router.delete("/payroll-transactions/:txId", async (req: Request, res: Response)
       await reverseEmployeeVoucher(existing.voucherId);
     }
 
+    // Ensure employee salary payable / loan / advance match remaining vouchers
+    // even if the accrual JV somehow missed an account line.
+    const employeeLedgers = await prisma.account.findMany({
+      where: {
+        employeeId: existing.employeeId,
+        employeeAccountRole: { in: ["salary_payable", "loan", "advance"] },
+      },
+      select: { id: true, employeeAccountRole: true },
+    });
+    const balanceByRole: Record<string, number> = {};
+    for (const ledger of employeeLedgers) {
+      const bal = await rebuildAccountBalanceFromPostedEntries(ledger.id);
+      if (ledger.employeeAccountRole) {
+        balanceByRole[ledger.employeeAccountRole] = Number(bal ?? 0);
+      }
+    }
+
     await prisma.employeeTransaction.delete({ where: { id: existing.id } });
 
     res.json({
@@ -1318,6 +1336,9 @@ router.delete("/payroll-transactions/:txId", async (req: Request, res: Response)
         payrollMonth: payrollMonthKey,
         employeeId: existing.employeeId,
         employeeName: existing.Employee?.name || null,
+        salaryPayableBalance: balanceByRole.salary_payable ?? 0,
+        loanBalance: balanceByRole.loan ?? 0,
+        advanceBalance: balanceByRole.advance ?? 0,
       },
     });
   } catch (error: any) {

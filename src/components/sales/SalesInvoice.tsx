@@ -7093,10 +7093,8 @@ export const SalesInvoice = ({
       0,
       Number(printInvoice.grandTotal || 0) - Number(printInvoice.paidAmount || 0),
     );
-    // Bal. B/F is outstanding BEFORE this invoice. Total Receivable is
-    // outstanding after it. Never add current amount on top of a balance
-    // that already includes this invoice (that printed 7,000 on a 3,500 bill).
-    const explicitPrevBalance = Number(invoiceMeta.previousBalance ?? NaN);
+    // Total Receivable = customer's current outstanding balance.
+    // Bal. B/F = that balance with this invoice's amount excluded.
     const customerCurrentBalanceFromInvoice = Number(
       invoiceMeta.customerBalance ?? NaN,
     );
@@ -7113,21 +7111,11 @@ export const SalesInvoice = ({
     )
       ? customerCurrentBalanceFromInvoice
       : customerCurrentBalanceFromState;
-    let balBf = 0;
-    if (
-      Number.isFinite(explicitPrevBalance) &&
-      Number.isFinite(customerCurrentBalance) &&
-      Math.abs(explicitPrevBalance - customerCurrentBalance) < 0.01
-    ) {
-      balBf = Math.max(0, customerCurrentBalance - invoiceDue);
-    } else if (Number.isFinite(explicitPrevBalance)) {
-      balBf = Math.max(0, explicitPrevBalance);
-    } else if (Number.isFinite(customerCurrentBalance)) {
-      balBf = Math.max(0, customerCurrentBalance - invoiceDue);
-    }
+
     const totalReceivable = Number.isFinite(customerCurrentBalance)
-      ? Math.max(0, customerCurrentBalance)
-      : balBf + currentAmount;
+      ? customerCurrentBalance
+      : currentAmount;
+    const balBf = totalReceivable - invoiceDue;
     const currentAmountWords = numberToWords(currentAmount);
     const linesBeforeCurrentAmount =
       (discountAmount > 0 ? 1 : 0) +

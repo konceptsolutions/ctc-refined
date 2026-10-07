@@ -283,28 +283,81 @@ export async function applyBalanceChange(
   });
 }
 
-/** Reverse posted balances and remove a system employee voucher. */
+/**
+ * Rebuild one account's currentBalance from opening + posted voucher lines.
+ * Matches Chart of Accounts recalculate-balances (cleared / non-cheque only).
+ */
+export async function rebuildAccountBalanceFromPostedEntries(accountId: string) {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    include: { Subgroup: { include: { MainGroup: true } } },
+  });
+  if (!account?.Subgroup?.MainGroup) return null;
+
+  const entries = await prisma.voucherEntry.findMany({
+    where: {
+      accountId,
+      Voucher: {
+        status: "posted",
+        OR: [{ isCleared: null }, { isCleared: 1 }],
+      },
+    },
+    select: { debit: true, credit: true },
+  });
+
+  const totalDebit = entries.reduce((sum, e) => sum + Number(e.debit || 0), 0);
+  const totalCredit = entries.reduce((sum, e) => sum + Number(e.credit || 0), 0);
+  const accountType = account.Subgroup.MainGroup.type.toLowerCase();
+  const opening = Number(account.openingBalance || 0);
+  const isDebitNormal =
+    accountType === "asset" ||
+    accountType === "expense" ||
+    accountType === "cost";
+  const calculatedBalance = isDebitNormal
+    ? opening + totalDebit - totalCredit
+    : opening + totalCredit - totalDebit;
+
+  await prisma.account.update({
+    where: { id: accountId },
+    data: {
+      currentBalance: calculatedBalance,
+      updatedAt: new Date(),
+    },
+  });
+
+  return calculatedBalance;
+}
+
+/**
+ * Remove a system employee voucher and rebuild every affected ledger balance
+ * (salary payable, expense, advance/loan recoveries, cash/bank, etc.).
+ */
 export async function reverseEmployeeVoucher(voucherId: string) {
   const voucher = await prisma.voucher.findUnique({
     where: { id: voucherId },
     include: {
       VoucherEntry: {
-        select: { accountId: true, debit: true, credit: true },
+        select: { accountId: true },
       },
     },
   });
   if (!voucher) return;
 
-  if (voucher.status === "posted") {
-    for (const entry of voucher.VoucherEntry) {
-      if (!entry.accountId) continue;
-      // Swap debit/credit to reverse the original balance effect
-      await applyBalanceChange(entry.accountId, entry.credit, entry.debit);
-    }
-  }
+  const accountIds = [
+    ...new Set(
+      voucher.VoucherEntry.map((e) => e.accountId).filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ];
 
   await prisma.voucherEntry.deleteMany({ where: { voucherId } });
   await prisma.voucher.delete({ where: { id: voucherId } });
+
+  // Authoritative rebuild — salary payable must drop when unpaid accrual JV is removed
+  for (const accountId of accountIds) {
+    await rebuildAccountBalanceFromPostedEntries(accountId);
+  }
 }
 
 type VoucherEntryInput = {
