@@ -7469,6 +7469,7 @@ const isQuotationPurchaseImportSaved = (
     const status = String(po.status || "")
       .trim()
       .toLowerCase();
+    // Confirm already writes fcRate onto PO lines — that alone must not block unconfirm.
     if (
       status === "purchase invoice pending" ||
       status === "stock receiving pending" ||
@@ -7477,7 +7478,7 @@ const isQuotationPurchaseImportSaved = (
       return true;
     }
     return (po.PurchaseOrderItem || []).some(
-      (item) => Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+      (item) => Number(item.receivedQty || 0) > 0,
     );
   });
 

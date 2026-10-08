@@ -4969,6 +4969,8 @@ function isImportPurchaseOrderSavedForUnconfirm(order: {
   const status = String(order.status || "")
     .trim()
     .toLowerCase();
+  // Confirm already writes fcRate onto PO lines — that alone must not block unconfirm.
+  // Block only after Purchase Import / Invoice has progressed past Pending.
   if (
     status === "purchase invoice pending" ||
     status === "stock receiving pending" ||
@@ -4977,7 +4979,7 @@ function isImportPurchaseOrderSavedForUnconfirm(order: {
     return true;
   }
   return (order.PurchaseOrderItem || []).some(
-    (item) => Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+    (item) => Number(item.receivedQty || 0) > 0,
   );
 }
 
@@ -5764,8 +5766,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       statusLower === "stock receiving pending" ||
       statusLower === "received" ||
       (order.PurchaseOrderItem || []).some(
-        (item: any) =>
-          Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+        (item: any) => Number(item.receivedQty || 0) > 0,
       );
 
     const forwarderValue =
@@ -5880,13 +5881,14 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         : "import";
 
     const currentStatus = String(order.status || "").trim().toLowerCase();
+    // Confirm writes fcRate at PO create — use status / receivedQty as the import-saved signal.
     const hasImportData = (order.PurchaseOrderItem || []).some(
-      (item: any) =>
-        Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
+      (item: any) => Number(item.receivedQty || 0) > 0,
     );
     const importReady =
       currentStatus === "purchase invoice pending" ||
       currentStatus === "stock receiving pending" ||
+      currentStatus === "received" ||
       hasImportData;
 
     if (receiveStage === "invoice" && !importReady) {
@@ -6471,10 +6473,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
           String(po.status || "")
             .trim()
             .toLowerCase() === "received" ||
-          items.some(
-            (item: any) =>
-              Number(item.fcRate || 0) > 0 || Number(item.receivedQty || 0) > 0,
-          );
+          items.some((item: any) => Number(item.receivedQty || 0) > 0);
         return {
         id: po.id,
         poNumber: po.poNumber,
