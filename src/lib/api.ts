@@ -3165,6 +3165,7 @@ class ApiClient {
         partId?: string;
         receiveQty: number;
         fcRate: number;
+        weight?: number;
         priceA?: number;
         priceB?: number;
       }>;
@@ -3215,6 +3216,7 @@ class ApiClient {
           partId: item.partId,
           receiveQty: item.receiveQty,
           fcRate: item.fcRate,
+          weight: item.weight,
           priceA: item.priceA,
           priceB: item.priceB,
         })),

@@ -63,7 +63,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { printPurchaseImportQuotation, printPurchaseImportUnquotedItems } from "@/utils/printPurchaseImportQuotationPdf";
-import { WEIGHT_INPUT_STEP, formatWeightDisplay, roundWeight } from "@/utils/weightRound";
+import {
+  WEIGHT_INPUT_STEP,
+  formatWeightDisplay,
+  formatWeightInput,
+  roundWeight,
+} from "@/utils/weightRound";
 import { printPurchaseImportQuotationComparison } from "@/utils/printPurchaseImportQuotationComparisonPdf";
 import { printPurchaseImportOrder } from "@/utils/printPurchaseImportOrderPdf";
 import { apiClient } from "@/lib/api";
@@ -74,6 +79,18 @@ import {
   LIST_NUMBER_HEAD_CLASS,
   LIST_NUMBER_CELL_CLASS,
 } from "@/components/ui/list-table-number";
+
+/** Text shown in weight inputs; keeps trailing "." while typing. */
+const toWeightText = (weight: number): string => {
+  const n = roundWeight(weight);
+  if (!Number.isFinite(n) || n === 0) return "";
+  return formatWeightDisplay(n);
+};
+
+const parseWeightText = (text: string): number => {
+  if (!text || text === "." || text.trim() === "") return 0;
+  return roundWeight(Math.max(0, Number(text) || 0));
+};
 
 type PurchaseImportTab =
   | "inquiry"
@@ -426,6 +443,7 @@ type ImportPurchaseOrderReceiveLine = {
   lcRate: number;
   lcAmount: number;
   weight: number;
+  weightText: string;
   totalWeight: number;
   priceA: number;
   priceB: number;
@@ -1690,6 +1708,7 @@ const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
   lcRate: 0,
   lcAmount: 0,
   weight: 0,
+  weightText: "",
   totalWeight: 0,
   priceA: 0,
   priceB: 0,
@@ -8514,6 +8533,7 @@ type PurchaseQuotationConfirmRow = {
   lcRate: number;
   lcAmount: number;
   weight: number;
+  weightText: string;
   totalWeight: number;
   khiQuantity: number;
   isbQuantity: number;
@@ -8664,6 +8684,7 @@ const buildConfirmRowsFromQuotationDetail = (
       fcRateText: formatFcRateInput(amounts.fcRate),
       lcRate: amounts.lcRate,
       weight,
+      weightText: toWeightText(weight),
       ...split,
       fcAmount: amounts.fcAmount,
       lcAmount: amounts.lcAmount,
@@ -8994,13 +9015,15 @@ const PurchaseQuotationConfirmForm = ({
   };
 
   const handleConfirmWeightChange = (rowId: string, rawValue: string) => {
+    const weightText = formatWeightInput(rawValue);
+    const weight = parseWeightText(weightText);
     setRows((prev) =>
       prev.map((row) => {
         if (row.rowId !== rowId) return row;
-        const weight = roundWeight(Math.max(0, Number(rawValue) || 0));
         return {
           ...row,
           weight,
+          weightText,
           ...recalcConfirmRowAmounts(
             {
               fcRate: row.fcRate,
@@ -9009,6 +9032,18 @@ const PurchaseQuotationConfirmForm = ({
             },
             parsedConversionRate,
           ),
+        };
+      }),
+    );
+  };
+
+  const handleConfirmWeightBlur = (rowId: string) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.rowId !== rowId) return row;
+        return {
+          ...row,
+          weightText: toWeightText(row.weight),
         };
       }),
     );
@@ -9809,12 +9844,12 @@ const PurchaseQuotationConfirmForm = ({
                       <span className="tabular-nums">{formatWeightDisplay(row.weight || 0, { fixed: true })}</span>
                     ) : (
                       <Input
-                        type="number"
-                        min={0}
-                        step={WEIGHT_INPUT_STEP}
+                        type="text"
+                        inputMode="decimal"
                         className="h-8 text-right"
-                        value={row.weight}
+                        value={row.weightText}
                         onChange={(e) => handleConfirmWeightChange(row.rowId, e.target.value)}
+                        onBlur={() => handleConfirmWeightBlur(row.rowId)}
                       />
                     )}
                   </td>
@@ -10978,6 +11013,7 @@ const PurchaseOrderTab = ({
           lcRate,
           lcAmount: amounts.lcAmount,
           weight,
+          weightText: toWeightText(weight),
           totalWeight: amounts.totalWeight,
           priceA,
           priceB,
@@ -11301,10 +11337,11 @@ const PurchaseOrderTab = ({
   };
 
   const handleReceiveWeightChange = (lineId: string, value: string) => {
+    const weightText = formatWeightInput(value);
+    const weight = parseWeightText(weightText);
     setReceiveLines((prev) =>
       prev.map((line) => {
         if (line.id !== lineId) return line;
-        const weight = roundWeight(Math.max(0, Number(value) || 0));
         const amounts = computeImportReceiveLineAmounts(
           { ...line, weight },
           line.receiveQty,
@@ -11312,7 +11349,20 @@ const PurchaseOrderTab = ({
         return {
           ...line,
           weight,
+          weightText,
           totalWeight: amounts.totalWeight,
+        };
+      }),
+    );
+  };
+
+  const handleReceiveWeightBlur = (lineId: string) => {
+    setReceiveLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        return {
+          ...line,
+          weightText: toWeightText(line.weight),
         };
       }),
     );
@@ -11348,6 +11398,7 @@ const PurchaseOrderTab = ({
                 origin: "",
                 currentStock: 0,
                 weight: 0,
+                weightText: "",
                 totalWeight: 0,
                 priceA: 0,
                 priceB: 0,
@@ -11408,6 +11459,7 @@ const PurchaseOrderTab = ({
           );
           return {
             ...updatedRates,
+            weightText: toWeightText(Number(updatedRates.weight || 0)),
             fcRateText: formatFcRateInput(updatedRates.fcRate),
             priceA,
             priceB,
@@ -11730,7 +11782,7 @@ const PurchaseOrderTab = ({
           partId: line.partId || undefined,
           receiveQty: Math.max(0, Math.floor(Number(line.receiveQty) || 0)),
           fcRate: line.fcRate,
-          weight: line.weight,
+          weight: parseWeightText(line.weightText ?? String(line.weight ?? "")),
           ...(isInvoiceMode
             ? {
                 priceA: line.priceA,
@@ -12901,14 +12953,14 @@ const PurchaseOrderTab = ({
                         ) : null}
                         <td className="p-2 text-right">
                           <Input
-                            type="number"
-                            min={0}
-                            step={WEIGHT_INPUT_STEP}
+                            type="text"
+                            inputMode="decimal"
                             className="h-8 w-24 ml-auto text-right"
-                            value={line.weight}
+                            value={line.weightText}
                             onChange={(event) =>
                               handleReceiveWeightChange(line.id, event.target.value)
                             }
+                            onBlur={() => handleReceiveWeightBlur(line.id)}
                           />
                         </td>
                         <td className="p-2 text-right tabular-nums">
