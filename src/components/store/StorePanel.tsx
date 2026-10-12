@@ -852,10 +852,27 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       if (ordersArray.length > 0) {
         const formattedOrders = ordersArray.map((order: any) => {
-          // Calculate total quantity from items if available
-          const total_quantity = order.items && order.items.length > 0
-            ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-            : 0;
+          // After Purchase Import / Invoice, Items must show received qty (not ordered).
+          // Ordered can include back-order lines that were never shipped.
+          const statusLower = String(order.status || "")
+            .trim()
+            .toLowerCase();
+          const useReceivedQty =
+            statusLower === "purchase invoice pending" ||
+            statusLower === "stock receiving pending" ||
+            statusLower === "received";
+          const total_quantity =
+            order.items && order.items.length > 0
+              ? order.items.reduce((sum: number, item: any) => {
+                  if (useReceivedQty) {
+                    return (
+                      sum +
+                      (Number(item.received_qty ?? item.receivedQty ?? 0) || 0)
+                    );
+                  }
+                  return sum + (Number(item.quantity || 0) || 0);
+                }, 0)
+              : 0;
 
           return {
             id: order.id,

@@ -1333,10 +1333,19 @@ export const PurchaseOrder = () => {
       setSelectedRack("");
       setSelectedShelf("");
 
-      // Convert order items to receive items
+      // Convert order items to receive items.
+      // If Purchase Import already saved receive qtys (including 0 for back-order),
+      // keep those — do not refill back-order lines with ordered qty.
+      const importReceiveSaved = fullOrder.items.some(
+        (item) => Number(item.receivedQty || 0) > 0,
+      );
       const items: ReceiveItemForm[] = fullOrder.items.map((item) => {
         const part = availableParts.find(p => p.partNo === item.partNo);
-        const receivedQty = item.receivedQty > 0 ? item.receivedQty : item.quantity;
+        const receivedQty = importReceiveSaved
+          ? Number(item.receivedQty || 0)
+          : item.receivedQty > 0
+            ? item.receivedQty
+            : item.quantity;
 
         return {
           id: item.id,
@@ -1350,7 +1359,7 @@ export const PurchaseOrder = () => {
           priceB: 0, // Empty, user must enter
           priceM: 0, // Empty, user must enter
           quantity: item.quantity,
-          receivedQty: receivedQty, // Default to ordered qty
+          receivedQty: receivedQty,
           cost: 0,
           amount: 0,
           currentStock: part?.currentStock || 0,
