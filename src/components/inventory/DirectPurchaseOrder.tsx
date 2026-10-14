@@ -431,6 +431,8 @@ export const DirectPurchaseOrder = ({
     { id: string; value: string; label: string }[]
   >([]);
   const [accounts, setAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
+  /** Cash/bank balances from payment-accounts (works without module.accounting). */
+  const [accountBalanceMap, setAccountBalanceMap] = useState<Record<string, number>>({});
   const [payableAccounts, setPayableAccounts] = useState<{ id: string; value: string; label: string }[]>([]);
   const [expenseTypes, setExpenseTypes] = useState<{ id: string; name: string; code?: string }[]>([]);
 
@@ -632,34 +634,42 @@ export const DirectPurchaseOrder = ({
     }
   };
 
+  const mapPaymentAccounts = (accountsData: any[]) => {
+    const filtered = accountsData.filter((acc: any) => {
+      if (!acc || !acc.id || !acc.name) return false;
+      const status = (acc.status || "").toLowerCase();
+      if (status !== "active") return false;
+      const subgroupName = (
+        acc.subgroup?.name ??
+        acc.subGroup?.name ??
+        acc.Subgroup?.name ??
+        ""
+      ).toLowerCase();
+      return subgroupName.includes("cash") || subgroupName.includes("bank");
+    });
+    const balanceMap: Record<string, number> = {};
+    for (const acc of filtered) {
+      const bal = Number(acc.currentBalance ?? acc.current_balance);
+      if (Number.isFinite(bal)) balanceMap[String(acc.id)] = bal;
+    }
+    const options = filtered.map((acc: any) => ({
+      id: acc.id,
+      value: acc.id,
+      label: `${acc.code} - ${acc.name}`,
+    }));
+    return { options, balanceMap };
+  };
+
   const fetchAccounts = async () => {
     try {
-      // Cash/bank list via dropdowns — any auth user (purchase role has no module.accounting).
+      // Cash/bank list via dropdowns — any auth user (no module.accounting required).
       const response = (await apiClient.getPaymentAccounts()) as any;
       const accountsData = Array.isArray(response)
         ? response
         : response.data || [];
-
-      const formattedAccounts = accountsData
-        .filter((acc: any) => {
-          if (!acc || !acc.id || !acc.name) return false;
-          const status = (acc.status || "").toLowerCase();
-          if (status !== "active") return false;
-          const subgroupName = (
-            acc.subgroup?.name ??
-            acc.subGroup?.name ??
-            acc.Subgroup?.name ??
-            ""
-          ).toLowerCase();
-          return subgroupName.includes("cash") || subgroupName.includes("bank");
-        })
-        .map((acc: any) => ({
-          id: acc.id,
-          value: acc.id,
-          label: `${acc.code} - ${acc.name}`,
-        }));
-
-      setAccounts(formattedAccounts);
+      const { options, balanceMap } = mapPaymentAccounts(accountsData);
+      setAccounts(options);
+      setAccountBalanceMap((prev) => ({ ...prev, ...balanceMap }));
     } catch (error: any) {
       console.error("Failed to load payment accounts for DPO:", error);
       setAccounts([]);
@@ -672,27 +682,9 @@ export const DirectPurchaseOrder = ({
       const accountsData = Array.isArray(response)
         ? response
         : response.data || [];
-
-      const formattedAccounts = accountsData
-        .filter((acc: any) => {
-          if (!acc || !acc.id || !acc.name) return false;
-          const status = (acc.status || "").toLowerCase();
-          if (status !== "active") return false;
-          const subgroupName = (
-            acc.subgroup?.name ??
-            acc.subGroup?.name ??
-            acc.Subgroup?.name ??
-            ""
-          ).toLowerCase();
-          return subgroupName.includes("cash") || subgroupName.includes("bank");
-        })
-        .map((acc: any) => ({
-          id: acc.id,
-          value: acc.id,
-          label: `${acc.code} - ${acc.name}`,
-        }));
-
-      setBankCashAccounts(formattedAccounts);
+      const { options, balanceMap } = mapPaymentAccounts(accountsData);
+      setBankCashAccounts(options);
+      setAccountBalanceMap((prev) => ({ ...prev, ...balanceMap }));
     } catch (error: any) {
       console.error("Failed to load bank/cash accounts for DPO:", error);
       setBankCashAccounts([]);
@@ -3545,15 +3537,42 @@ export const DirectPurchaseOrder = ({
             {/* Account and Totals (single horizontal row) */}
             <div className="flex flex-col gap-4 mb-6">
               {!isTransferIn && (
-                <div className="space-y-2 w-full sm:w-64">
-                  <Label>Account</Label>
-                  <SearchableSelect
-                    options={accounts}
-                    value={formAccount}
-                    onValueChange={setFormAccount}
-                    placeholder="Select account..."
-                    className="w-full"
-                  />
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-2 w-full sm:w-64">
+                    <Label>Account</Label>
+                    <SearchableSelect
+                      options={accounts}
+                      value={formAccount}
+                      onValueChange={setFormAccount}
+                      placeholder="Select account..."
+                      className="w-full"
+                    />
+                  </div>
+                  {formAccount ? (
+                    <div className="space-y-2 w-full sm:w-40">
+                      <Label>Amount</Label>
+                      <Input
+                        readOnly
+                        value={(() => {
+                          const bal = accountBalanceMap[formAccount];
+                          if (bal == null || !Number.isFinite(bal)) return "—";
+                          const isNeg = bal < 0;
+                          const formatted = Math.abs(bal).toLocaleString("en-PK", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          });
+                          return `${formatted} ${isNeg ? "Cr" : "Dr"}`;
+                        })()}
+                        className={cn(
+                          "bg-muted/30 font-medium",
+                          accountBalanceMap[formAccount] != null &&
+                            accountBalanceMap[formAccount] < 0
+                            ? "text-destructive"
+                            : "text-green-600",
+                        )}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -4407,6 +4426,31 @@ export const DirectPurchaseOrder = ({
                   placeholder="Select bank or cash account..."
                 />
               </div>
+              {paymentBankAccount ? (
+                <div className="space-y-2">
+                  <Label>Account Amount</Label>
+                  <Input
+                    readOnly
+                    value={(() => {
+                      const bal = accountBalanceMap[paymentBankAccount];
+                      if (bal == null || !Number.isFinite(bal)) return "—";
+                      const isNeg = bal < 0;
+                      const formatted = Math.abs(bal).toLocaleString("en-PK", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      });
+                      return `${formatted} ${isNeg ? "Cr" : "Dr"}`;
+                    })()}
+                    className={cn(
+                      "bg-muted/30 font-medium",
+                      accountBalanceMap[paymentBankAccount] != null &&
+                        accountBalanceMap[paymentBankAccount] < 0
+                        ? "text-destructive"
+                        : "text-green-600",
+                    )}
+                  />
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label>Payment Date</Label>

@@ -117,6 +117,7 @@ import {
   SALES_QUOTATION_TERM_OPTIONS,
 } from "@/constants/salesQuotationTerms";
 import { isAdminRole } from "@/utils/auth";
+import { can } from "@/permissions/can";
 import { SalesInquiry } from "./SalesInquiry";
 import {
   extractLatestPriceDatesFromHistory,
@@ -656,6 +657,12 @@ export const SalesInvoice = ({
     canMenuMore: canUseActionMenu,
   } = usePageActions(pageId);
   const canUseDocumentForm = canCreate || canEdit;
+  // Keep label + input together. Admin (*) and anyone with the field (or form access) see both.
+  const discountFieldKey = isQuotation
+    ? "field.sales.quotation.discount"
+    : "field.sales.invoice.discount";
+  const showDiscountField =
+    isAdminUser || can(discountFieldKey) || canUseDocumentForm;
   const docFormLabel = isQuotation
     ? "Quotation Form"
     : isTransferOut
@@ -9800,55 +9807,43 @@ export const SalesInvoice = ({
 
             {/* Payment Section */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 p-3 bg-muted/30 rounded-lg border">
-              <div className="md:col-span-4 grid grid-cols-2 grid-rows-[auto_auto_auto_auto] gap-x-3 gap-y-3 min-w-0 items-start">
-                <div className="space-y-2 row-start-1 col-start-1">
-                  <Label className="text-xs">Discount</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={discount || ""}
-                    onChange={(e) =>
-                      handleDiscountAmountChange(e.target.value)
-                    }
-                    className="h-8 text-sm"
-                  />
-                </div>
-                <div className="space-y-2 row-start-1 col-start-2">
-                  <Label className="text-xs">Remarks</Label>
-                  <Textarea
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Enter remarks..."
-                    rows={3}
-                    className="text-sm min-h-[4.5rem]"
-                  />
-                </div>
-                <div
-                  className={cn(
-                    "space-y-2 col-start-1",
-                    isQuotation
-                      ? "hidden"
-                      : isTransferOut
-                        ? "row-start-3"
-                        : "row-start-4",
+              <div className="md:col-span-4 flex flex-col gap-3 min-w-0">
+                <div className="grid grid-cols-2 gap-3 items-start">
+                  {showDiscountField ? (
+                    <div className="space-y-2 min-w-0">
+                      <Label className="text-xs" htmlFor="invoice-discount-input">
+                        Discount
+                      </Label>
+                      <Input
+                        id="invoice-discount-input"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={discount || ""}
+                        onChange={(e) =>
+                          handleDiscountAmountChange(e.target.value)
+                        }
+                        placeholder="0.00"
+                        className="h-8 text-sm bg-background"
+                      />
+                    </div>
+                  ) : (
+                    <div />
                   )}
-                >
-                  <Label className="text-xs">Freight Charges</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={freightCharges || ""}
-                    onChange={(e) =>
-                      handleFreightChargesChange(e.target.value)
-                    }
-                    className="h-8 text-sm"
-                  />
+                  <div className="space-y-2 min-w-0">
+                    <Label className="text-xs">Remarks</Label>
+                    <Textarea
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      placeholder="Enter remarks..."
+                      rows={3}
+                      className="text-sm min-h-[4.5rem]"
+                    />
+                  </div>
                 </div>
                 {!isQuotation && !isTransferOut ? (
-                  <>
-                    <div className="space-y-2 row-start-2 col-start-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2 min-w-0">
                       <Label className="text-xs">
                         Bank Account{" "}
                         <span className="text-muted-foreground font-normal">
@@ -9906,7 +9901,7 @@ export const SalesInvoice = ({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2 row-start-2 col-start-2">
+                    <div className="space-y-2 min-w-0">
                       <Label className="text-xs">Bank Amount (Rs)</Label>
                       <Input
                         type="number"
@@ -9922,7 +9917,7 @@ export const SalesInvoice = ({
                         className="h-8 text-sm text-right"
                       />
                     </div>
-                    <div className="space-y-2 row-start-3 col-start-1">
+                    <div className="space-y-2 min-w-0">
                       <Label className="text-xs">
                         Cash Account{" "}
                         <span className="text-muted-foreground font-normal">
@@ -9980,7 +9975,7 @@ export const SalesInvoice = ({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2 row-start-3 col-start-2">
+                    <div className="space-y-2 min-w-0">
                       <Label className="text-xs">Cash Amount (Rs)</Label>
                       <Input
                         type="number"
@@ -9996,14 +9991,14 @@ export const SalesInvoice = ({
                         className="h-8 text-sm text-right"
                       />
                     </div>
-                  </>
+                  </div>
                 ) : null}
                 {!isQuotation &&
                 (isTransferOut ||
                   (newInvoice.customerType !== "registered" &&
                     !selectedBankAccount &&
                     !selectedCashAccount)) ? (
-                  <div className="space-y-2 row-start-2 col-span-2">
+                  <div className="space-y-2">
                     <Label className="text-xs">Received Amount</Label>
                     <Input
                       type="number"
@@ -10014,6 +10009,21 @@ export const SalesInvoice = ({
                       }
                       placeholder="0"
                       className="h-8 text-sm max-w-xs"
+                    />
+                  </div>
+                ) : null}
+                {!isQuotation ? (
+                  <div className="space-y-2 max-w-xs">
+                    <Label className="text-xs">Freight Charges</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={freightCharges || ""}
+                      onChange={(e) =>
+                        handleFreightChargesChange(e.target.value)
+                      }
+                      className="h-8 text-sm"
                     />
                   </div>
                 ) : null}
