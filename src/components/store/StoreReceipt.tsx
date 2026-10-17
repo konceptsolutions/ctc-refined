@@ -10,10 +10,12 @@ import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { format } from "date-fns";
 import { Printer } from "lucide-react";
 import { useRef } from "react";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface DirectPurchaseOrderItem {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   origin?: string;
@@ -175,7 +177,7 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                 <TableHeader>
                   <TableRow>
                     <ListNumberHeader />
-                    <TableHead className="w-[150px]">Part No</TableHead>
+                    <TableHead className="w-[220px]">Part No | Master Part</TableHead>
                     <TableHead className="min-w-[200px]">Description</TableHead>
                     <TableHead className="w-[120px]">Brand</TableHead>
                     <TableHead className="text-right w-[100px]">Qty</TableHead>
@@ -189,7 +191,9 @@ export const StoreReceipt = ({ order, open, onOpenChange }: StoreReceiptProps) =
                     order.items.map((item, index) => (
                       <TableRow key={item.id} className="h-12">
                         <ListNumberCell index={index} total={order.items.length} />
-                        <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
+                        <TableCell className="font-medium align-middle">
+                          {formatPartIdentityFromUi(item)}
+                        </TableCell>
                         <TableCell className="align-middle">{item.description || "-"}</TableCell>
                         <TableCell className="align-middle">
                           <BrandOriginCell brand={item.brand} origin={item.origin} />

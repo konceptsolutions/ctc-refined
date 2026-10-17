@@ -1,7 +1,7 @@
 import express from 'express';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 import fetch from 'node-fetch';
-import { resolveChatCompletionsUrl } from '../ai/aiProvider';
+import { resolveChatCompletionsUrl } from '../ai/aiProvider.js';
 
 const router = express.Router();
 

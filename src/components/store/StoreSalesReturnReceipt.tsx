@@ -31,11 +31,13 @@ import {
   performedByPayload,
   useStoreOperatorAuth,
 } from "@/hooks/useStoreOperatorAuth";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 export interface SalesReturnReceiveItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   returnQuantity: number;
 }
@@ -250,14 +252,14 @@ export const StoreSalesReturnReceipt = ({
       const loc = itemLocations[item.id];
       if (!loc?.rackId || !loc?.shelfId) {
         toast.error(
-          `Select rack and shelf for ${item.partNo || "return item"}.`,
+          `Select rack and shelf for ${formatPartIdentityFromUi(item) || "return item"}.`,
         );
         return;
       }
       const itemStore = loc.storeId || effectiveStoreId;
       if (!itemStore) {
         toast.error(
-          `Select a store (or associated location) for ${item.partNo || "return item"}.`,
+          `Select a store (or associated location) for ${formatPartIdentityFromUi(item) || "return item"}.`,
         );
         return;
       }
@@ -357,7 +359,7 @@ export const StoreSalesReturnReceipt = ({
             <TableHeader>
               <TableRow>
                 <ListNumberHeader />
-                <TableHead>Part No</TableHead>
+                <TableHead>Part No | Master Part</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead>Rack</TableHead>
@@ -389,7 +391,9 @@ export const StoreSalesReturnReceipt = ({
                       index={index}
                       total={salesReturn.items.length}
                     />
-                    <TableCell className="font-medium">{item.partNo}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatPartIdentityFromUi(item)}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {item.description || "—"}
                     </TableCell>

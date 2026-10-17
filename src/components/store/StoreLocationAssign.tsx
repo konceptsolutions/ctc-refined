@@ -21,11 +21,13 @@ import {
   performedByPayload,
   useStoreOperatorAuth,
 } from "@/hooks/useStoreOperatorAuth";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface DirectPurchaseOrderItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   origin?: string;
@@ -585,7 +587,7 @@ export const StoreLocationAssign = ({
                     <TableHeader>
                       <TableRow>
                         <ListNumberHeader />
-                        <TableHead className="w-[120px]">Part No</TableHead>
+                        <TableHead className="w-[200px]">Part No | Master Part</TableHead>
                         <TableHead className="w-[170px]">Description</TableHead>
                         <TableHead className="w-[90px] px-2">Brand</TableHead>
                         <TableHead className="w-[50px] text-right px-2">Qty</TableHead>
@@ -690,7 +692,9 @@ export const StoreLocationAssign = ({
                         return (
                           <TableRow key={item.id} className="align-top">
                             <ListNumberCell index={index} total={order.items.length} className="align-top py-3" />
-                            <TableCell className="font-medium align-top py-3">{item.partNo}</TableCell>
+                            <TableCell className="font-medium align-top py-3">
+                              {formatPartIdentityFromUi(item)}
+                            </TableCell>
                             <TableCell className="align-top py-3 max-w-[170px] truncate">{item.description || "-"}</TableCell>
                             <TableCell className="align-top py-3 px-2">
                               <BrandOriginCell brand={item.brand} origin={item.origin} />

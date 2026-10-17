@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { getLoginHours, isWithinLoginSchedule } from '../utils/loginHours';
+import { getLoginHours, isWithinLoginSchedule } from '../utils/loginHours.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
@@ -88,7 +88,7 @@ async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
     if (!req.user?.id) return [];
 
     try {
-        const prisma = (await import('../config/database')).default;
+        const { prisma } = await import('../config/database.js');
         const rows = await prisma.$queryRaw<Array<{ permissions: string | null; role: string }>>`
             SELECT r.permissions, r.name AS role
             FROM "User" u
@@ -103,7 +103,7 @@ async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
             looksLikeCatalogPermissions,
             getPresetPermissions,
             ensurePageKeysForGrants,
-        } = await import('../permissions/catalog');
+        } = await import('../permissions/catalog.js');
 
         let permissions = parseRolePermissions(row.permissions);
         // Prefer keys saved from Roles & Permissions matrix
@@ -128,7 +128,7 @@ async function resolveUserPermissions(req: AuthRequest): Promise<string[]> {
     } catch (err) {
         console.error('Failed to resolve permissions', err);
         try {
-            const { getPresetPermissions } = await import('../permissions/catalog');
+            const { getPresetPermissions } = await import('../permissions/catalog.js');
             return getPresetPermissions(req.user?.role || '');
         } catch {
             return [];
@@ -147,7 +147,7 @@ export const requirePermission = (...keys: string[]) => {
         }
         try {
             const permissions = await resolveUserPermissions(req);
-            const { hasPermissionKey } = await import('../permissions/catalog');
+            const { hasPermissionKey } = await import('../permissions/catalog.js');
             if (permissions.includes('*')) return next();
             const ok = keys.length === 0 || keys.some((k) => hasPermissionKey(permissions, k));
             if (!ok) {
@@ -174,7 +174,7 @@ export const requireAllPermissions = (...keys: string[]) => {
         }
         try {
             const permissions = await resolveUserPermissions(req);
-            const { hasPermissionKey } = await import('../permissions/catalog');
+            const { hasPermissionKey } = await import('../permissions/catalog.js');
             if (permissions.includes('*')) return next();
             const ok = keys.every((k) => hasPermissionKey(permissions, k));
             if (!ok) {

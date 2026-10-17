@@ -19,11 +19,14 @@ import {
   performedByPayload,
   useStoreOperatorAuth,
 } from "@/hooks/useStoreOperatorAuth";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
+import { resolveStoreLinePartFields } from "@/utils/invoiceLinePart";
 
 interface DirectPurchaseOrderItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   quantity: number;
@@ -65,6 +68,7 @@ interface OrderItemForm {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   brand: string;
   totalQuantity: string;
   purchasePrice: string;
@@ -554,10 +558,12 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
             const partId = item.part_id || item.partId || "";
             if (!partId) return;
             if (!itemsMap.has(partId)) {
+              const linePart = resolveStoreLinePartFields(item);
               itemsMap.set(partId, {
                 id: String(idx + 1),
                 partId,
-                partNo: item.part_no || item.partNo || "",
+                partNo: linePart.partNo || "",
+                masterPartNo: linePart.masterPartNo || "",
                 brand: item.brand || item.brand_name || "N/A",
                 totalQuantity: "0",
                 purchasePrice: String(item.purchase_price || item.purchasePrice || ""),
@@ -585,6 +591,7 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
                 id: String(idx + 1),
                 partId: item.partId,
                 partNo: item.partNo || "",
+                masterPartNo: item.masterPartNo || "",
                 brand: item.brand || "N/A",
                 totalQuantity: "0",
                 purchasePrice: String(item.purchasePrice),
@@ -858,9 +865,10 @@ export const StoreEditDPO = ({ order, open, onOpenChange, onSuccess }: StoreEdit
               </div>
               <div className="space-y-6">
                 {formItems.map((item) => {
-                  const partDisplay = item.partNo && item.brand
-                    ? `${item.partNo} - ${item.brand}`
-                    : item.partNo || item.brand || "N/A";
+                  const partLabel = formatPartIdentityFromUi(item);
+                  const partDisplay = item.brand
+                    ? `${partLabel} - ${item.brand}`
+                    : partLabel || "N/A";
                   const remaining = calculateRemainingQuantity(item);
 
                   return (

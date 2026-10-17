@@ -16,11 +16,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatUiDate } from "@/utils/dateUtils";
 import { cn } from "@/lib/utils";
 import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface SalesInvoiceItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand?: string;
   orderedQty: number;
@@ -60,6 +62,7 @@ interface OrderItemForm {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   orderedQty: string;
@@ -71,6 +74,7 @@ interface OrderItemForm {
 interface PartOption {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   priceA: number;
@@ -161,6 +165,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
             id: String(idx + 1),
             partId: item.partId || "",
             partNo: linePart.partNo,
+            masterPartNo: linePart.masterPartNo,
             description: linePart.description,
             brand: linePart.brand || "N/A",
             orderedQty: String(item.orderedQty || 0),
@@ -176,6 +181,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
             id: String(idx + 1),
             partId: item.partId || "",
             partNo: linePart.partNo,
+            masterPartNo: linePart.masterPartNo,
             description: linePart.description,
             brand: linePart.brand || "N/A",
             orderedQty: String(item.orderedQty || 0),
@@ -189,6 +195,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
             id: "1",
             partId: "",
             partNo: "",
+            masterPartNo: "",
             description: "",
             brand: "",
             orderedQty: "",
@@ -241,13 +248,18 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
       if (Array.isArray(partsData)) {
         setParts(partsData
           .map((p: any) => {
-            const partNo = String(p.master_part_no || '').trim();
-            if (!partNo || partNo === '' || partNo === 'null' || partNo === 'undefined') {
+            const partNo = String(p.master_part_no || "").trim();
+            const masterPartNo = String(p.part_no || "").trim();
+            if (
+              (!partNo || partNo === "null" || partNo === "undefined") &&
+              (!masterPartNo || masterPartNo === "null" || masterPartNo === "undefined")
+            ) {
               return null;
             }
             return {
               id: p.id,
-              partNo: partNo,
+              partNo: partNo || masterPartNo,
+              masterPartNo,
               description: p.description || "",
               brand: p.brand_name || "N/A",
               priceA: p.price_a || 0,
@@ -271,6 +283,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
       id: String(Date.now()),
       partId: "",
       partNo: "",
+      masterPartNo: "",
       description: "",
       brand: "",
       orderedQty: "",
@@ -302,6 +315,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
           ...item,
           partId: part.id,
           partNo: part.partNo,
+          masterPartNo: part.masterPartNo || "",
           description: part.description,
           brand: part.brand,
           unitPrice: String(part.priceA || 0),
@@ -543,7 +557,10 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                                 <div className="relative">
                                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                   <Input
-                                    value={partSearchTerms[item.id] || item.partNo}
+                                    value={
+                                      partSearchTerms[item.id] ||
+                                      formatPartIdentityFromUi(item)
+                                    }
                                     onChange={(e) => {
                                       setPartSearchTerms((prev) => ({
                                         ...prev,
@@ -581,7 +598,9 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                                           className="p-2 hover:bg-accent cursor-pointer text-sm"
                                           onClick={() => handlePartSelect(item.id, part)}
                                         >
-                                          <div className="font-medium">{part.partNo}</div>
+                                          <div className="font-medium">
+                                            {formatPartIdentityFromUi(part)}
+                                          </div>
                                           <div className="text-xs text-muted-foreground">
                                             {part.brand} | Stock: {part.availableQty}
                                           </div>
@@ -593,7 +612,9 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
                               </div>
                             ) : (
                               <div>
-                                <div className="font-medium">{item.partNo}</div>
+                                <div className="font-medium">
+                                  {formatPartIdentityFromUi(item)}
+                                </div>
                                 <div className="text-xs text-muted-foreground">{item.brand}</div>
                               </div>
                             )}

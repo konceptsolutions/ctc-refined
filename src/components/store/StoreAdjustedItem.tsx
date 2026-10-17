@@ -27,11 +27,14 @@ import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import { MapPin, CheckCircle, X } from "lucide-react";
 import { format } from "date-fns";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 
 interface AdjustmentItem {
   id: string;
   part_id: string;
   part_no: string;
+  master_part_no?: string;
+  masterPartNo?: string;
   part_description: string;
   brand: string;
   origin?: string;
@@ -296,7 +299,7 @@ export const StoreAdjustedItem = ({
                   <TableHeader>
                     <TableRow>
                       <ListNumberHeader />
-                      <TableHead>Part No</TableHead>
+                      <TableHead>Part No | Master Part</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead>Brand</TableHead>
                       <TableHead>Quantity</TableHead>
@@ -315,7 +318,13 @@ export const StoreAdjustedItem = ({
                       return (
                         <TableRow key={item.id}>
                           <ListNumberCell index={index} total={adjustment.items.length} />
-                          <TableCell className="font-medium">{item.part_no}</TableCell>
+                          <TableCell className="font-medium">
+                            {formatPartIdentityFromDb({
+                              part_no: item.part_no,
+                              master_part_no:
+                                item.master_part_no || item.masterPartNo,
+                            })}
+                          </TableCell>
                           <TableCell className="max-w-[200px] truncate">
                             {item.part_description || "-"}
                           </TableCell>

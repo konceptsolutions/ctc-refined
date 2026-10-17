@@ -1166,6 +1166,27 @@ class ApiClient {
     });
   }
 
+  async adjustStockVerificationQty(
+    partId: string,
+    data: {
+      direction: "increase" | "decrease";
+      quantity: number;
+      verification_date: string;
+      store_id?: string;
+      performedBy?: string;
+      performedById?: string;
+      performedByRole?: string;
+    },
+  ) {
+    return this.request(
+      `/inventory/stock-verification-dates/${partId}/adjust-stock`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
   async getTransfers(params?: {
     status?: string;
     from_date?: string;

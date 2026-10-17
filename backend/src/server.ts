@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import * as dotenv from "dotenv";
 import * as path from "path";
-import prisma from "./config/database";
+import prisma from "./config/database.js";
 
 // Load .env BEFORE any other imports that might use DATABASE_URL
 // Load .env based on NODE_ENV
@@ -12,7 +12,7 @@ const envPath = path.resolve(__dirname, `../${envFile}`);
 dotenv.config({ path: envPath, override: true });
 
 // ============================================================
-// DATABASE SAFETY GUARD  ALWAYS USE koncepts_dev
+// DATABASE SAFETY GUARD ï¿½ ALWAYS USE koncepts_dev
 // Never allow any other database to be used.
 // This guard overrides stale system/user environment variables.
 // ============================================================
@@ -25,9 +25,10 @@ if (!currentDbUrl.includes(REQUIRED_DB)) {
   const envContent = fs.readFileSync(envPath, "utf-8");
   const match = envContent.match(/DATABASE_URL=([^\r\n]+)/);
   if (match && match[1].includes(REQUIRED_DB)) {
-    process.env.DATABASE_URL = match[1].trim();
+    const overriddenUrl = match[1].trim();
+    process.env.DATABASE_URL = overriddenUrl;
     console.warn(
-      `[SERVER] ??  DATABASE_URL was pointing to wrong DB. Overridden to: ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ":****@")}`,
+      `[SERVER] âš   DATABASE_URL was pointing to wrong DB. Overridden to: ${overriddenUrl.replace(/:[^:@]+@/, ":****@")}`,
     );
   } else {
     throw new Error(
@@ -49,37 +50,37 @@ console.log(
 
 // Set timezone to Pakistan (Asia/Karachi)
 process.env.TZ = "Asia/Karachi";
-import partsRoutes from "./routes/parts";
-import dropdownsRoutes from "./routes/dropdowns";
-import inventoryRoutes from "./routes/inventory";
-import expensesRoutes from "./routes/expenses";
-import accountingRoutes from "./routes/accounting";
-import financialRoutes from "./routes/financial";
-import customersRoutes from "./routes/customers";
-import suppliersRoutes from "./routes/suppliers";
-import employeesRoutes from "./routes/employees";
-import reportsRoutes from "./routes/reports";
-import usersRoutes from "./routes/users";
-import rolesRoutes from "./routes/roles";
-import activityLogsRoutes from "./routes/activity-logs";
-import approvalFlowsRoutes from "./routes/approval-flows";
-import backupsRoutes from "./routes/backups";
-import companyProfileRoutes from "./routes/company-profile";
-import whatsappSettingsRoutes from "./routes/whatsapp-settings";
-import longcatSettingsRoutes from "./routes/longcat-settings";
-import aiAssistantRoutes from "./routes/ai-assistant";
-import vouchersRoutes from "./routes/vouchers";
-import salesRoutes from "./routes/sales";
-import dpoReturnsRoutes from "./routes/dpo-returns";
-import salesReturnsRoutes from "./routes/sales-returns";
-import stockDetailsRoutes from "./routes/stock-details";
-import advancedSearchRoutes from "./routes/advanced-search";
-import purchaseImportRoutes from "./routes/purchase-import";
-import partsDropdownRoutes from "./routes/parts-dropdown";
-import authRoutes from "./routes/auth";
-import emailRoutes from "./routes/email";
-import { authenticateJWT, authorizeRoles, enforceLoginWindow, requirePermission } from "./middleware/authMiddleware";
-import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware";
+import partsRoutes from "./routes/parts.js";
+import dropdownsRoutes from "./routes/dropdowns.js";
+import inventoryRoutes from "./routes/inventory.js";
+import expensesRoutes from "./routes/expenses.js";
+import accountingRoutes from "./routes/accounting.js";
+import financialRoutes from "./routes/financial.js";
+import customersRoutes from "./routes/customers.js";
+import suppliersRoutes from "./routes/suppliers.js";
+import employeesRoutes from "./routes/employees.js";
+import reportsRoutes from "./routes/reports.js";
+import usersRoutes from "./routes/users.js";
+import rolesRoutes from "./routes/roles.js";
+import activityLogsRoutes from "./routes/activity-logs.js";
+import approvalFlowsRoutes from "./routes/approval-flows.js";
+import backupsRoutes from "./routes/backups.js";
+import companyProfileRoutes from "./routes/company-profile.js";
+import whatsappSettingsRoutes from "./routes/whatsapp-settings.js";
+import longcatSettingsRoutes from "./routes/longcat-settings.js";
+import aiAssistantRoutes from "./routes/ai-assistant.js";
+import vouchersRoutes from "./routes/vouchers.js";
+import salesRoutes from "./routes/sales.js";
+import dpoReturnsRoutes from "./routes/dpo-returns.js";
+import salesReturnsRoutes from "./routes/sales-returns.js";
+import stockDetailsRoutes from "./routes/stock-details.js";
+import advancedSearchRoutes from "./routes/advanced-search.js";
+import purchaseImportRoutes from "./routes/purchase-import.js";
+import partsDropdownRoutes from "./routes/parts-dropdown.js";
+import authRoutes from "./routes/auth.js";
+import emailRoutes from "./routes/email.js";
+import { authenticateJWT, authorizeRoles, enforceLoginWindow, requirePermission } from "./middleware/authMiddleware.js";
+import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware.js";
 
 // Trigger restart for environment variable update + prisma client reload 2026-08-05b
 const app = express();
@@ -243,7 +244,7 @@ app.get("/api/public-income-statement", async (req, res) => {
     if (toDateObj) dateFilter.lte = toDateObj;
 
     // Import prisma
-    const prisma = (await import("./config/database")).default;
+    const prisma = (await import("./config/database.js")).prisma;
 
     // Define common include for accounts
     const commonInclude = {
@@ -416,7 +417,7 @@ app.get("/api/debug/db-info", async (req, res) => {
     const fileExists = fs.existsSync(dbPath);
 
     // Get voucher counts
-    const prisma = (await import("./config/database")).default;
+    const prisma = (await import("./config/database.js")).prisma;
     const voucherCount = await prisma.voucher.count();
     const lastVouchers = await prisma.voucher.findMany({
       take: 5,
@@ -447,8 +448,8 @@ app.get("/api/debug/db-info", async (req, res) => {
 app.get("/api/debug/part-cost/:partNo", async (req, res) => {
   try {
     const { partNo } = req.params;
-    const prisma = (await import("./config/database")).default;
-    const { getCanonicalPartId } = await import("./services/partCanonical");
+    const prisma = (await import("./config/database.js")).prisma;
+    const { getCanonicalPartId } = await import("./services/partCanonical.js");
 
     // Get DATABASE_URL (masked)
     const dbUrl = process.env.DATABASE_URL || "not set";

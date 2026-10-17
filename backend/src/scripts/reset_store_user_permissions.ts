@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { getPresetPermissions } from "../permissions/catalog";
+import { getPresetPermissions } from "../permissions/catalog.js";
 
 const prisma = new PrismaClient();
 

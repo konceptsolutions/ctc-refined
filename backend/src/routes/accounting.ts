@@ -1,9 +1,9 @@
 import express, { Request, Response } from "express";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import {
   hydrateSalesInvoiceItems,
   invoiceItemPartSelect,
-} from "../utils/salesInvoiceItemPart";
+} from "../utils/salesInvoiceItemPart.js";
 
 const router = express.Router();
 

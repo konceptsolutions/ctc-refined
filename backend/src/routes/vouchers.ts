@@ -1,12 +1,12 @@
 import express, { Request, Response } from 'express';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 import crypto from 'crypto';
 import {
   isCashBankAccount,
   resolveCashBankModeFromAccount,
   resolveVoucherCashBankMode,
-} from '../utils/cashBankMode';
-import { isClearedForBalance } from '../utils/voucherClearance';
+} from '../utils/cashBankMode.js';
+import { isClearedForBalance } from '../utils/voucherClearance.js';
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 const TIME_RE = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/;
 const WEEKDAY_SET = new Set([0, 1, 2, 3, 4, 5, 6]);

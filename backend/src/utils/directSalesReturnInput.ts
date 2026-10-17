@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
-import prisma from '../config/database';
-import { resolveDirectReturnUnitCost } from './directSalesReturnApprove';
+import prisma from '../config/database.js';
+import { resolveDirectReturnUnitCost } from './directSalesReturnApprove.js';
 
 const SALES_RETURN_START_NO = 97;
 

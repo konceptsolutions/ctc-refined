@@ -6,9 +6,9 @@ import {
   resolveStorePerformer,
   wasActivityLogged,
   withOperatorAttribution,
-} from "../utils/activityLogger";
-import { AuthRequest } from "./authMiddleware";
-import prisma from "../config/database";
+} from "../utils/activityLogger.js";
+import { AuthRequest } from "./authMiddleware.js";
+import prisma from "../config/database.js";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const DETAIL_LINE_LIMIT = 20;

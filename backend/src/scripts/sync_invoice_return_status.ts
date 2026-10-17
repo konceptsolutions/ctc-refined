@@ -1,5 +1,5 @@
-import prisma from '../config/database';
-import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus';
+import prisma from '../config/database.js';
+import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus.js';
 
 async function main() {
   console.log('Syncing sale invoice return status from completed sales returns...');

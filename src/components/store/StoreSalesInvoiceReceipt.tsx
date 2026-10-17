@@ -31,6 +31,7 @@ import {
   performedByPayload,
   useStoreOperatorAuth,
 } from "@/hooks/useStoreOperatorAuth";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface InvoiceRackShelfEntry {
   storeId?: string | null;
@@ -43,6 +44,7 @@ interface SalesInvoiceItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   orderedQty: number;
   deliveredQty: number;
@@ -458,7 +460,7 @@ export const StoreSalesInvoiceReceipt = ({
         const prsId = selectedPrsByItemId[item.id];
         if (!prsId) {
           toast.error(
-            `Select rack/shelf location for ${item.partNo || "line item"}.`,
+            `Select rack/shelf location for ${formatPartIdentityFromUi(item) || "line item"}.`,
           );
           return;
         }
@@ -466,7 +468,7 @@ export const StoreSalesInvoiceReceipt = ({
         const allowed = getMaxStockOutQtyForItem(item);
         if (qty > allowed) {
           toast.error(
-            `Stock out qty for ${item.partNo} cannot exceed in-stock quantity or pending amount.`,
+            `Stock out qty for ${formatPartIdentityFromUi(item)} cannot exceed in-stock quantity or pending amount.`,
           );
           return;
         }
@@ -581,7 +583,9 @@ export const StoreSalesInvoiceReceipt = ({
                     >
                       <ListNumberCell index={index} total={invoice.items.length} className="align-middle" />
                       <TableCell className="align-middle">
-                        <p className="font-medium text-sm">{item.partNo}</p>
+                        <p className="font-medium text-sm">
+                          {formatPartIdentityFromUi(item)}
+                        </p>
                         {item.description && (
                           <p className="text-xs text-muted-foreground">
                             {item.description}

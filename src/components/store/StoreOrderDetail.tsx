@@ -6,10 +6,12 @@ import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-num
 import { BrandOriginCell } from "@/components/ui/brand-origin-cell";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 
 interface DirectPurchaseOrderItem {
   id: string;
   partNo: string;
+  masterPartNo?: string;
   brand: string;
   origin?: string;
   quantity: number;
@@ -69,7 +71,7 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                     <TableHeader>
                       <TableRow>
                         <ListNumberHeader />
-                        <TableHead className="w-[150px]">Part No</TableHead>
+                        <TableHead className="w-[220px]">Part No | Master Part</TableHead>
                         <TableHead className="w-[150px]">Brand</TableHead>
                         <TableHead className="text-right w-[100px]">Quantity</TableHead>
                         <TableHead className="w-[100px]">UOM</TableHead>
@@ -82,7 +84,9 @@ export const StoreOrderDetail = ({ order, open, onOpenChange }: StoreOrderDetail
                         order.items.map((item, index) => (
                           <TableRow key={item.id} className="h-12">
                             <ListNumberCell index={index} total={order.items.length} className="align-middle" />
-                            <TableCell className="font-medium align-middle">{item.partNo}</TableCell>
+                            <TableCell className="font-medium align-middle">
+                              {formatPartIdentityFromUi(item)}
+                            </TableCell>
                             <TableCell className="align-middle">
                               <BrandOriginCell brand={item.brand} origin={item.origin} />
                             </TableCell>

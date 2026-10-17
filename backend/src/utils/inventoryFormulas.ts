@@ -6,8 +6,8 @@
  * as documented in the accounting formulas guide.
  */
 
-import prisma from "../config/database";
-import { netStockFromMovements } from "./stockMovementBalance";
+import prisma from "../config/database.js";
+import { netStockFromMovements } from "./stockMovementBalance.js";
 
 // ============================================================================
 // 1. INVENTORY FORMULAS

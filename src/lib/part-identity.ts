@@ -26,7 +26,8 @@ export function formatPartIdentityLabel(
 ): string {
   const partNo = clean(uiPartNo);
   const masterPart = clean(uiMasterPart);
-  if (partNo && masterPart && partNo !== masterPart) {
+  // Always show both slots when present (even if equal) so Part No | Master Part is consistent
+  if (partNo && masterPart) {
     return `${partNo}${separator}${masterPart}`;
   }
   return partNo || masterPart || fallback;

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 const mainGroups = [
     { code: "1", name: "Current Assets", type: "Asset", displayOrder: 1 },

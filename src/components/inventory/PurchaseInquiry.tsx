@@ -161,7 +161,7 @@ const fmtQty = (n: number | undefined | null) =>
 const fmtPartNos = (item: Pick<PartResult, "partNo" | "masterPart">) => {
   const partNo = String(item.partNo || "").trim() || "N/A";
   const masterPart = String(item.masterPart || "").trim() || "N/A";
-  return partNo !== masterPart ? `${partNo} | ${masterPart}` : partNo;
+  return `${partNo} | ${masterPart}`;
 };
 
 const statusBadge = (status: string) => {

@@ -1,26 +1,26 @@
 // DPO Voucher Logic: Vouchers (JV/PV) are ONLY created when store manager receives/approves the order
 import * as express from "express";
 import { Request, Response } from "express";
-import { query, getClient } from "../config/db";
+import { query, getClient } from "../config/db.js";
 import { randomUUID } from "crypto";
 import * as crypto from "crypto";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import { Prisma } from "@prisma/client";
 import {
   buildPartListSearchWithFamilySql,
   buildPartSearchWhereWithFamily,
-} from "../utils/partFamilySearch";
+} from "../utils/partFamilySearch.js";
 import {
   processPurchaseReceive,
   calculateAverageCostDPO,
-} from "../utils/inventoryFormulas";
-import { roundPurchasePrice } from "../utils/purchasePriceRound";
-import { getCanonicalPartId } from "../services/partCanonical";
+} from "../utils/inventoryFormulas.js";
+import { roundPurchasePrice } from "../utils/purchasePriceRound.js";
+import { getCanonicalPartId } from "../services/partCanonical.js";
 import {
   netStockFromMovements,
   stockInOutTotals,
   unassignedStockFromMovements,
-} from "../utils/stockMovementBalance";
+} from "../utils/stockMovementBalance.js";
 
 const router = express.Router();
 const DPO_START_NO = 113;
@@ -576,7 +576,12 @@ router.get("/dashboard", async (req: Request, res: Response) => {
       }
     }
 
-    const stockMovementData = [];
+    const stockMovementData: Array<{
+      month: string;
+      balance: number;
+      stockIn: number;
+      stockOut: number;
+    }> = [];
     let balance = 0;
     for (let i = 5; i >= 0; i--) {
       const date = new Date();
@@ -2289,7 +2294,7 @@ router.get("/balances", async (req: Request, res: Response) => {
       const shelf = Array.from(locations.shelves).join(", ") || null;
       const store = Array.from(locations.stores).join(", ") || null;
 
-      let location = null;
+      let location: string | null = null;
       if (rack && shelf) {
         location = `${rack}/${shelf}`;
       } else {
@@ -2299,7 +2304,7 @@ router.get("/balances", async (req: Request, res: Response) => {
       return {
         part_id: part.id,
         part_no: part.partNo,
-        master_part_no: (part as any).masterPart?.masterPartNo || null, // Fixed casing
+        master_part_no: (part as any).MasterPart?.masterPartNo || null,
         description: part.description,
         brand: (part as any).Brand?.name || null,
         category: (part as any).Category?.name || null,
@@ -2521,7 +2526,17 @@ router.get("/stock-analysis", async (req: Request, res: Response) => {
     }
 
     // Build analysis results
-    const results = [];
+    const results: Array<{
+      id: string;
+      partNo: string;
+      description: string;
+      category: string;
+      quantity: number;
+      value: number;
+      daysIdle: number;
+      turnover: number;
+      classification: "Fast" | "Normal" | "Slow" | "Dead";
+    }> = [];
     const now = new Date();
 
     for (const part of parts) {
@@ -2694,6 +2709,8 @@ router.get("/stock-verification-dates", async (req: Request, res: Response) => {
           partNo: true,
           description: true,
           stockVerifiedAt: true,
+          avgCost: true,
+          cost: true,
           categoryId: true,
           subcategoryId: true,
           Brand: { select: { name: true } },
@@ -2707,20 +2724,57 @@ router.get("/stock-verification-dates", async (req: Request, res: Response) => {
       partDelegate.count({ where }),
     ]);
 
+    const partIds = (parts as any[]).map((p) => p.id);
+    const stockByPart = new Map<string, number>();
+    if (partIds.length > 0) {
+      const [ins, outs] = await Promise.all([
+        prisma.stockMovement.groupBy({
+          by: ["partId"],
+          where: { partId: { in: partIds }, type: "in" },
+          _sum: { quantity: true },
+        }),
+        prisma.stockMovement.groupBy({
+          by: ["partId"],
+          where: { partId: { in: partIds }, type: "out" },
+          _sum: { quantity: true },
+        }),
+      ]);
+      const inMap = new Map(
+        ins.map((r) => [r.partId, r._sum.quantity || 0]),
+      );
+      const outMap = new Map(
+        outs.map((r) => [r.partId, r._sum.quantity || 0]),
+      );
+      for (const id of partIds) {
+        stockByPart.set(
+          id,
+          (inMap.get(id) || 0) - (outMap.get(id) || 0),
+        );
+      }
+    }
+
     res.json({
-      data: (parts as any[]).map((p) => ({
-        id: p.id,
-        partNo: p.partNo,
-        description: p.description || "",
-        brand: p.Brand?.name || "",
-        categoryId: p.categoryId || p.Category?.id || null,
-        category: p.Category?.name || "Uncategorized",
-        subcategoryId: p.subcategoryId || p.Subcategory?.id || null,
-        subcategory: p.Subcategory?.name || "",
-        stockVerifiedAt: p.stockVerifiedAt
-          ? new Date(p.stockVerifiedAt).toISOString()
-          : null,
-      })),
+      data: (parts as any[]).map((p) => {
+        const avgCost = Number(p.avgCost) || 0;
+        const cost = Number(p.cost) || 0;
+        return {
+          id: p.id,
+          partNo: p.partNo,
+          description: p.description || "",
+          brand: p.Brand?.name || "",
+          categoryId: p.categoryId || p.Category?.id || null,
+          category: p.Category?.name || "Uncategorized",
+          subcategoryId: p.subcategoryId || p.Subcategory?.id || null,
+          subcategory: p.Subcategory?.name || "",
+          stockVerifiedAt: p.stockVerifiedAt
+            ? new Date(p.stockVerifiedAt).toISOString()
+            : null,
+          currentStock: stockByPart.get(p.id) ?? 0,
+          avgCost,
+          cost,
+          unitCost: avgCost > 0 ? avgCost : cost > 0 ? cost : null,
+        };
+      }),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -2850,6 +2904,430 @@ router.put(
             : null,
         },
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+/**
+ * Increase/decrease stock from Stock Verification.
+ * Uses the same JV as Adjust Inventory (add → Dr Inventory / Cr Owner Capital;
+ * remove → Dr Dispose Inventory / Cr Inventory). Unit rate = avgCost, else cost;
+ * if both missing → error. Voucher/adjustment date = verification_date.
+ * Stock is applied immediately (increase is auto-approved like remove).
+ */
+router.post(
+  "/stock-verification-dates/:partId/adjust-stock",
+  async (req: Request, res: Response) => {
+    try {
+      const { partId } = req.params;
+      const {
+        direction,
+        quantity,
+        verification_date,
+        store_id,
+      } = req.body || {};
+
+      const dir = String(direction || "").toLowerCase();
+      if (dir !== "increase" && dir !== "decrease") {
+        return res
+          .status(400)
+          .json({ error: "direction must be increase or decrease" });
+      }
+
+      const qty = parseInt(String(quantity), 10);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        return res.status(400).json({ error: "quantity must be a positive number" });
+      }
+
+      if (!verification_date) {
+        return res
+          .status(400)
+          .json({ error: "verification_date is required for voucher date" });
+      }
+      const voucherDate = new Date(verification_date);
+      if (Number.isNaN(voucherDate.getTime())) {
+        return res.status(400).json({ error: "Invalid verification date" });
+      }
+
+      const addInventory = dir === "increase";
+
+      const part = await prisma.part.findUnique({
+        where: { id: partId },
+        include: { Brand: { select: { name: true } } },
+      });
+      if (!part || part.status !== "active") {
+        return res.status(404).json({ error: "Part not found" });
+      }
+
+      const avgCost = Number((part as any).avgCost) || 0;
+      const costPrice = Number(part.cost) || 0;
+      let unitCost = 0;
+      if (avgCost > 0) unitCost = avgCost;
+      else if (costPrice > 0) unitCost = costPrice;
+      else {
+        return res.status(400).json({ error: "Stock cannot be updated" });
+      }
+
+      const totalAmount = unitCost * qty;
+
+      if (!addInventory) {
+        const movementsIn = await prisma.stockMovement.aggregate({
+          _sum: { quantity: true },
+          where: {
+            partId,
+            ...(store_id ? { storeId: String(store_id) } : {}),
+            type: "in",
+          },
+        });
+        const movementsOut = await prisma.stockMovement.aggregate({
+          _sum: { quantity: true },
+          where: {
+            partId,
+            ...(store_id ? { storeId: String(store_id) } : {}),
+            type: "out",
+          },
+        });
+        const balance =
+          (movementsIn._sum.quantity || 0) - (movementsOut._sum.quantity || 0);
+        if (qty > balance) {
+          return res.status(400).json({
+            error: `Insufficient stock for ${part.partNo}. Available: ${balance}, requested: ${qty}`,
+          });
+        }
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const getOrCreateAccount = async (
+          codes: string[],
+          fallbackSubgroupCode: string,
+          newAccountCode: string,
+          newAccountName: string,
+          desc: string,
+        ) => {
+          for (const code of codes) {
+            const acc = await tx.account.findFirst({
+              where: { code, status: "Active" },
+            });
+            if (acc) return acc;
+          }
+          const subgroup = await tx.subgroup.findFirst({
+            where: { code: fallbackSubgroupCode },
+          });
+          if (!subgroup) {
+            throw new Error(`Subgroup ${fallbackSubgroupCode} not found`);
+          }
+          return await tx.account.create({
+            data: {
+              subgroupId: subgroup.id,
+              code: newAccountCode,
+              name: newAccountName,
+              description: desc,
+              openingBalance: 0,
+              currentBalance: 0,
+              status: "Active",
+            } as any,
+          });
+        };
+
+        const inventoryAccount = await getOrCreateAccount(
+          ["101001", "104005", "104001"],
+          "104",
+          "104005",
+          "Inventory - General",
+          "General inventory account for adjustments",
+        );
+
+        const secondAccount = addInventory
+          ? await getOrCreateAccount(
+              ["501003"],
+              "501",
+              "501003",
+              "OWNER CAPITAL",
+              "Owner Capital account for inventory adjustments",
+            )
+          : await getOrCreateAccount(
+              ["801014"],
+              "801",
+              "801014",
+              "Dispose Inventory",
+              "Dispose Inventory expense account for adjustments",
+            );
+
+        const maxRes: any[] =
+          await tx.$queryRaw`SELECT "voucherNumber" FROM "Voucher" WHERE "voucherNumber" ~ '^JV[0-9]+$' ORDER BY CAST(substring("voucherNumber" FROM 3) AS INTEGER) DESC LIMIT 1`;
+        let jvNumber = 1;
+        if (maxRes && maxRes.length > 0) {
+          const match = String(maxRes[0].voucherNumber || "").match(/JV(\d+)/);
+          if (match) jvNumber = parseInt(match[1], 10) + 1;
+        }
+        const voucherNumber = `JV${String(jvNumber).padStart(4, "0")}`;
+
+        const partInfo = `${part.partNo}/${part.description || ""}/${
+          (part as any).Brand?.name || ""
+        }/${part.partNo}`;
+        const narration = `Item: ${partInfo} is ${
+          addInventory ? "added" : "remove"
+        } from Stock Verification, Qty:${qty}, Rate: ${unitCost}`.substring(
+          0,
+          1000,
+        );
+
+        const subject = `Stock Verification - ${
+          addInventory ? "Increase" : "Decrease"
+        } ${part.partNo}`;
+
+        const adjustmentId = crypto.randomUUID();
+        const voucherId = crypto.randomUUID();
+
+        await tx.adjustment.create({
+          data: {
+            id: adjustmentId,
+            date: voucherDate,
+            subject,
+            storeId: store_id || null,
+            addInventory,
+            notes: "Created from Stock Verification",
+            totalAmount,
+            status: "approved",
+            updatedAt: new Date(),
+            AdjustmentItem: {
+              create: [
+                {
+                  id: crypto.randomUUID(),
+                  partId,
+                  quantity: qty,
+                  cost: unitCost,
+                  updatedAt: new Date(),
+                },
+              ],
+            },
+          } as any,
+        });
+
+        await tx.voucher.create({
+          data: {
+            id: voucherId,
+            updatedAt: new Date(),
+            voucherNumber,
+            type: "journal",
+            date: voucherDate,
+            narration,
+            status: "posted",
+            createdBy: "System",
+            totalDebit: totalAmount,
+            totalCredit: totalAmount,
+            isSystemGenerated: true,
+            storeId: store_id || null,
+          } as any,
+        });
+
+        if (addInventory) {
+          await tx.voucherEntry.createMany({
+            data: [
+              {
+                id: crypto.randomUUID(),
+                voucherId,
+                accountId: inventoryAccount.id,
+                accountName: inventoryAccount.name,
+                description: "Inventory Adjustment (Add)",
+                debit: totalAmount,
+                credit: 0,
+                sortOrder: 0,
+                adjustmentId,
+              },
+              {
+                id: crypto.randomUUID(),
+                voucherId,
+                accountId: secondAccount.id,
+                accountName: secondAccount.name,
+                description: "Owner Equity (Adjustment)",
+                debit: 0,
+                credit: totalAmount,
+                sortOrder: 1,
+                adjustmentId,
+              },
+            ] as any,
+          });
+        } else {
+          await tx.voucherEntry.createMany({
+            data: [
+              {
+                id: crypto.randomUUID(),
+                voucherId,
+                accountId: secondAccount.id,
+                accountName: secondAccount.name,
+                description: "Dispose Inventory (Adjustment)",
+                debit: totalAmount,
+                credit: 0,
+                sortOrder: 0,
+                adjustmentId,
+              },
+              {
+                id: crypto.randomUUID(),
+                voucherId,
+                accountId: inventoryAccount.id,
+                accountName: inventoryAccount.name,
+                description: "Inventory Adjustment (Remove)",
+                debit: 0,
+                credit: totalAmount,
+                sortOrder: 1,
+                adjustmentId,
+              },
+            ] as any,
+          });
+        }
+
+        await tx.adjustment.update({
+          where: { id: adjustmentId },
+          data: { voucherId },
+        });
+        await tx.voucher.update({
+          where: { id: voucherId },
+          data: {
+            Adjustment_Voucher_adjustmentIdToAdjustment: {
+              connect: { id: adjustmentId },
+            },
+          } as any,
+        });
+
+        await tx.stockMovement.create({
+          data: {
+            id: randomUUID(),
+            partId,
+            type: addInventory ? "in" : "out",
+            quantity: qty,
+            storeId: store_id || null,
+            referenceType: "adjustment",
+            referenceId: adjustmentId,
+            notes: `Stock Verification: ${subject}`,
+            createdAt: new Date(),
+          } as any,
+        });
+
+        const existingPrs = await tx.partRackShelf.findFirst({
+          where: {
+            partId,
+            storeId: store_id || null,
+            rackId: null,
+            shelfId: null,
+          },
+        });
+        if (existingPrs) {
+          await tx.partRackShelf.update({
+            where: { id: existingPrs.id },
+            data: {
+              quantity: addInventory
+                ? { increment: qty }
+                : { decrement: qty },
+            },
+          });
+        } else {
+          await tx.partRackShelf.create({
+            data: {
+              id: randomUUID(),
+              partId,
+              storeId: store_id || null,
+              rackId: null,
+              shelfId: null,
+              quantity: addInventory ? qty : -qty,
+            },
+          });
+        }
+
+        const movementsIn = await tx.stockMovement.aggregate({
+          _sum: { quantity: true },
+          where: { partId, type: "in" },
+        });
+        const movementsOut = await tx.stockMovement.aggregate({
+          _sum: { quantity: true },
+          where: { partId, type: "out" },
+        });
+        const currentTotalQty =
+          (movementsIn._sum.quantity || 0) -
+          (movementsOut._sum.quantity || 0);
+
+        // Same fallback as unit rate: avgCost → cost → purchasePrice
+        const oldAvgCost =
+          Number((part as any).avgCost) ||
+          Number(part.cost) ||
+          Number((part as any).purchasePrice) ||
+          0;
+        const rate = unitCost > 0 ? unitCost : oldAvgCost;
+        let newAvgCost = oldAvgCost;
+
+        if (addInventory) {
+          // Weighted avg on add:
+          // (oldQty * oldAvg + rate * qty) / (oldQty + qty)
+          const oldQty = currentTotalQty - qty;
+          if (oldQty > 0) {
+            newAvgCost =
+              (oldQty * oldAvgCost + rate * qty) / (oldQty + qty);
+          } else {
+            newAvgCost = rate;
+          }
+        } else {
+          // Weighted avg on remove:
+          // (oldQty * oldAvg - rate * qty) / remainingQty
+          const oldQty = currentTotalQty + qty;
+          if (currentTotalQty > 0 && oldQty > 0) {
+            newAvgCost =
+              (oldQty * oldAvgCost - rate * qty) / currentTotalQty;
+          } else if (currentTotalQty <= 0) {
+            // No stock left — keep last known rate as avg for next receipt
+            newAvgCost = rate > 0 ? rate : oldAvgCost;
+          }
+        }
+
+        if (!Number.isFinite(newAvgCost) || newAvgCost < 0) {
+          newAvgCost = rate > 0 ? rate : Math.max(0, oldAvgCost);
+        }
+
+        await tx.part.update({
+          where: { id: partId },
+          data: {
+            purchasePrice: roundPurchasePrice(rate),
+            avgCost: newAvgCost,
+            stockVerifiedAt: voucherDate,
+            updatedAt: new Date(),
+          } as any,
+        });
+
+        if (addInventory) {
+          await tx.account.update({
+            where: { id: inventoryAccount.id },
+            data: { currentBalance: { increment: totalAmount } },
+          });
+          await tx.account.update({
+            where: { id: secondAccount.id },
+            data: { currentBalance: { increment: totalAmount } },
+          });
+        } else {
+          await tx.account.update({
+            where: { id: inventoryAccount.id },
+            data: { currentBalance: { decrement: totalAmount } },
+          });
+          await tx.account.update({
+            where: { id: secondAccount.id },
+            data: { currentBalance: { increment: totalAmount } },
+          });
+        }
+
+        return {
+          adjustmentId,
+          voucherNumber,
+          direction: dir,
+          quantity: qty,
+          unitCost: rate,
+          avgCost: newAvgCost,
+          totalAmount,
+          currentStock: currentTotalQty,
+          stockVerifiedAt: voucherDate.toISOString(),
+        };
+      });
+
+      res.status(201).json({ success: true, data: result });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -3540,6 +4018,7 @@ router.get("/adjustments", async (req: Request, res: Response) => {
             Part: {
               include: {
                 Brand: true,
+                MasterPart: { select: { masterPartNo: true } },
               },
             },
             Rack: true,
@@ -3578,6 +4057,8 @@ router.get("/adjustments", async (req: Request, res: Response) => {
           id: item.id,
           part_id: item.partId,
           part_no: item.Part?.partNo,
+          master_part_no: item.Part?.MasterPart?.masterPartNo || "",
+          masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
           part_description: item.Part?.description,
           brand: item.Part?.Brand?.name,
           origin: item.Part?.origin,
@@ -3778,7 +4259,15 @@ router.post("/adjustments", async (req: Request, res: Response) => {
       const voucherNumber = `JV${String(jvNumber).padStart(4, "0")}`;
 
       // 8. Prepare Voucher Entries
-      const voucherEntries = [];
+      const voucherEntries: Array<{
+        id: string;
+        accountId: string;
+        accountName: string;
+        debit: number;
+        credit: number;
+        description: string;
+        sortOrder: number;
+      }> = [];
       if (add_inventory !== false) {
         // Debit Inventory, Credit Equity
         voucherEntries.push({
@@ -4212,6 +4701,7 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
                 include: {
                   Brand: true,
                   Category: true,
+                  MasterPart: { select: { masterPartNo: true } },
                 },
               },
               Rack: true,
@@ -4262,6 +4752,8 @@ router.get("/adjustments/by-store", async (req: Request, res: Response) => {
             id: item.id,
             part_id: item.partId,
             part_no: item.Part.partNo,
+            master_part_no: item.Part?.MasterPart?.masterPartNo || "",
+            masterPartNo: item.Part?.MasterPart?.masterPartNo || "",
             part_description: item.Part.description,
             brand: item.Part.Brand?.name || "",
           origin: item.Part.origin || "",
@@ -4679,7 +5171,13 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
           }
 
           // E. Prepare New Entries
-          const voucherEntries = [];
+          const voucherEntries: Array<{
+            accountId: string;
+            accountName: string;
+            debit: number;
+            credit: number;
+            description: string;
+          }> = [];
           if (add_inventory !== false) {
             // Add: Debit Inventory, Credit Equity
             voucherEntries.push({
@@ -5782,6 +6280,7 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
                 include: {
                   Brand: true,
                   Category: true,
+                  MasterPart: { select: { masterPartNo: true } },
                 },
               },
             },
@@ -5825,10 +6324,15 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         notes: po.notes,
         total_amount: po.totalAmount,
         items_count: po.PurchaseOrderItem.length,
-        items: po.PurchaseOrderItem.map((item) => ({
+        items: po.PurchaseOrderItem.map((item) => {
+          const masterPartNo =
+            (item.Part as any)?.MasterPart?.masterPartNo || null;
+          return {
           id: item.id,
           part_id: item.partId,
           part_no: item.Part.partNo,
+          master_part_no: masterPartNo,
+          masterPartNo: masterPartNo,
           part_description: item.Part.description,
           brand: item.Part.Brand?.name || "",
           origin: item.Part.origin || "",
@@ -5837,7 +6341,15 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
           total_cost: item.totalCost,
           received_qty: item.receivedQty,
           notes: item.notes,
-        })),
+          part: {
+            id: item.Part.id,
+            partNo: item.Part.partNo,
+            masterPartNo,
+            master_part_no: masterPartNo,
+            description: item.Part.description,
+          },
+        };
+        }),
         created_at: po.createdAt,
       })),
       pagination: {
@@ -6095,9 +6607,13 @@ router.post("/purchase-orders", async (req: Request, res: Response) => {
       },
     });
 
+    if (!orderWithItems) {
+      return res.status(500).json({ error: "Failed to load created purchase order" });
+    }
+
     const supplierName =
-      orderWithItems?.Supplier?.companyName ||
-      orderWithItems?.Supplier?.name ||
+      orderWithItems.Supplier?.companyName ||
+      orderWithItems.Supplier?.name ||
       null;
 
     res.status(201).json({
@@ -6172,6 +6688,12 @@ router.post("/purchase-orders", async (req: Request, res: Response) => {
           },
         });
 
+        if (!orderWithItems) {
+          return res.status(500).json({
+            error: "Failed to load created purchase order",
+          });
+        }
+
         return res.status(201).json({
           id: orderWithItems.id,
           po_number: orderWithItems.poNumber,
@@ -6204,6 +6726,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
               include: {
                 Brand: true,
                 Category: true,
+                MasterPart: { select: { masterPartNo: true } },
               },
             },
           },
@@ -6258,10 +6781,14 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
       total_amount: order.totalAmount,
       items: order.PurchaseOrderItem.map((item) => {
         const mv = movementByPartId.get(item.partId);
+        const masterPartNo =
+          (item.Part as any)?.MasterPart?.masterPartNo || null;
         return {
         id: item.id,
         part_id: item.partId,
         part_no: item.Part.partNo,
+        master_part_no: masterPartNo,
+        masterPartNo: masterPartNo,
         part_description: item.Part.description,
         brand: item.Part.Brand?.name || "",
           origin: item.Part.origin || "",
@@ -6282,6 +6809,13 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         shelf_name: mv?.Shelf?.shelfNo ?? null,
         store_name: mv?.Store?.name ?? null,
         notes: item.notes,
+        part: {
+          id: item.Part.id,
+          partNo: item.Part.partNo,
+          masterPartNo,
+          master_part_no: masterPartNo,
+          description: item.Part.description,
+        },
       };
       }),
       created_at: order.createdAt,
@@ -7111,7 +7645,9 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
         if (true) {
           // Get supplier name and account
           let supplierName = "Supplier";
-          let supplierAccount = null;
+          let supplierAccount: Awaited<
+            ReturnType<typeof prisma.account.findFirst>
+          > = null;
           if (order.supplierId) {
             const supplier = await prisma.supplier.findUnique({
               where: { id: order.supplierId },
@@ -7120,16 +7656,21 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
               supplierName =
                 supplier.companyName || supplier.name || "Supplier";
               // Find supplier account by name (format: "Name" or "Company Name")
+              const supplierNameFilters = [
+                supplier.name,
+                supplier.companyName,
+              ].filter((n): n is string => Boolean(n && String(n).trim()));
               supplierAccount = await prisma.account.findFirst({
                 where: {
                   AND: [
                     { code: { startsWith: "301" } },
-                    {
-                      OR: [
-                        { name: supplier.name || "" },
-                        { name: supplier.companyName },
-                      ],
-                    },
+                    ...(supplierNameFilters.length
+                      ? [
+                          {
+                            OR: supplierNameFilters.map((name) => ({ name })),
+                          },
+                        ]
+                      : []),
                   ],
                 },
               });
@@ -7305,7 +7846,15 @@ router.put("/purchase-orders/:id", async (req: Request, res: Response) => {
               const voucherNumber = `JV${String(nextNumber).padStart(4, "0")}`;
 
               // Get account details for voucher entries
-              const voucherEntries = [];
+              const voucherEntries: Array<{
+                id: string;
+                accountId: string;
+                accountName: string;
+                description: string;
+                debit: number;
+                credit: number;
+                sortOrder: number;
+              }> = [];
               for (const line of journalLines) {
                 const account = await prisma.account.findUnique({
                   where: { id: line.accountId },
@@ -7482,6 +8031,7 @@ router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
 
     for (const v of vouchers) {
       for (const edge of v.VoucherEntry) {
+        if (!edge.Account?.Subgroup?.MainGroup || !edge.accountId) continue;
         const accType = edge.Account.Subgroup.MainGroup.type.toLowerCase();
         const reverseBalance =
           accType === "asset" || accType === "expense" || accType === "cost"
@@ -8408,7 +8958,7 @@ router.get("/verifications/active", async (req: Request, res: Response) => {
       startDate: verification.startDate,
       completedDate: verification.completedDate,
       items: verification.StockVerificationItem.map((item) => {
-        const locationParts = [];
+        const locationParts: string[] = [];
         if (item.Store?.name) locationParts.push(item.Store.name);
         if (item.Rack?.codeNo) locationParts.push(item.Rack.codeNo);
         if (item.Shelf?.shelfNo) locationParts.push(item.Shelf.shelfNo);
@@ -8488,7 +9038,19 @@ router.post("/verifications", async (req: Request, res: Response) => {
     }
 
     // Calculate system quantities for each part and create verification items
-    const verificationItems = [];
+    const verificationItems: Array<{
+      id: string;
+      partId: string;
+      storeId: string | null;
+      rackId: string | null;
+      shelfId: string | null;
+      systemQty: number;
+      physicalQty: null;
+      variance: null;
+      status: string;
+      remarks: null;
+      updatedAt: Date;
+    }> = [];
     for (const part of parts) {
       const stock = stockByPart[part.id] || { in: 0, out: 0 };
       const systemQty = stock.in - stock.out;
@@ -8575,7 +9137,7 @@ router.get("/verifications/:id", async (req: Request, res: Response) => {
       startDate: verification.startDate,
       completedDate: verification.completedDate,
       items: verification.StockVerificationItem.map((item) => {
-        const locationParts = [];
+        const locationParts: string[] = [];
         if (item.Store?.name) locationParts.push(item.Store.name);
         if (item.Rack?.codeNo) locationParts.push(item.Rack.codeNo);
         if (item.Shelf?.shelfNo) locationParts.push(item.Shelf.shelfNo);
@@ -8808,6 +9370,7 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
                 include: {
                   Brand: true,
                   Category: true,
+                  MasterPart: { select: { masterPartNo: true } },
                 },
               },
               Rack: true,
@@ -8860,12 +9423,17 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
           total_quantity: total_quantity,
           expenses_count: dpo.DirectPurchaseOrderExpense.length,
           created_at: dpo.createdAt,
-          items: dpo.DirectPurchaseOrderItem.map((item) => ({
+          items: dpo.DirectPurchaseOrderItem.map((item) => {
+            const masterPartNo =
+              (item.Part as any)?.MasterPart?.masterPartNo || null;
+            return {
             id: item.id,
             part_id: item.partId,
             partId: item.partId,
             part_no: item.Part?.partNo || null,
             partNo: item.Part?.partNo || null,
+            master_part_no: masterPartNo,
+            masterPartNo: masterPartNo,
             part_description: item.Part?.description || null,
             partDescription: item.Part?.description || null,
             description: item.Part?.description || null,
@@ -8895,10 +9463,16 @@ router.get("/direct-purchase-orders", async (req: Request, res: Response) => {
               ? {
                   id: item.Part.id,
                   partNo: item.Part.partNo,
+                  masterPartNo,
+                  master_part_no: masterPartNo,
                   description: item.Part.description,
+                  brand: (item.Part as any)?.Brand
+                    ? { name: (item.Part as any).Brand.name }
+                    : undefined,
                 }
               : null,
-          })),
+          };
+          }),
         };
       }),
       pagination: {
@@ -9013,6 +9587,7 @@ router.get(
                 include: {
                   Brand: true,
                   Category: true,
+                  MasterPart: { select: { masterPartNo: true } },
                 },
               },
               Rack: {
@@ -9077,11 +9652,15 @@ router.get(
         received_by: receiverInfo?.received_by || null,
         received_by_id: receiverInfo?.received_by_id || null,
         received_at: receiverInfo?.received_at || null,
-        items: order.DirectPurchaseOrderItem.map((item) => ({
+        items: order.DirectPurchaseOrderItem.map((item) => {
+          const masterPartNo =
+            (item.Part as any)?.MasterPart?.masterPartNo || null;
+          return {
           id: item.id,
           part_id: item.partId,
           part_no: item.Part.partNo,
-          master_part_no: (item.Part as any).masterPartNo || null,
+          master_part_no: masterPartNo,
+          masterPartNo: masterPartNo,
           part_description: item.Part.description,
           brand: item.Part.Brand?.name || "",
           origin: item.Part.origin || "",
@@ -9111,7 +9690,17 @@ router.get(
           rack_store_name: item.Rack?.Store?.name || null,
           shelf_id: item.shelfId,
           shelf_name: item.Shelf?.shelfNo || null,
-        })),
+          part: {
+            id: item.Part.id,
+            partNo: item.Part.partNo,
+            masterPartNo,
+            master_part_no: masterPartNo,
+            description: item.Part.description,
+            brand: item.Part.Brand ? { name: item.Part.Brand.name } : undefined,
+            origin: item.Part.origin || "",
+          },
+        };
+        }),
         expenses: order.DirectPurchaseOrderExpense.map((expense) => ({
           id: expense.id,
           expense_type: expense.expenseType,

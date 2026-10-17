@@ -1,10 +1,10 @@
 import express from "express";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import {
   ActivityActionType,
   getClientIp,
   logActivity,
-} from "../utils/activityLogger";
+} from "../utils/activityLogger.js";
 
 const router = express.Router();
 

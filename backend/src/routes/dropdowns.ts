@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
-import prisma from "../config/database";
-import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
-import { isCashBankAccount } from "../utils/cashBankMode";
+import prisma from "../config/database.js";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch.js";
+import { isCashBankAccount } from "../utils/cashBankMode.js";
 import { randomUUID } from "crypto";
 
 const router = express.Router();

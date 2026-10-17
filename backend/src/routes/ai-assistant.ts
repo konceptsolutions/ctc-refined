@@ -1,17 +1,17 @@
 import express, { Response } from "express";
 import { randomUUID } from "crypto";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import fetch from "node-fetch";
-import { buildErpSystemPrompt } from "../ai/erpKnowledge";
+import { buildErpSystemPrompt } from "../ai/erpKnowledge.js";
 import {
   formatLearnedFactsForPrompt,
   isTeachCommand,
   parseTeachCommand,
-} from "../ai/aiMemory";
-import { detectAiProvider, resolveChatCompletionsUrl } from "../ai/aiProvider";
-import { AI_DB_TOOLS, executeAiDbTool } from "../ai/aiDbTools";
-import { resolveAiExportFile } from "../ai/aiExportFiles";
-import { AuthRequest } from "../middleware/authMiddleware";
+} from "../ai/aiMemory.js";
+import { detectAiProvider, resolveChatCompletionsUrl } from "../ai/aiProvider.js";
+import { AI_DB_TOOLS, executeAiDbTool } from "../ai/aiDbTools.js";
+import { resolveAiExportFile } from "../ai/aiExportFiles.js";
+import { AuthRequest } from "../middleware/authMiddleware.js";
 import path from "path";
 
 const router = express.Router();

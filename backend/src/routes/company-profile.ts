@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 
 const router = express.Router();
 

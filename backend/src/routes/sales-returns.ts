@@ -2,18 +2,24 @@ import * as express from 'express';
 import { Request, Response } from 'express';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
-import prisma from '../config/database';
-import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus';
-import { approveDirectSalesReturn } from '../utils/directSalesReturnApprove';
-import { receiveSalesReturnStock } from '../utils/receiveSalesReturnStock';
+import prisma from '../config/database.js';
+import { syncSalesInvoiceReturnStatus } from '../utils/salesInvoiceReturnStatus.js';
+import { approveDirectSalesReturn } from '../utils/directSalesReturnApprove.js';
+import { receiveSalesReturnStock } from '../utils/receiveSalesReturnStock.js';
 import {
   buildDirectReturnItemsCreate,
   nextDirectReturnNumber,
   parseDirectReturnBody,
-} from '../utils/directSalesReturnInput';
+} from '../utils/directSalesReturnInput.js';
 
 const router = express.Router();
 const SALES_RETURN_START_NO = 97;
+
+const salesReturnPartInclude = {
+  include: {
+    MasterPart: { select: { masterPartNo: true } },
+  },
+} as const;
 
 async function getPartStockFromMovements(
   tx: Prisma.TransactionClient,
@@ -113,6 +119,7 @@ router.get('/', async (req: Request, res: Response) => {
                   partNo: true,
                   description: true,
                   uom: true,
+                  MasterPart: { select: { masterPartNo: true } },
                 },
               },
             },
@@ -151,14 +158,14 @@ router.get('/:id', async (req: Request, res: Response) => {
           include: {
             SalesInvoiceItem: {
               include: {
-                Part: true,
+                Part: salesReturnPartInclude,
               },
             },
           },
         },
         SalesReturnItem: {
           include: {
-            Part: true,
+            Part: salesReturnPartInclude,
           },
         },
       },
@@ -457,7 +464,7 @@ router.post('/', async (req: Request, res: Response) => {
         include: {
           SalesReturnItem: {
             include: {
-              Part: true,
+              Part: salesReturnPartInclude,
             },
           },
           SalesInvoice: true,
@@ -538,7 +545,7 @@ router.post('/direct', async (req: Request, res: Response) => {
           },
         } as any,
         include: {
-          SalesReturnItem: { include: { Part: true } },
+          SalesReturnItem: { include: { Part: salesReturnPartInclude } },
           Customer: true,
         },
       });
@@ -622,7 +629,7 @@ router.put('/direct/:id', async (req: Request, res: Response) => {
           },
         } as any,
         include: {
-          SalesReturnItem: { include: { Part: true } },
+          SalesReturnItem: { include: { Part: salesReturnPartInclude } },
           Customer: true,
         },
       });
@@ -652,7 +659,7 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
         Customer: true,
         SalesReturnItem: {
           include: {
-            Part: true,
+            Part: salesReturnPartInclude,
           },
         },
         SalesInvoice: {
@@ -1539,7 +1546,7 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
       include: {
         SalesReturnItem: {
           include: {
-            Part: true,
+            Part: salesReturnPartInclude,
           },
         },
         SalesInvoice: true,
@@ -1581,7 +1588,7 @@ router.post('/:id/receive', async (req: Request, res: Response) => {
       include: {
         Customer: true,
         SalesReturnItem: {
-          include: { Part: true },
+          include: { Part: salesReturnPartInclude },
         },
         SalesInvoice: {
           include: {
@@ -1627,7 +1634,7 @@ router.post('/:id/receive', async (req: Request, res: Response) => {
       const updated = await prisma.salesReturn.findUnique({
         where: { id },
         include: {
-          SalesReturnItem: { include: { Part: true } },
+          SalesReturnItem: { include: { Part: salesReturnPartInclude } },
           Customer: true,
           SalesInvoice: {
             select: { id: true, invoiceNo: true, status: true },

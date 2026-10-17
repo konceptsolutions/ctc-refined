@@ -4,10 +4,10 @@
  */
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 import {
   directReturnUnitCostForItem,
-} from './directSalesReturnApprove';
+} from './directSalesReturnApprove.js';
 
 type ShelfLoc = {
   storeId: string | null;

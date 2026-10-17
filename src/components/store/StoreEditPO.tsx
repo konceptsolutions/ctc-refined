@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Trash } from "lucide-react";
 import { apiClient } from "@/lib/api";
-import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { formatPartIdentityFromUi } from "@/lib/part-identity";
 import { toast } from "sonner";
 import { formatUiDate } from "@/utils/dateUtils";
 import { Calendar } from "@/components/ui/calendar";
@@ -136,8 +136,9 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
       if (Array.isArray(partsData)) {
         setParts(partsData.map((p: any) => ({
           id: p.id,
-          partNo: p.part_no || p.partNo,
-          masterPartNo: p.master_part_no || p.masterPartNo || "",
+          // UI: Part No = DB master_part_no, Master Part = DB part_no
+          partNo: p.master_part_no || p.masterPartNo || "",
+          masterPartNo: p.part_no || p.partNo || "",
           description: p.description || "",
           brand: p.brand_name || p.brand?.name || "N/A",
           cost: p.cost || 0,
@@ -381,12 +382,21 @@ export const StoreEditPO = ({ order, open, onOpenChange, onSuccess }: StoreEditP
                               onValueChange={(value) => handleItemChange(item.id, "partId", value)}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Select part" />
+                                <SelectValue placeholder="Select part">
+                                  {(() => {
+                                    const selected = parts.find(
+                                      (p) => p.id === item.partId,
+                                    );
+                                    return selected
+                                      ? `${formatPartIdentityFromUi(selected)} - ${selected.brand}`
+                                      : undefined;
+                                  })()}
+                                </SelectValue>
                               </SelectTrigger>
                                   <SelectContent>
                                     {parts.map((part) => (
                                       <SelectItem key={part.id} value={part.id || "unknown"}>
-                                        {formatPartIdentityFromDb(part)} - {part.brand}
+                                        {formatPartIdentityFromUi(part)} - {part.brand}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

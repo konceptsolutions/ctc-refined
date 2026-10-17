@@ -1,18 +1,18 @@
 import express, { Request, Response } from "express";
-import { AuthRequest, authorizeRoles } from "../middleware/authMiddleware";
+import { AuthRequest, authorizeRoles } from "../middleware/authMiddleware.js";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
-import { getCanonicalPartId } from "../services/partCanonical";
-import { netStockFromMovements } from "../utils/stockMovementBalance";
-import { getPakistanFinancialYearBounds } from "../utils/pakistanFinancialYear";
+import prisma from "../config/database.js";
+import { getCanonicalPartId } from "../services/partCanonical.js";
+import { netStockFromMovements } from "../utils/stockMovementBalance.js";
+import { getPakistanFinancialYearBounds } from "../utils/pakistanFinancialYear.js";
 import {
   displayPartNoFromPart,
   hydrateSalesInvoiceItems,
   resolveInvoiceItemPartFields,
-} from "../utils/salesInvoiceItemPart";
-import { getPartFamilyIds } from "../utils/partFamilySearch";
-import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary";
+} from "../utils/salesInvoiceItemPart.js";
+import { getPartFamilyIds } from "../utils/partFamilySearch.js";
+import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary.js";
 
 const router = express.Router();
 

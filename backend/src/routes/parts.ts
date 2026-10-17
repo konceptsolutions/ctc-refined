@@ -1,20 +1,20 @@
 import { randomUUID } from "crypto";
 import express, { Request, Response } from "express";
-import { query } from "../config/db";
+import { query } from "../config/db.js";
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import {
   isExactPartNoMatch,
   getCanonicalPartId,
-} from "../services/partCanonical";
+} from "../services/partCanonical.js";
 import {
   fillMissingImagesFromFamily,
   findSharedImagesByIdentity,
   resolveSharedImagesForPart,
   syncImagesToAlternateParts,
-} from "../utils/partAlternateImages";
-import { buildPartFamilySearchSql, buildPartFamilySearchLiteSql, buildPartIdentityFilterSql } from "../utils/partFamilySearch";
-import { roundWeight } from "../utils/weightRound";
+} from "../utils/partAlternateImages.js";
+import { buildPartFamilySearchSql, buildPartFamilySearchLiteSql, buildPartIdentityFilterSql } from "../utils/partFamilySearch.js";
+import { roundWeight } from "../utils/weightRound.js";
 
 const router = express.Router();
 

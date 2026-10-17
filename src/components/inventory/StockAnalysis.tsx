@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Search, Loader2, Check, Layers } from "lucide-react";
+import {
+  ClipboardCheck,
+  Search,
+  Loader2,
+  Check,
+  Layers,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,6 +51,10 @@ interface VerificationRow {
   subcategoryId: string | null;
   subcategory: string;
   stockVerifiedAt: string | null;
+  currentStock?: number;
+  avgCost?: number;
+  cost?: number;
+  unitCost?: number | null;
 }
 
 interface NamedOption {
@@ -112,6 +122,7 @@ const StockAnalysisInner = () => {
   const [items, setItems] = useState<VerificationRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dateDrafts, setDateDrafts] = useState<Record<string, string>>({});
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -215,6 +226,13 @@ const StockAnalysisInner = () => {
         }
         return next;
       });
+      setQtyDrafts(() => {
+        const next: Record<string, string> = {};
+        for (const row of rows) {
+          next[row.id] = String(Number(row.currentStock ?? 0));
+        }
+        return next;
+      });
     } catch {
       toast.error("Failed to load stock verification items");
       setItems([]);
@@ -266,13 +284,35 @@ const StockAnalysisInner = () => {
 
   const handleUpdateItem = async (item: VerificationRow, dateValue?: string) => {
     if (!canEdit) {
-      toast.error("You do not have permission to update verification dates");
+      toast.error("You do not have permission to update verification");
       return;
     }
     const verifiedAt = dateValue ?? dateDrafts[item.id] ?? todayLocal();
     if (!verifiedAt) {
       toast.error("Select a verification date");
       return;
+    }
+
+    const currentStock = Number(item.currentStock ?? 0);
+    const rawQty = String(qtyDrafts[item.id] ?? "").trim();
+    const hasQtyInput = rawQty !== "";
+    const newStock = hasQtyInput ? parseInt(rawQty, 10) : currentStock;
+
+    if (hasQtyInput && (!Number.isFinite(newStock) || newStock < 0)) {
+      toast.error("Enter a valid stock quantity (0 or more)");
+      return;
+    }
+
+    const stockChanged = hasQtyInput && newStock !== currentStock;
+    const delta = newStock - currentStock;
+
+    if (stockChanged) {
+      const avgCost = Number(item.avgCost) || 0;
+      const costPrice = Number(item.cost) || 0;
+      if (avgCost <= 0 && costPrice <= 0) {
+        toast.error("Stock cannot be updated");
+        return;
+      }
     }
 
     try {
@@ -282,29 +322,98 @@ const StockAnalysisInner = () => {
         return;
       }
       const by = performedByPayload(operator);
-      const result = await apiClient.updateStockVerificationDate(item.id, {
-        verified_at: verifiedAt,
-        ...by,
-      });
-      if (result.error) {
-        toast.error(result.error);
-        return;
+
+      let voucherNumber: string | undefined;
+      let nextStock = currentStock;
+      let nextAvgCost = item.avgCost;
+      let nextUnitCost = item.unitCost;
+
+      // Only create adjustment voucher + avg recalc when stock quantity changed
+      if (stockChanged) {
+        const adjustResult = await apiClient.adjustStockVerificationQty(
+          item.id,
+          {
+            direction: delta > 0 ? "increase" : "decrease",
+            quantity: Math.abs(delta),
+            verification_date: verifiedAt,
+            ...by,
+          },
+        );
+        if (adjustResult.error) {
+          toast.error(adjustResult.error);
+          return;
+        }
+        const data = adjustResult.data as {
+          currentStock?: number;
+          voucherNumber?: string;
+          avgCost?: number;
+          unitCost?: number;
+          stockVerifiedAt?: string;
+        };
+        voucherNumber = data.voucherNumber;
+        nextStock = data.currentStock ?? newStock;
+        if (data.avgCost != null) nextAvgCost = Number(data.avgCost);
+        if (data.unitCost != null) nextUnitCost = Number(data.unitCost);
+
+        setItems((prev) =>
+          prev.map((row) =>
+            row.id === item.id
+              ? {
+                  ...row,
+                  currentStock: nextStock,
+                  avgCost: nextAvgCost,
+                  unitCost: nextUnitCost,
+                  stockVerifiedAt: data.stockVerifiedAt || verifiedAt,
+                }
+              : row,
+          ),
+        );
+        setDateDrafts((prev) => ({
+          ...prev,
+          [item.id]:
+            toDateInput(data.stockVerifiedAt || null) || verifiedAt,
+        }));
+        setQtyDrafts((prev) => ({
+          ...prev,
+          [item.id]: String(nextStock),
+        }));
+      } else {
+        // Quantity unchanged — save verification date only (no voucher / avg)
+        const result = await apiClient.updateStockVerificationDate(item.id, {
+          verified_at: verifiedAt,
+          ...by,
+        });
+        if (result.error) {
+          toast.error(result.error);
+          return;
+        }
+        const updated = result.data as VerificationRow;
+        setItems((prev) =>
+          prev.map((row) =>
+            row.id === item.id ? { ...row, ...updated } : row,
+          ),
+        );
+        setDateDrafts((prev) => ({
+          ...prev,
+          [item.id]: toDateInput(updated.stockVerifiedAt) || verifiedAt,
+        }));
+        setQtyDrafts((prev) => ({
+          ...prev,
+          [item.id]: String(Number(updated.currentStock ?? currentStock)),
+        }));
       }
-      const updated = result.data as VerificationRow;
-      setItems((prev) =>
-        prev.map((row) => (row.id === item.id ? { ...row, ...updated } : row)),
-      );
-      setDateDrafts((prev) => ({
-        ...prev,
-        [item.id]: toDateInput(updated.stockVerifiedAt) || verifiedAt,
-      }));
+
+      const stockMsg = stockChanged
+        ? ` · stock ${currentStock} → ${nextStock}` +
+          (voucherNumber ? ` (${voucherNumber})` : "")
+        : "";
       toast.success(
         operator?.name
-          ? `Verified ${item.partNo} as ${operator.name}`
-          : `Verified ${item.partNo}`,
+          ? `Verified ${item.partNo} as ${operator.name}${stockMsg}`
+          : `Verified ${item.partNo}${stockMsg}`,
       );
-    } catch {
-      toast.error("Failed to update verification date");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to update verification");
     } finally {
       setSavingIds((prev) => ({ ...prev, [item.id]: false }));
     }
@@ -426,7 +535,7 @@ const StockAnalysisInner = () => {
     }
   }, [period]);
 
-  const colSpan = canEdit ? 9 : 7;
+  const colSpan = canEdit ? 10 : 8;
 
   return (
     <div className="space-y-4">
@@ -438,7 +547,7 @@ const StockAnalysisInner = () => {
           <div>
             <h2 className="text-xl font-semibold text-foreground">Stock Verification</h2>
             <p className="text-sm text-muted-foreground">
-              Update verification dates per item, selected items, or category
+              Set verification date and new stock qty, then Save or Today
             </p>
           </div>
         </div>
@@ -622,7 +731,7 @@ const StockAnalysisInner = () => {
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border rounded-lg overflow-hidden overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -647,8 +756,11 @@ const StockAnalysisInner = () => {
               <TableHead>Brand</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Subcategory</TableHead>
+              <TableHead className="text-right">Stock</TableHead>
               <TableHead>Last verified</TableHead>
-              {canEdit && <TableHead className="w-[280px]">Set date</TableHead>}
+              {canEdit && (
+                <TableHead className="min-w-[380px]">Verify / set stock</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -699,6 +811,9 @@ const StockAnalysisInner = () => {
                   <TableCell>{item.brand || "—"}</TableCell>
                   <TableCell>{item.category}</TableCell>
                   <TableCell>{item.subcategory || "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {Number(item.currentStock ?? 0).toLocaleString()}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={item.stockVerifiedAt ? "secondary" : "outline"}>
                       {formatDisplayDate(item.stockVerifiedAt)}
@@ -706,13 +821,28 @@ const StockAnalysisInner = () => {
                   </TableCell>
                   {canEdit && (
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Input
                           type="date"
                           className="h-8 w-[150px]"
                           value={dateDrafts[item.id] || todayLocal()}
                           onChange={(e) =>
                             setDateDrafts((prev) => ({
+                              ...prev,
+                              [item.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="h-8 w-[80px]"
+                          title="New stock quantity"
+                          placeholder="Stock"
+                          value={qtyDrafts[item.id] ?? ""}
+                          onChange={(e) =>
+                            setQtyDrafts((prev) => ({
                               ...prev,
                               [item.id]: e.target.value,
                             }))
@@ -751,6 +881,9 @@ const StockAnalysisInner = () => {
         <p className="text-sm text-muted-foreground">
           {total} item{total === 1 ? "" : "s"}
           {selectedIds.size > 0 ? ` · ${selectedIds.size} selected` : ""}
+          {canEdit
+            ? " · Change stock qty then Save/Today (voucher only if qty changes)"
+            : ""}
         </p>
         <div className="flex items-center gap-2">
           <Button

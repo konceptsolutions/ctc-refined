@@ -1,4 +1,4 @@
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 
 /**
  * Set sale invoice status from completed returns vs delivered qty per part.

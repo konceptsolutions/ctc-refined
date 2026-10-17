@@ -1,7 +1,7 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 import {
   createEmployeeLedgerAccount,
   findEmployeeSubgroup,
@@ -15,11 +15,11 @@ import {
   rebuildAccountBalanceFromPostedEntries,
   postOpeningBalanceJv,
   type EmployeeAccountRole,
-} from "../utils/employeeAccounting";
+} from "../utils/employeeAccounting.js";
 import {
   getAccountCashBankMode,
   isCashBankAccount as isChartCashBankAccount,
-} from "../utils/cashBankMode";
+} from "../utils/cashBankMode.js";
 
 const EMPLOYEE_ID_PARAM = ":id([0-9a-fA-F-]{36})";
 

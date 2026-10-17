@@ -3,7 +3,7 @@
 // Optimized to return ONLY relevant fields for the adjustment/stock taking interface
 
 import express, { Request, Response } from "express";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { expandPermissionAncestors } from "../permissions/catalog";
+import { expandPermissionAncestors } from "../permissions/catalog.js";
 
 const prisma = new PrismaClient();
 

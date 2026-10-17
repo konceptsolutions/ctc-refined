@@ -1,11 +1,11 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
-import { roundPurchasePrice } from "../utils/purchasePriceRound";
-import { roundFc, roundFcTotal } from "../utils/fcRound";
-import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary";
-import { roundWeight } from "../utils/weightRound";
+import prisma from "../config/database.js";
+import { roundPurchasePrice } from "../utils/purchasePriceRound.js";
+import { roundFc, roundFcTotal } from "../utils/fcRound.js";
+import { createPartFromTemporaryInput } from "../utils/createPartFromTemporary.js";
+import { roundWeight } from "../utils/weightRound.js";
 
 const router = express.Router();
 

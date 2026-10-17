@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 export const PASSWORD_REUSED_ERROR =
   "Please choose a different password. You have already used this password before.";

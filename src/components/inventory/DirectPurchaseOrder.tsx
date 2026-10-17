@@ -1729,13 +1729,11 @@ export const DirectPurchaseOrder = ({
     () =>
       parts.map((p) => ({
         value: p.id,
-        label: [p.masterPartNo, p.partNo && p.partNo !== p.masterPartNo ? p.partNo : null]
-          .filter(Boolean)
-          .join(" | "),
+        label: [p.masterPartNo, p.partNo].filter(Boolean).join(" | "),
         description: [
           p.description || null,
           p.brand ? `Brand: ${p.brand}` : null,
-          p.partNo && p.partNo !== p.masterPartNo ? `Master: ${p.partNo}` : null,
+          p.partNo ? `Master: ${p.partNo}` : null,
         ]
           .filter(Boolean)
           .join(" | "),

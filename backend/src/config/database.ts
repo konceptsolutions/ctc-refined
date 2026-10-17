@@ -8,7 +8,7 @@ const envFile =
 const envPath = path.join(process.cwd(), envFile);
 dotenv.config({ path: envPath, override: true });
 
-const prisma: PrismaClient = new PrismaClient({
+export const prisma: PrismaClient = new PrismaClient({
   log:
     process.env.NODE_ENV === "development"
       ? ["query", "error", "warn"]

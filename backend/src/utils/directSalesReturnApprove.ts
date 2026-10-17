@@ -4,7 +4,7 @@
  * Uses SalesReturnItem.avgCost snapshot (current avg at save time), not invoice line cost.
  */
 import * as crypto from 'crypto';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 
 type SalesReturnWithItems = {
   id: string;

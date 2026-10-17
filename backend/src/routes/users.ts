@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
-import prisma from '../config/database';
-import { logActivity, getClientIp } from '../utils/activityLogger';
+import prisma from '../config/database.js';
+import { logActivity, getClientIp } from '../utils/activityLogger.js';
 import { randomUUID } from 'crypto';
 import {
   getLoginHours,
@@ -9,12 +9,12 @@ import {
   normalizeLoginDays,
   normalizeLoginTime,
   setLoginHours,
-} from '../utils/loginHours';
+} from '../utils/loginHours.js';
 import {
   PASSWORD_REUSED_ERROR,
   archiveUserPassword,
   isPasswordPreviouslyUsed,
-} from '../utils/passwordHistory';
+} from '../utils/passwordHistory.js';
 
 const router = express.Router();
 

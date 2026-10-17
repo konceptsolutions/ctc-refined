@@ -14,12 +14,25 @@ export function displayPartNoFromPart(part: PartLookup): string {
 
 export function hydrateSalesInvoiceItem<T extends Record<string, any>>(item: T): T {
   const part = (item as any)?.Part as PartLookup;
-  const partNo = trim((item as any).partNo) || displayPartNoFromPart(part);
+  // DB fields
+  const dbMasterPartNo =
+    trim(part?.MasterPart?.masterPartNo) ||
+    trim((item as any).master_part_no);
+  const dbPartNo = trim(part?.partNo) || trim((item as any).part_no);
+  // UI: Part No = DB master, Master Part = DB part_no
+  const partNo =
+    dbMasterPartNo ||
+    trim((item as any).partNo) ||
+    displayPartNoFromPart(part);
+  const masterPartNo = dbPartNo || trim((item as any).masterPartNo);
   const description = trim((item as any).description) || trim(part?.description);
   const brand = trim((item as any).brand) || trim(part?.Brand?.name);
   return {
     ...item,
     partNo,
+    masterPartNo: masterPartNo || undefined,
+    part_no: dbPartNo || undefined,
+    master_part_no: dbMasterPartNo || undefined,
     description,
     brand,
   };

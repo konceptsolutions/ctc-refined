@@ -1,14 +1,14 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import prisma from '../config/database';
-import { logActivity, getClientIp } from '../utils/activityLogger';
-import { formatLoginWindowLabel, isWithinLoginSchedule, normalizeLoginDays } from '../utils/loginHours';
+import prisma from '../config/database.js';
+import { logActivity, getClientIp } from '../utils/activityLogger.js';
+import { formatLoginWindowLabel, isWithinLoginSchedule, normalizeLoginDays } from '../utils/loginHours.js';
 import {
     PASSWORD_REUSED_ERROR,
     archiveUserPassword,
     isPasswordPreviouslyUsed,
-} from '../utils/passwordHistory';
+} from '../utils/passwordHistory.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -42,7 +42,7 @@ function parseRolePermissions(raw: unknown): string[] {
 async function resolveLoginPermissions(roleName: string, rolePermissions: unknown): Promise<string[]> {
     let permissions = parseRolePermissions(rolePermissions);
     const { getPresetPermissions, looksLikeCatalogPermissions, ensurePageKeysForGrants } =
-        await import('../permissions/catalog');
+        await import('../permissions/catalog.js');
 
     const catalogKeys = permissions.filter(
         (k) =>

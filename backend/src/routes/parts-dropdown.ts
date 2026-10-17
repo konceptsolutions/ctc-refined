@@ -1,6 +1,6 @@
 import express, { Request, Response } from "express";
-import prisma from "../config/database";
-import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
+import prisma from "../config/database.js";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch.js";
 
 const router = express.Router();
 

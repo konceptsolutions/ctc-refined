@@ -12,10 +12,13 @@ import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Eye, Edit, Trash, Printer, CheckCircle } from "lucide-react";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 
 interface PurchaseOrderItem {
   id: string;
   part_no: string;
+  master_part_no?: string;
+  masterPartNo?: string;
   part_description?: string;
   brand: string;
   origin?: string;
@@ -134,7 +137,7 @@ export const StorePurchaseOrderDetail = ({
                     <TableHeader>
                       <TableRow>
                         <ListNumberHeader />
-                        <TableHead className="w-[120px]">Part No</TableHead>
+                        <TableHead className="w-[220px]">Part No | Master Part</TableHead>
                         <TableHead className="min-w-[200px]">Description</TableHead>
                         <TableHead className="w-[120px]">Brand</TableHead>
                         <TableHead className="text-right w-[100px]">Ordered Qty</TableHead>
@@ -148,7 +151,20 @@ export const StorePurchaseOrderDetail = ({
                         order.items.map((item, index) => (
                           <TableRow key={item.id} className="h-12">
                             <ListNumberCell index={index} total={order.items.length} className="align-middle" />
-                            <TableCell className="font-medium align-middle">{item.part_no}</TableCell>
+                            <TableCell className="font-medium align-middle">
+                              {formatPartIdentityFromDb({
+                                part_no:
+                                  item.part_no ||
+                                  (item as any).part?.partNo ||
+                                  (item as any).part?.part_no,
+                                master_part_no:
+                                  item.master_part_no ||
+                                  item.masterPartNo ||
+                                  (item as any).part?.masterPartNo ||
+                                  (item as any).part?.master_part_no ||
+                                  (item as any).part?.MasterPart?.masterPartNo,
+                              })}
+                            </TableCell>
                             <TableCell className="align-middle">{item.part_description || "-"}</TableCell>
                             <TableCell className="align-middle">
                               <BrandOriginCell brand={item.brand || "N/A"} origin={item.origin} />

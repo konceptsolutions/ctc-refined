@@ -9,11 +9,11 @@
 
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 import {
   processPurchaseReceive,
   calculateStockQuantity,
-} from './inventoryFormulas';
+} from './inventoryFormulas.js';
 
 const router = express.Router();
 
@@ -356,7 +356,7 @@ export default router;
  * 
  * 1. Copy the relevant parts from this file into your actual route file
  * 2. Import the formula functions at the top:
- *    import { processPurchaseReceive, calculateStockQuantity } from '../utils/inventoryFormulas';
+ *    import { processPurchaseReceive, calculateStockQuantity } from '../utils/inventoryFormulas.js';
  * 
  * 3. The key changes are:
  *    - Calculate totalExpenses from expenses array

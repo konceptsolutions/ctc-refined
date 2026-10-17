@@ -1,8 +1,8 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import prisma from '../config/database';
-import { getValidPermissionSet } from '../permissions/catalog';
-import { AuthRequest, requirePermission } from '../middleware/authMiddleware';
+import prisma from '../config/database.js';
+import { getValidPermissionSet } from '../permissions/catalog.js';
+import { AuthRequest, requirePermission } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 

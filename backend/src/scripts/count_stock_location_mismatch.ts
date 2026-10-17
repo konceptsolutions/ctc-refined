@@ -2,7 +2,7 @@
  * Count parts where movement stock != sum of PartRackShelf quantities.
  * Run: npx tsx src/scripts/count_stock_location_mismatch.ts
  */
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 async function main() {
   const [summary] = await prisma.$queryRaw<

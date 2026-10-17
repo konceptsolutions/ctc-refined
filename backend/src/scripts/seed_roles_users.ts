@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import { getPresetPermissions } from "../permissions/catalog";
+import { getPresetPermissions } from "../permissions/catalog.js";
 
 const prisma = new PrismaClient();
 

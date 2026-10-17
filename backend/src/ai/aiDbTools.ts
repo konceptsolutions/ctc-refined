@@ -3,14 +3,14 @@
  * General allowlisted lookups — not raw SQL — so users can ask about most ERP data safely.
  */
 
-import prisma from "../config/database";
-import { calculateStockQuantity } from "../utils/inventoryFormulas";
-import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch";
+import prisma from "../config/database.js";
+import { calculateStockQuantity } from "../utils/inventoryFormulas.js";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch.js";
 import {
   createAiExportFile,
   MAX_EXPORT_ROWS,
   type AiExportAttachment,
-} from "./aiExportFiles";
+} from "./aiExportFiles.js";
 
 const MAX_ROWS = 20;
 

@@ -5,7 +5,7 @@
  * Usage: npx tsx src/scripts/migrate_role_permissions.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { getPresetPermissions, getAllPermissionKeys } from "../permissions/catalog";
+import { getPresetPermissions, getAllPermissionKeys } from "../permissions/catalog.js";
 
 const prisma = new PrismaClient();
 

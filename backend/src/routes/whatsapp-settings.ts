@@ -1,5 +1,5 @@
 import express from 'express';
-import prisma from '../config/database';
+import prisma from '../config/database.js';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
 

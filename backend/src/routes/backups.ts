@@ -1,7 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import prisma from '../config/database';
-import { logActivity, getClientIp } from '../utils/activityLogger';
+import prisma from '../config/database.js';
+import { logActivity, getClientIp } from '../utils/activityLogger.js';
 
 const router = express.Router();
 

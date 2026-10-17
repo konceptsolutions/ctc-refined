@@ -1,8 +1,8 @@
 import * as express from 'express';
 import { Request, Response } from 'express';
 import * as crypto from 'crypto';
-import prisma from '../config/database';
-import { calculateStockQuantity, calculateAverageCostDPOReturn } from '../utils/inventoryFormulas';
+import prisma from '../config/database.js';
+import { calculateStockQuantity, calculateAverageCostDPOReturn } from '../utils/inventoryFormulas.js';
 
 const router = express.Router();
 

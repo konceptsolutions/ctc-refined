@@ -83,7 +83,11 @@ import { StoreLocationAssign } from "./StoreLocationAssign";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { getUserRole, isStoreUserRole } from "@/utils/auth";
-import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
+import {
+  resolveInvoiceLinePartFields,
+  resolveStoreLinePartFields,
+} from "@/utils/invoiceLinePart";
+import { formatPartIdentityFromDb } from "@/lib/part-identity";
 import { SalesInquiry } from "@/components/sales/SalesInquiry";
 import {
   performedByPayload,
@@ -96,6 +100,7 @@ interface DirectPurchaseOrderItem {
   id: string;
   partId: string;
   partNo: string;
+  masterPartNo?: string;
   description: string;
   brand: string;
   origin?: string;
@@ -247,11 +252,14 @@ const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
   expenses_count: order.expenses_count || order.expenses?.length || 0,
   created_at: order.created_at || order.createdAt,
   items: Array.isArray(order.items)
-    ? order.items.map((item: any) => ({
+    ? order.items.map((item: any) => {
+        const linePart = resolveStoreLinePartFields(item);
+        return {
         id: String(item.id || ""),
         partId: String(item.part_id || item.partId || ""),
         part_id: String(item.part_id || item.partId || ""),
-        partNo: item.part_no || item.partNo || item.part?.partNo || "N/A",
+        partNo: linePart.partNo || "N/A",
+        masterPartNo: linePart.masterPartNo || "",
         description:
           item.part_description || item.description || item.part?.description || "",
         brand: item.brand || item.part?.brand?.name || "N/A",
@@ -264,7 +272,8 @@ const mapApiDpoToStoreOrder = (order: any): DirectPurchaseOrder => ({
             (item.purchase_price ?? item.purchasePrice ?? 0) *
               (item.quantity ?? 0),
         ),
-      }))
+      };
+      })
     : [],
 });
 
@@ -312,6 +321,7 @@ interface StockOutOrder {
     id: string;
     partId: string;
     partNo: string;
+    masterPartNo?: string;
     description: string;
     brand?: string;
     orderedQty: number;
@@ -341,8 +351,9 @@ const mapRowToStorePartOption = (row: any): StorePartOption | null => {
   const id = String(row?.id || "").trim();
   if (!id) return null;
 
-  const partNo = String(row.part_no || row.partNo || "").trim();
-  const masterPartNo = String(row.master_part_no || row.masterPartNo || "").trim();
+  // UI: Part No = DB master_part_no, Master Part = DB part_no
+  const partNo = String(row.master_part_no || row.masterPartNo || "").trim();
+  const masterPartNo = String(row.part_no || row.partNo || "").trim();
   if (!partNo && !masterPartNo) return null;
 
   return {
@@ -358,8 +369,8 @@ const buildStorePartSelectOption = (part: StorePartOption): SearchableSelectOpti
   const partNo = part.partNo.trim();
   const masterPartNo = part.masterPartNo.trim();
   const label =
-    masterPartNo && partNo
-      ? `${masterPartNo} | ${partNo}`
+    partNo && masterPartNo
+      ? `${partNo} | ${masterPartNo}`
       : partNo || masterPartNo;
   const descParts = [part.brand, part.description].filter(Boolean);
 
@@ -384,6 +395,7 @@ const mapInvoiceLineItems = (invoice: any) => {
     partId: String(item.partId || item.part_id || ""),
     part_id: String(item.partId || item.part_id || ""),
     partNo: linePart.partNo,
+    masterPartNo: linePart.masterPartNo,
     description: linePart.description,
     orderedQty: Number(item.orderedQty ?? item.ordered_qty) || 0,
     deliveredQty: Number(item.deliveredQty ?? item.delivered_qty) || 0,
@@ -802,10 +814,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           expenses_count: Array.isArray(orderData.expenses) ? orderData.expenses.length : 0,
           created_at: orderData.created_at || orderData.createdAt || new Date().toISOString(),
           items: Array.isArray(orderData.items)
-            ? orderData.items.map((item: any) => ({
+            ? orderData.items.map((item: any) => {
+              const linePart = resolveStoreLinePartFields(item);
+              return {
               id: item.id || '',
               partId: item.part_id || item.partId || '',
-              partNo: item.part_no || (item.part?.partNo) || "N/A",
+              partNo: linePart.partNo || "N/A",
+              masterPartNo: linePart.masterPartNo || "",
               description: item.part_description || (item.part?.description) || item.description || "",
               brand: item.brand || (item.part?.brand?.name) || "N/A",
               origin: item.origin || item.part?.origin || undefined,
@@ -820,7 +835,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               shelfNo: item.shelf_name || (item.shelf?.shelfNo) || null,
               rackStoreId: item.rack_store_id || item.rackStoreId || null,
               rackStoreName: item.rack_store_name || item.rackStoreName || null,
-            }))
+            };
+            })
             : [],
         };
         return formattedOrder;
@@ -884,7 +900,21 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             total_amount: order.total_amount || order.totalAmount || 0,
             items_count: order.items_count || order.items?.length || 0,
             total_quantity: total_quantity,
-            items: order.items || [],
+            items: Array.isArray(order.items)
+              ? order.items.map((item: any) => {
+                  const linePart = resolveStoreLinePartFields(item);
+                  return {
+                    ...item,
+                    partNo: linePart.partNo || item.part_no || "N/A",
+                    masterPartNo: linePart.masterPartNo || "",
+                    part_no: item.part_no || item.Part?.partNo,
+                    master_part_no:
+                      item.master_part_no ||
+                      item.masterPartNo ||
+                      item.Part?.MasterPart?.masterPartNo,
+                  };
+                })
+              : [],
             created_at: order.created_at || order.createdAt,
           };
         });
@@ -993,14 +1023,22 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
   const mapApiSalesReturnToReceiveOrder = (row: any): SalesReturnReceiveOrder => {
     const itemsRaw = row.SalesReturnItem || row.items || [];
     const items = Array.isArray(itemsRaw)
-      ? itemsRaw.map((item: any) => ({
+      ? itemsRaw.map((item: any) => {
+          const linePart = resolveStoreLinePartFields({
+            ...item,
+            part: item.Part || item.part,
+            part_no: item.part_no || item.Part?.partNo || item.Part?.part_no,
+            master_part_no:
+              item.master_part_no ||
+              item.Part?.masterPartNo ||
+              item.Part?.master_part_no ||
+              item.Part?.MasterPart?.masterPartNo,
+          });
+          return {
           id: String(item.id || ""),
           partId: String(item.partId || item.part_id || ""),
-          partNo:
-            item.Part?.partNo ||
-            item.partNo ||
-            item.part_no ||
-            "N/A",
+          partNo: linePart.partNo || "N/A",
+          masterPartNo: linePart.masterPartNo || "",
           description:
             item.Part?.description ||
             item.description ||
@@ -1009,7 +1047,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           returnQuantity: Number(
             item.returnQuantity ?? item.return_quantity ?? 0,
           ),
-        }))
+        };
+        })
       : [];
     const isDirect = Boolean(row.isDirectReturn ?? row.is_direct_return);
     const invoiceLabel = isDirect
@@ -1185,6 +1224,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             id: item.id,
             partId: item.partId || item.part_id || "",
             partNo: linePart.partNo,
+            masterPartNo: linePart.masterPartNo,
             description: linePart.description,
             orderedQty: item.orderedQty || item.ordered_qty || 0,
             deliveredQty: item.deliveredQty || item.delivered_qty || 0,
@@ -1254,7 +1294,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
         return {
           partNo: linePart.partNo || "-",
-          ssPartNo: item?.Part?.MasterPart?.masterPartNo || item?.Part?.masterPartNo || linePart.partNo || "-",
+          ssPartNo: linePart.masterPartNo || linePart.partNo || "-",
           description: linePart.description,
           brand: linePart.brand,
           uom: "NOS",
@@ -1363,10 +1403,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     expenses_count: Number(poData.expenses_count || poData.expensesCount || 0),
     created_at: poData.created_at || poData.createdAt || new Date().toISOString(),
     items: Array.isArray(poData.items)
-      ? poData.items.map((item: any) => ({
+      ? poData.items.map((item: any) => {
+          const linePart = resolveStoreLinePartFields(item);
+          return {
           id: item.id || "",
           partId: item.part_id || item.partId || "",
-          partNo: item.part_no || item.partNo || "N/A",
+          partNo: linePart.partNo || "N/A",
+          masterPartNo: linePart.masterPartNo || "",
           description: item.part_description || item.description || "",
           brand: item.brand || "N/A",
           origin: item.origin || item.part?.origin || undefined,
@@ -1381,7 +1424,8 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
           shelfNo: item.shelf_name || item.shelfNo || null,
           rackStoreId: item.store_id || item.storeId || item.rack_store_id || null,
           rackStoreName: item.store_name || item.storeName || item.rack_store_name || null,
-        }))
+        };
+        })
       : [],
   });
 
@@ -1490,7 +1534,7 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                 <table>
                   <thead>
                     <tr>
-                      <th>Part No</th>
+                      <th>Part No | Master Part</th>
                       <th>Description</th>
                       <th>Quantity</th>
                       <th>Unit Cost</th>
@@ -1500,7 +1544,14 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                   <tbody>
                     ${poData.items?.map((item: any) => `
                       <tr>
-                        <td>${item.part?.partNo || item.part_no || "N/A"}</td>
+                        <td>${formatPartIdentityFromDb({
+                          part_no: item.part?.partNo || item.part_no,
+                          master_part_no:
+                            item.part?.masterPartNo ||
+                            item.part?.master_part_no ||
+                            item.master_part_no ||
+                            item.masterPartNo,
+                        })}</td>
                         <td>${item.part?.description || item.description || ""}</td>
                         <td>${item.quantity || item.orderedQty || 0}</td>
                         <td>Rs ${(item.unit_cost || item.unitCost || 0).toFixed(2)}</td>

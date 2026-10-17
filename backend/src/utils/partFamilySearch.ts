@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import prisma from "../config/database";
+import prisma from "../config/database.js";
 
 export function partDirectSearchOr(searchStr: string) {
   return [

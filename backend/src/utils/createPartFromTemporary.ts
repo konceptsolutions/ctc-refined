@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
-import prisma from "../config/database";
-import { roundWeight } from "./weightRound";
+import prisma from "../config/database.js";
+import { roundWeight } from "./weightRound.js";
 
 /**
  * Minimal Part create for promoting temporary quotation/inquiry lines.
