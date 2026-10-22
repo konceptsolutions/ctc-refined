@@ -2675,7 +2675,9 @@ export const SalesInvoice = ({
   );
 
   // Debounce timer for parts search
-  const partsSearchDebounceRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const partsSearchDebounceRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
 
   // Fetch parts from API - Load initial set on dropdown open, searchable with client-side filtering
   const fetchParts = async (
@@ -7872,6 +7874,7 @@ export const SalesInvoice = ({
                           Partially Delivered
                         </SelectItem>
                         <SelectItem value="delivered">Delivered</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
                       </>
                     )}
                   </SelectContent>

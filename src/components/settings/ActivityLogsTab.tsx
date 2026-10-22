@@ -1106,15 +1106,15 @@ export const ActivityLogsTab = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => setSelectedLog(log)}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setSelectedLog(log)}
                       title="View details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
                   </TableCell>
                 </TableRow>
               )))}
@@ -1226,7 +1226,7 @@ export const ActivityLogsTab = () => {
                       <p className="text-xs text-muted-foreground mt-0.5 break-all">
                         ID: {selectedLog.entityId}
                       </p>
-                    )}
+                  )}
                 </div>
               </div>
               <div>
@@ -1289,11 +1289,11 @@ export const ActivityLogsTab = () => {
                                   {text}
                                 </span>
                               )}
-                            </div>
+                  </div>
                           );
                         })}
-                      </div>
-                    )}
+                </div>
+              )}
                   </div>
                 );
               })()}

@@ -3199,6 +3199,7 @@ class ApiClient {
       blNo?: string;
       blDate?: string;
       forwarder?: string;
+      forwarderAccountId?: string;
       estTimeDate?: string;
       expenses?: {
         pkgExpPercent?: number;
@@ -3233,6 +3234,10 @@ class ApiClient {
         blDate: data.blDate || undefined,
         forwarder:
           typeof data.forwarder === "string" ? data.forwarder.trim() : "",
+        forwarderAccountId:
+          typeof data.forwarderAccountId === "string"
+            ? data.forwarderAccountId.trim()
+            : "",
         estTimeDate: data.estTimeDate || undefined,
         expenses: data.expenses,
         items: data.items.map((item) => ({
@@ -3246,6 +3251,22 @@ class ApiClient {
         })),
       }),
     });
+  }
+
+  async createImportPurchaseOrderClearance(
+    orderId: string,
+    data: { clearingAgentAccountId: string; date?: string },
+  ) {
+    return this.request(
+      `/purchase-import/purchase-orders/${orderId}/clearance`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          clearingAgentAccountId: data.clearingAgentAccountId.trim(),
+          date: data.date || undefined,
+        }),
+      },
+    );
   }
 
   // Reports API

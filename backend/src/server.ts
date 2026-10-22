@@ -90,7 +90,7 @@ import { activityAuditMiddleware } from "./middleware/activityAuditMiddleware.js
 
 // Trigger restart for environment variable update + prisma client reload 2026-08-05b
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5005;
 const apiAuth = [authenticateJWT, enforceLoginWindow, activityAuditMiddleware];
 const apiAdminAuth = [authenticateJWT, enforceLoginWindow, authorizeRoles("Admin"), activityAuditMiddleware];
 

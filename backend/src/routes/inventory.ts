@@ -7373,6 +7373,181 @@ async function receiveImportPurchaseOrder(
       }
     }
 
+    // Separate JV: Dr Frt.Exp (302002) / Cr selected forwarder account.
+    // Moves the freight payable onto the Import F.R.T clearence forwarder and notes exchange rate.
+    const frtForwarderAmt = round2(expenseAmounts.frtExpLc);
+    const forwarderMetaRows = await tx.$queryRawUnsafe<
+      Array<{ forwarderAccountId: string | null; forwarder: string | null }>
+    >(
+      `SELECT "forwarderAccountId", "forwarder" FROM "PurchaseOrder" WHERE "id" = $1 LIMIT 1`,
+      order.id,
+    );
+    let forwarderAccountId = String(
+      forwarderMetaRows?.[0]?.forwarderAccountId || "",
+    ).trim();
+    let forwarderLabel =
+      String(forwarderMetaRows?.[0]?.forwarder || "").trim() || "Forwarder";
+
+    // Resolve by name when account id was never saved (legacy free-text forwarder).
+    if (!forwarderAccountId && forwarderLabel) {
+      const frtAccounts = await tx.account.findMany({
+        where: {
+          status: "Active",
+          Subgroup: { code: "310" },
+        },
+        select: { id: true, code: true, name: true },
+      });
+      const norm = (v: string) =>
+        v.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const editDist = (a: string, b: string) => {
+        if (a === b) return 0;
+        const m = a.length;
+        const n = b.length;
+        if (!m) return n;
+        if (!n) return m;
+        const prev = Array.from({ length: n + 1 }, (_, i) => i);
+        for (let i = 1; i <= m; i += 1) {
+          let left = i - 1;
+          prev[0] = i;
+          for (let j = 1; j <= n; j += 1) {
+            const diag = left;
+            left = prev[j];
+            prev[j] =
+              a[i - 1] === b[j - 1]
+                ? diag
+                : 1 + Math.min(diag, left, prev[j - 1]);
+          }
+        }
+        return prev[n];
+      };
+      const tokensClose = (a: string, b: string) => {
+        if (a === b) return true;
+        const maxLen = Math.max(a.length, b.length);
+        if (maxLen <= 2) return false;
+        const allowed = maxLen <= 5 ? 1 : Math.max(1, Math.floor(maxLen * 0.3));
+        return editDist(a, b) <= allowed;
+      };
+      const scoreName = (raw: string, acc: { code: string; name: string }) => {
+        const key = norm(raw);
+        const nameKey = norm(acc.name);
+        const codeNameKey = norm(`${acc.code} ${acc.name}`);
+        if (!key) return 0;
+        if (key === nameKey || key === codeNameKey || key === norm(`${acc.code}-${acc.name}`))
+          return 100;
+        if (nameKey.includes(key) || key.includes(nameKey)) return 90;
+        const keyTokens = key.split(" ").filter(Boolean);
+        const nameTokens = nameKey.split(" ").filter(Boolean);
+        if (!keyTokens.length || !nameTokens.length) return 0;
+        let matched = 0;
+        for (const kt of keyTokens) {
+          if (nameTokens.some((nt) => tokensClose(kt, nt))) matched += 1;
+        }
+        const coverage = matched / keyTokens.length;
+        if (coverage >= 0.6 && matched >= 2) return Math.round(60 + coverage * 30);
+        return 0;
+      };
+      let best: { acc: (typeof frtAccounts)[number]; score: number } | null = null;
+      for (const acc of frtAccounts) {
+        const score = scoreName(forwarderLabel, acc);
+        if (score > 0 && (!best || score > best.score)) best = { acc, score };
+      }
+      if (best) {
+        forwarderAccountId = best.acc.id;
+        forwarderLabel = `${best.acc.code}-${best.acc.name}`;
+        await tx.$executeRawUnsafe(
+          `UPDATE "PurchaseOrder" SET "forwarderAccountId" = $1, "forwarder" = $2 WHERE "id" = $3`,
+          best.acc.id,
+          forwarderLabel,
+          order.id,
+        );
+      }
+    }
+
+    if (frtForwarderAmt > 0.001 && forwarderAccountId) {
+      const frtExpenseAccount = await tx.account.findFirst({
+        where: {
+          status: "Active",
+          OR: [{ code: "302002" }, { name: "Frt.Exp" }, { name: "Frt.Exp (imp)" }],
+        },
+      });
+      const forwarderAccount = await tx.account.findFirst({
+        where: {
+          id: forwarderAccountId,
+          status: "Active",
+        },
+      });
+
+      if (frtExpenseAccount && forwarderAccount) {
+        const rateNote = `Exch rate: ${conversionRate}`;
+        const fwdEntries = [
+          {
+            id: crypto.randomUUID(),
+            accountId: frtExpenseAccount.id,
+            accountName: `${frtExpenseAccount.code}-${frtExpenseAccount.name}`,
+            description: `Import PO ${order.poNumber}: Frt.Exp (${rateNote})`,
+            debit: frtForwarderAmt,
+            credit: 0,
+            sortOrder: 0,
+          },
+          {
+            id: crypto.randomUUID(),
+            accountId: forwarderAccount.id,
+            accountName: `${forwarderAccount.code}-${forwarderAccount.name}`,
+            description: `Import PO ${order.poNumber}: ${forwarderLabel} (${rateNote})`,
+            debit: 0,
+            credit: frtForwarderAmt,
+            sortOrder: 1,
+          },
+        ];
+
+        const lastFwdVoucher = await tx.voucher.findFirst({
+          where: { type: "journal", voucherNumber: { startsWith: "JV" } },
+          orderBy: { voucherNumber: "desc" },
+        });
+        let fwdNext = 1;
+        const fwdMatch = lastFwdVoucher?.voucherNumber.match(/^JV(\d+)$/);
+        if (fwdMatch) fwdNext = parseInt(fwdMatch[1], 10) + 1;
+        const fwdVoucherNumber = `JV${String(fwdNext).padStart(4, "0")}`;
+
+        await tx.voucher.create({
+          data: {
+            id: crypto.randomUUID(),
+            voucherNumber: fwdVoucherNumber,
+            type: "journal",
+            date: parsedReceiveDate,
+            narration: `Import PO ${order.poNumber}: Freight forwarder — ${rateNote}`,
+            totalDebit: frtForwarderAmt,
+            totalCredit: frtForwarderAmt,
+            status: "posted",
+            createdBy: "System",
+            approvedBy: "System",
+            approvedAt: new Date(),
+            isSystemGenerated: true,
+            conversionRate,
+            updatedAt: new Date(),
+            VoucherEntry: { create: fwdEntries },
+          } as any,
+        });
+
+        for (const entry of fwdEntries) {
+          const acc = await tx.account.findUnique({
+            where: { id: entry.accountId },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+          if (!acc) continue;
+          const type = acc.Subgroup.MainGroup.type.toLowerCase();
+          const change =
+            type === "asset" || type === "expense" || type === "cost"
+              ? entry.debit - entry.credit
+              : entry.credit - entry.debit;
+          await tx.account.update({
+            where: { id: entry.accountId },
+            data: { currentBalance: { increment: change } },
+          });
+        }
+      }
+    }
+
     const updated = await tx.purchaseOrder.update({
       where: { id: order.id },
       data: { status: "Received" },

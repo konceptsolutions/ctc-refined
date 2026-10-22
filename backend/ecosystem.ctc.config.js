@@ -15,7 +15,7 @@ module.exports = {
       node_args: "--max-old-space-size=768",
       env: {
         NODE_ENV: "production",
-        PORT: 5001,
+        PORT: 5005,
         SERVER_ORIGIN: "https://crystaltrading.net",
         CORS_ORIGIN:
           "https://crystaltrading.net,https://www.crystaltrading.net,http://crystaltrading.net,http://www.crystaltrading.net,https://erpsystem.crystaltrading.net",

@@ -3,7 +3,7 @@ const p = new PrismaClient();
 
 (async () => {
   // Try login
-  const loginRes = await fetch('http://127.0.0.1:5001/api/auth/login', {
+  const loginRes = await fetch('http://127.0.0.1:5005/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'admin123' }),
@@ -15,7 +15,7 @@ const p = new PrismaClient();
   if (!token) {
     // try common passwords
     for (const pass of ['Admin@123', 'password', '123456', 'admin', 'Admin123']) {
-      const r = await fetch('http://127.0.0.1:5001/api/auth/login', {
+      const r = await fetch('http://127.0.0.1:5005/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: 'admin@example.com', password: pass }),
@@ -30,7 +30,7 @@ const p = new PrismaClient();
   }
 
   if (token) {
-    const r = await fetch('http://127.0.0.1:5001/api/dpo-returns?page=1&limit=25', {
+    const r = await fetch('http://127.0.0.1:5005/api/dpo-returns?page=1&limit=25', {
       headers: { Authorization: `Bearer ${token}` },
     });
     const body = await r.json();

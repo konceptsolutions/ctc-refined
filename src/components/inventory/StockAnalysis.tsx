@@ -47,7 +47,7 @@ interface VerificationRow {
   description: string;
   brand: string;
   categoryId: string | null;
-  category: string;
+  category: string; 
   subcategoryId: string | null;
   subcategory: string;
   stockVerifiedAt: string | null;
@@ -555,7 +555,7 @@ const StockAnalysisInner = () => {
       </div>
 
       {canEdit && (
-        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Layers className="w-4 h-4 text-primary" />
             <h3 className="text-sm font-medium text-primary">
@@ -629,14 +629,14 @@ const StockAnalysisInner = () => {
 
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
             className="pl-9"
             placeholder="Search part no / description..."
-            value={searchTerm}
+                  value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+                />
+              </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-full lg:w-48">
             <SelectValue placeholder="Category" />
@@ -657,16 +657,16 @@ const StockAnalysisInner = () => {
         >
           <SelectTrigger className="w-full lg:w-48">
             <SelectValue placeholder="Subcategory" />
-          </SelectTrigger>
-          <SelectContent>
+                </SelectTrigger>
+                <SelectContent>
             <SelectItem value="all">All subcategories</SelectItem>
             {filterSubcategories.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+                  ))}
+                </SelectContent>
+              </Select>
         <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
           <SelectTrigger className="w-full lg:w-40">
             <SelectValue placeholder="Period" />
@@ -692,7 +692,7 @@ const StockAnalysisInner = () => {
             <SelectItem value="100">100</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+            </div>
 
       {canEdit && selectedIds.size > 0 && (
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 rounded-lg border border-primary/30 bg-card p-3">
@@ -732,8 +732,8 @@ const StockAnalysisInner = () => {
       )}
 
       <div className="border rounded-lg overflow-hidden overflow-x-auto">
-        <Table>
-          <TableHeader>
+          <Table>
+            <TableHeader>
             <TableRow>
               {canEdit && (
                 <TableHead className="w-10">
@@ -761,16 +761,16 @@ const StockAnalysisInner = () => {
               {canEdit && (
                 <TableHead className="min-w-[380px]">Verify / set stock</TableHead>
               )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
                 <TableCell colSpan={colSpan} className="h-24 text-center">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
-                  Loading...
-                </TableCell>
-              </TableRow>
+                    Loading...
+                  </TableCell>
+                </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
                 <TableCell
@@ -797,11 +797,11 @@ const StockAnalysisInner = () => {
                       />
                     </TableCell>
                   )}
-                  <ListNumberCell
+                    <ListNumberCell
                     className={LIST_NUMBER_CELL_CLASS}
-                    index={index}
-                    page={currentPage}
-                    pageSize={itemsPerPage}
+                      index={index}
+                      page={currentPage}
+                      pageSize={itemsPerPage}
                     total={total}
                   />
                   <TableCell className="font-medium">{item.partNo}</TableCell>
@@ -817,7 +817,7 @@ const StockAnalysisInner = () => {
                   <TableCell>
                     <Badge variant={item.stockVerifiedAt ? "secondary" : "outline"}>
                       {formatDisplayDate(item.stockVerifiedAt)}
-                    </Badge>
+                      </Badge>
                   </TableCell>
                   {canEdit && (
                     <TableCell>
@@ -872,39 +872,39 @@ const StockAnalysisInner = () => {
                   )}
                 </TableRow>
               ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
           {total} item{total === 1 ? "" : "s"}
           {selectedIds.size > 0 ? ` · ${selectedIds.size} selected` : ""}
           {canEdit
             ? " · Change stock qty then Save/Today (voucher only if qty changes)"
             : ""}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
             disabled={currentPage <= 1 || loading}
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-          >
+            >
             Previous
-          </Button>
+            </Button>
           <span className="text-sm text-muted-foreground">
             Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
             disabled={currentPage >= totalPages || loading}
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-          </Button>
+            >
+              Next
+            </Button>
         </div>
       </div>
     </div>

@@ -18,7 +18,7 @@ import {
 } from "@/utils/purchasePriceRound";
 import { formatUiDate } from "@/utils/dateUtils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail, X } from "lucide-react";
+import { FileText, Plus, Trash, Pencil, Check, Eye, ShoppingCart, PackageCheck, ArrowUpFromLine, Receipt, FileBarChart2, ChevronDown, ChevronUp, Mail, X, FileCheck } from "lucide-react";
 import { usePermissions } from "@/permissions/PermissionsProvider";
 import { usePageActions } from "@/permissions/pageActions";
 import { BackOrderSummaryTab } from "@/components/purchase-import/BackOrderSummaryTab";
@@ -408,6 +408,8 @@ type ImportPurchaseOrderRecord = {
   stockedOut?: boolean;
   transferOutInvoiceId?: string | null;
   forwarder?: string | null;
+  forwarderAccountId?: string | null;
+  clearingAgentAccountId?: string | null;
   estTimeDate?: string | null;
   expectedDate?: string | null;
   supplier?: {
@@ -552,6 +554,24 @@ const IMPORT_PO_CLEARING_EXPENSE_SECTIONS = [
       { key: "cmExp" as const, label: "CRN.Exp." },
     ],
   },
+];
+
+/** Expenses Dr'd on post-receive clearance JV (Cr = Clearing Agents account). */
+const IMPORT_PO_CLEARANCE_JV_FIELDS: Array<{
+  key: ImportPoExpenseFieldKey;
+  label: string;
+}> = [
+  { key: "customsDuty", label: "C.D." },
+  { key: "additionalCustomsDuty", label: "A.C.D." },
+  { key: "regulatoryDuty", label: "R.D." },
+  { key: "ed", label: "E.D." },
+  { key: "salesTax", label: "S.T." },
+  { key: "additionalSalesTax", label: "A.S.T." },
+  { key: "incomeTax", label: "I.T." },
+  { key: "doAmount", label: "D.O." },
+  { key: "crnExp", label: "Dmg.Exp." },
+  { key: "miscExp", label: "Misc.Exp." },
+  { key: "agencyExp", label: "Agency.Exp." },
 ];
 
 function formatImportPoAmount(value: number) {
@@ -10291,6 +10311,24 @@ const PurchaseOrderTab = ({
   const [receiveBlNo, setReceiveBlNo] = useState("");
   const [receiveBlDate, setReceiveBlDate] = useState("");
   const [receiveForwarder, setReceiveForwarder] = useState("");
+  const [receiveForwarderAccountId, setReceiveForwarderAccountId] = useState("");
+  const [forwarderAccountOptions, setForwarderAccountOptions] = useState<
+    Array<{ id: string; code: string; name: string }>
+  >([]);
+  const [clearanceDialogOpen, setClearanceDialogOpen] = useState(false);
+  const [clearanceOrder, setClearanceOrder] =
+    useState<ImportPurchaseOrderRecord | null>(null);
+  const [clearanceExpenses, setClearanceExpenses] =
+    useState<ImportPurchaseOrderExpenses>(EMPTY_IMPORT_PO_EXPENSES);
+  const [clearingAgentOptions, setClearingAgentOptions] = useState<
+    Array<{ id: string; code: string; name: string }>
+  >([]);
+  const [clearanceAgentAccountId, setClearanceAgentAccountId] = useState("");
+  const [clearanceDate, setClearanceDate] = useState(
+    () => new Date().toISOString().slice(0, 10),
+  );
+  const [loadingClearance, setLoadingClearance] = useState(false);
+  const [savingClearance, setSavingClearance] = useState(false);
   const [receiveEstTimeDate, setReceiveEstTimeDate] = useState("");
   const [receiveConversionRate, setReceiveConversionRate] = useState("1");
   const [importExpenses, setImportExpenses] = useState<ImportPurchaseOrderExpenses>(
@@ -10360,6 +10398,7 @@ const PurchaseOrderTab = ({
     setReceiveBlNo("");
     setReceiveBlDate("");
     setReceiveForwarder("");
+    setReceiveForwarderAccountId("");
     setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
@@ -10368,6 +10407,153 @@ const PurchaseOrderTab = ({
       disc: { ...EMPTY_LINKED_EXPENSE_TEXT },
     });
     setFrtExpenseText({ fc: "", lc: "" });
+  };
+
+  const loadForwarderAccounts = useCallback(async () => {
+    try {
+      const subgroupsRes = await apiClient.getSubgroups();
+      const subgroups = Array.isArray(subgroupsRes)
+        ? subgroupsRes
+        : (subgroupsRes as any)?.data || [];
+      const frtSubgroup = subgroups.find(
+        (sg: any) =>
+          String(sg.code || "").trim() === "310" ||
+          /import\s*f\.?r\.?t\.?\s*clearen?ce/i.test(String(sg.name || "")),
+      );
+      if (!frtSubgroup?.id) {
+        setForwarderAccountOptions([]);
+        return [] as Array<{ id: string; code: string; name: string }>;
+      }
+      const accountsRes = await apiClient.getAccounts({
+        subgroupId: frtSubgroup.id,
+        status: "Active",
+      });
+      const accounts = Array.isArray(accountsRes)
+        ? accountsRes
+        : (accountsRes as any)?.data || [];
+      const options = accounts
+        .map((acc: any) => ({
+          id: String(acc.id || ""),
+          code: String(acc.code || "").trim(),
+          name: String(acc.name || "").trim(),
+        }))
+        .filter((acc: { id: string }) => acc.id);
+      setForwarderAccountOptions(options);
+      return options;
+    } catch {
+      setForwarderAccountOptions([]);
+      return [] as Array<{ id: string; code: string; name: string }>;
+    }
+  }, []);
+
+  const loadClearingAgentAccounts = useCallback(async () => {
+    try {
+      const subgroupsRes = await apiClient.getSubgroups();
+      const subgroups = Array.isArray(subgroupsRes)
+        ? subgroupsRes
+        : (subgroupsRes as any)?.data || [];
+      const clearingSubgroup = subgroups.find(
+        (sg: any) =>
+          String(sg.code || "").trim() === "311" ||
+          /clearing\s*agents?/i.test(String(sg.name || "")),
+      );
+      if (!clearingSubgroup?.id) {
+        setClearingAgentOptions([]);
+        return [] as Array<{ id: string; code: string; name: string }>;
+      }
+      const accountsRes = await apiClient.getAccounts({
+        subgroupId: clearingSubgroup.id,
+        status: "Active",
+      });
+      const accounts = Array.isArray(accountsRes)
+        ? accountsRes
+        : (accountsRes as any)?.data || [];
+      const options = accounts
+        .map((acc: any) => ({
+          id: String(acc.id || ""),
+          code: String(acc.code || "").trim(),
+          name: String(acc.name || "").trim(),
+        }))
+        .filter((acc: { id: string }) => acc.id);
+      setClearingAgentOptions(options);
+      return options;
+    } catch {
+      setClearingAgentOptions([]);
+      return [] as Array<{ id: string; code: string; name: string }>;
+    }
+  }, []);
+
+  const openClearanceDialog = async (order: ImportPurchaseOrderRecord) => {
+    if (!isInvoiceMode || !isReceivedPurchaseOrder(order.status)) {
+      toast({
+        title: "Not available",
+        description: "Clearance is available on received invoices only.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (order.clearingAgentAccountId) {
+      toast({
+        title: "Clearance already posted",
+        description: `PO ${order.poNumber} already has a clearance voucher.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setClearanceOrder(order);
+    setClearanceAgentAccountId("");
+    setClearanceDate(new Date().toISOString().slice(0, 10));
+    setClearanceExpenses(EMPTY_IMPORT_PO_EXPENSES);
+    setClearanceDialogOpen(true);
+    setLoadingClearance(true);
+    try {
+      const [agents, response] = await Promise.all([
+        loadClearingAgentAccounts(),
+        apiClient.getImportPurchaseOrder(order.id),
+      ]);
+      const orderData: any = (response as any)?.data || response;
+      setClearanceExpenses(parseImportPoExpenses(orderData?.expenses));
+      const savedAgentId = String(
+        orderData?.clearingAgentAccountId ||
+          orderData?.clearing_agent_account_id ||
+          "",
+      ).trim();
+      if (savedAgentId) {
+        toast({
+          title: "Clearance already posted",
+          description: `PO ${order.poNumber} already has a clearance voucher.`,
+          variant: "destructive",
+        });
+        setClearanceDialogOpen(false);
+        setClearanceOrder(null);
+        setOrders((prev) =>
+          prev.map((row) =>
+            row.id === order.id
+              ? { ...row, clearingAgentAccountId: savedAgentId }
+              : row,
+          ),
+        );
+        return;
+      } else if (!agents.length) {
+        toast({
+          title: "No clearing agents",
+          description:
+            "No active accounts found under Clearing Agents (subgroup 311).",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to load clearance",
+        description: error?.message || "Could not load purchase order expenses.",
+        variant: "destructive",
+      });
+      setClearanceDialogOpen(false);
+      setClearanceOrder(null);
+    } finally {
+      setLoadingClearance(false);
+    }
   };
 
   const fetchOrders = useCallback(async () => {
@@ -10399,6 +10585,68 @@ const PurchaseOrderTab = ({
   useEffect(() => {
     void fetchOrders();
   }, [fetchOrders]);
+
+  const handleSaveClearance = async () => {
+    if (!clearanceOrder?.id) return;
+    if (!clearanceAgentAccountId) {
+      toast({
+        title: "Clearing agent required",
+        description: "Select a Clearing Agents account before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const total = IMPORT_PO_CLEARANCE_JV_FIELDS.reduce(
+      (sum, field) =>
+        sum + normalizeImportPoExpenseNumber(clearanceExpenses[field.key]),
+      0,
+    );
+    if (total <= 0.001) {
+      toast({
+        title: "No clearance amounts",
+        description:
+          "This PO has no C.D / A.C.D / R.D / E.D / S.T / A.S.T / I.T / D.O / Dmg / Misc / Agency amounts.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingClearance(true);
+    try {
+      const result: any = await apiClient.createImportPurchaseOrderClearance(
+        clearanceOrder.id,
+        {
+          clearingAgentAccountId: clearanceAgentAccountId,
+          date: clearanceDate || undefined,
+        },
+      );
+      if (result?.error) {
+        throw new Error(
+          typeof result.error === "string"
+            ? result.error
+            : "Could not create clearance journal voucher.",
+        );
+      }
+      toast({
+        title: "Clearance voucher created",
+        description: `${result?.voucherNumber || "JV"} posted for ${clearanceOrder.poNumber} (${formatImportPoAmount(Number(result?.total || total))}).`,
+      });
+      setClearanceDialogOpen(false);
+      setClearanceOrder(null);
+      await fetchOrders();
+    } catch (error: any) {
+      toast({
+        title: "Clearance failed",
+        description:
+          error?.message ||
+          error?.error ||
+          "Could not create clearance journal voucher.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingClearance(false);
+    }
+  };
 
   const openOrderDetail = async (orderId: string) => {
     setViewOrderId(orderId);
@@ -10909,6 +11157,7 @@ const PurchaseOrderTab = ({
     setReceiveBlNo("");
     setReceiveBlDate("");
     setReceiveForwarder("");
+    setReceiveForwarderAccountId("");
     setReceiveEstTimeDate("");
     setReceiveConversionRate("1");
     setImportExpenses({ ...EMPTY_IMPORT_PO_EXPENSES });
@@ -10921,7 +11170,10 @@ const PurchaseOrderTab = ({
     receiveLineRowRefs.current = {};
     setLoadingReceiveForm(true);
     try {
-      const response = await apiClient.getImportPurchaseOrder(order.id);
+      const [forwarderAccounts, response] = await Promise.all([
+        loadForwarderAccounts(),
+        apiClient.getImportPurchaseOrder(order.id),
+      ]);
       const orderData: any = (response as any)?.data || response;
       const detailImportSaved = isImportPurchaseOrderSaved({
         importSaved: orderData.importSaved,
@@ -11067,7 +11319,26 @@ const PurchaseOrderTab = ({
       setReceiveInvoiceDate(toInputDate(orderData.invoiceDate));
       setReceiveBlNo(String(orderData.blNo || ""));
       setReceiveBlDate(toInputDate(orderData.blDate));
-      setReceiveForwarder(String(orderData.forwarder || ""));
+      {
+        const savedForwarder = String(orderData.forwarder || "").trim();
+        let savedAccountId = String(
+          orderData.forwarderAccountId || orderData.forwarder_account_id || "",
+        ).trim();
+        if (!savedAccountId && savedForwarder) {
+          const match = forwarderAccounts.find((acc) => {
+            const label = [acc.code, acc.name].filter(Boolean).join("-");
+            const labelSpaced = [acc.code, acc.name].filter(Boolean).join(" - ");
+            return (
+              acc.name === savedForwarder ||
+              label === savedForwarder ||
+              labelSpaced === savedForwarder
+            );
+          });
+          if (match) savedAccountId = match.id;
+        }
+        setReceiveForwarder(savedForwarder);
+        setReceiveForwarderAccountId(savedAccountId);
+      }
       setReceiveEstTimeDate(toInputDate(orderData.estTimeDate || orderData.expectedDate));
       setReceiveLines(lines);
       const loadedExpenses = parseImportPoExpenses(orderData.expenses);
@@ -11772,6 +12043,7 @@ const PurchaseOrderTab = ({
         blNo: receiveBlNo,
         blDate: receiveBlDate || undefined,
         forwarder: receiveForwarder,
+        forwarderAccountId: receiveForwarderAccountId || undefined,
         estTimeDate: receiveEstTimeDate || undefined,
         expenses: {
           ...importExpenses,
@@ -11982,6 +12254,25 @@ const PurchaseOrderTab = ({
                       </Button>
                         ) : null;
                       })()}
+                      {isInvoiceMode &&
+                      isReceivedPurchaseOrder(row.status) &&
+                      canSaveOrder ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={Boolean(row.clearingAgentAccountId)}
+                          title={
+                            row.clearingAgentAccountId
+                              ? "Clearance voucher already created"
+                              : "Create clearance JV for clearing agent"
+                          }
+                          onClick={() => void openClearanceDialog(row)}
+                        >
+                          <FileCheck className="w-3.5 h-3.5 mr-1" />
+                          {row.clearingAgentAccountId ? "Cleared" : "Clearance"}
+                        </Button>
+                      ) : null}
                       {isInvoiceMode &&
                       isReceivedPurchaseOrder(row.status) &&
                       isKhiConsignee(row.consignee) &&
@@ -12671,11 +12962,27 @@ const PurchaseOrderTab = ({
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="receive-forwarder">Forwarder</Label>
-                  <Input
-                    id="receive-forwarder"
-                    value={receiveForwarder}
-                    onChange={(e) => setReceiveForwarder(e.target.value)}
-                    placeholder="Forwarder name"
+                  <SearchableSelect
+                    options={forwarderAccountOptions.map((acc) => ({
+                      value: acc.id,
+                      label: [acc.code, acc.name].filter(Boolean).join(" - "),
+                    }))}
+                    value={receiveForwarderAccountId}
+                    selectedLabel={receiveForwarder || undefined}
+                    onValueChange={(value) => {
+                      const selected = forwarderAccountOptions.find(
+                        (acc) => acc.id === value,
+                      );
+                      setReceiveForwarderAccountId(value);
+                      setReceiveForwarder(
+                        selected
+                          ? [selected.code, selected.name]
+                              .filter(Boolean)
+                              .join("-")
+                          : "",
+                      );
+                    }}
+                    placeholder="Select Import F.R.T clearence account"
                   />
                 </div>
                 <div className="space-y-1">
@@ -13313,6 +13620,126 @@ const PurchaseOrderTab = ({
                 {savingReceive ? "Saving..." : saveLabel}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={clearanceDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !savingClearance) {
+            setClearanceDialogOpen(false);
+            setClearanceOrder(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Clearance
+              {clearanceOrder?.poNumber
+                ? ` — ${clearanceOrder.poNumber}`
+                : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {loadingClearance ? (
+            <p className="text-sm text-muted-foreground py-4">
+              Loading expenses and clearing agents...
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label>Clearing Agent</Label>
+                <SearchableSelect
+                  options={clearingAgentOptions.map((acc) => ({
+                    value: acc.id,
+                    label: [acc.code, acc.name].filter(Boolean).join(" - "),
+                  }))}
+                  value={clearanceAgentAccountId}
+                  onValueChange={setClearanceAgentAccountId}
+                  placeholder="Select Clearing Agents account"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="clearance-date">Voucher Date</Label>
+                <Input
+                  id="clearance-date"
+                  type="date"
+                  value={clearanceDate}
+                  onChange={(e) => setClearanceDate(e.target.value)}
+                />
+              </div>
+              <div className="rounded-md border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="text-left p-2">Expense</th>
+                      <th className="text-right p-2">Debit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {IMPORT_PO_CLEARANCE_JV_FIELDS.map((field) => {
+                      const amount = normalizeImportPoExpenseNumber(
+                        clearanceExpenses[field.key],
+                      );
+                      if (amount <= 0) return null;
+                      return (
+                        <tr key={field.key} className="border-t">
+                          <td className="p-2">{field.label}</td>
+                          <td className="p-2 text-right tabular-nums">
+                            {formatImportPoAmount(amount)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="border-t bg-muted/20 font-medium">
+                      <td className="p-2">Credit (Clearing Agent)</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {formatImportPoAmount(
+                          IMPORT_PO_CLEARANCE_JV_FIELDS.reduce(
+                            (sum, field) =>
+                              sum +
+                              normalizeImportPoExpenseNumber(
+                                clearanceExpenses[field.key],
+                              ),
+                            0,
+                          ),
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Saves a journal voucher: debit each expense above, credit the
+                selected Clearing Agents account for the total.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingClearance}
+              onClick={() => {
+                setClearanceDialogOpen(false);
+                setClearanceOrder(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                loadingClearance ||
+                savingClearance ||
+                !clearanceAgentAccountId ||
+                Boolean(clearanceOrder?.clearingAgentAccountId)
+              }
+              onClick={() => void handleSaveClearance()}
+            >
+              {savingClearance ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -290,14 +290,41 @@ const LEGACY_SALES_INVOICE_NO = /^INV-(\d{4})-(\d+)$/i;
 const PLAIN_SALES_INVOICE_NO = /^INV-(\d+)$/i;
 const NUMERIC_SALES_INVOICE_NO = /^(\d+)$/;
 
+function parseSalesInvoiceSequence(invoiceNo: string): number | null {
+  const legacy = invoiceNo.match(LEGACY_SALES_INVOICE_NO);
+  if (legacy) {
+    const value = parseInt(legacy[2], 10);
+    return Number.isNaN(value) ? null : value;
+  }
+  const plain = invoiceNo.match(PLAIN_SALES_INVOICE_NO);
+  if (plain) {
+    const value = parseInt(plain[1], 10);
+    return Number.isNaN(value) ? null : value;
+  }
+  const num = invoiceNo.match(NUMERIC_SALES_INVOICE_NO);
+  if (num) {
+    const value = parseInt(num[1], 10);
+    return Number.isNaN(value) ? null : value;
+  }
+  return null;
+}
+
+/**
+ * Next sales invoice number for the PK financial year.
+ * If the highest number is on a cancelled invoice (nothing after it),
+ * free that number by renaming the cancelled row and reuse it so the
+ * sequence does not skip (e.g. cancelled 777 → next invoice is 777).
+ */
 async function getNextSalesInvoiceNo(
   invoiceDate?: string | Date,
   db: any = prisma,
 ): Promise<string> {
   const { from, to } = getPakistanFinancialYearBounds(invoiceDate ?? new Date());
 
-  const rows = await db.$queryRaw<Array<{ invoiceNo: string }>>`
-    SELECT "invoiceNo" FROM "SalesInvoice"
+  const rows = await db.$queryRaw<
+    Array<{ id: string; invoiceNo: string; status: string }>
+  >`
+    SELECT "id", "invoiceNo", "status" FROM "SalesInvoice"
     WHERE "customerType" != 'transfer'
     AND "invoiceDate" >= ${from}
     AND "invoiceDate" <= ${to}
@@ -305,23 +332,30 @@ async function getNextSalesInvoiceNo(
   `;
 
   let maxNo = 0;
-  for (const { invoiceNo } of rows) {
-    let value: number | null = null;
-    const legacy = invoiceNo.match(LEGACY_SALES_INVOICE_NO);
-    if (legacy) {
-      value = parseInt(legacy[2], 10);
-    } else {
-      const plain = invoiceNo.match(PLAIN_SALES_INVOICE_NO);
-      if (plain) {
-        value = parseInt(plain[1], 10);
-      } else {
-        const num = invoiceNo.match(NUMERIC_SALES_INVOICE_NO);
-        if (num) value = parseInt(num[1], 10);
-      }
+  let maxInvoice: { id: string; invoiceNo: string; status: string } | null =
+    null;
+
+  for (const row of rows) {
+    const value = parseSalesInvoiceSequence(row.invoiceNo);
+    if (value == null) continue;
+    if (value > maxNo) {
+      maxNo = value;
+      maxInvoice = row;
     }
-    if (value != null && !Number.isNaN(value)) {
-      maxNo = Math.max(maxNo, value);
-    }
+  }
+
+  if (
+    maxNo > 0 &&
+    maxInvoice &&
+    String(maxInvoice.status || "").trim().toLowerCase() === "cancelled"
+  ) {
+    // Free the unique invoiceNo so the new invoice can take this sequence.
+    const freedNo = `${maxInvoice.invoiceNo}-C-${String(maxInvoice.id).slice(0, 8)}`;
+    await db.salesInvoice.update({
+      where: { id: maxInvoice.id },
+      data: { invoiceNo: freedNo },
+    });
+    return String(maxNo).padStart(3, "0");
   }
 
   return String(maxNo + 1).padStart(3, "0");
@@ -635,7 +669,14 @@ async function createVoucherForInvoice(
     }
 
     // Create voucher entries based on customer type
-    const voucherEntries = [];
+    const voucherEntries: Array<{
+      accountId: string;
+      accountName: string;
+      description: string;
+      debit: number;
+      credit: number;
+      sortOrder: number;
+    }> = [];
 
     if (customerType === "walking" && accountId) {
       // Cash sale - Cash/Bank account (debit) and Sales Revenue (credit)
@@ -1988,9 +2029,13 @@ router.get("/invoices", async (req: Request, res: Response) => {
       include_items,
     } = req.query;
     const where: any = {};
+    const statusFilter = String(status || "").trim().toLowerCase();
 
-    if (status && status !== "all") {
-      where.status = status;
+    if (statusFilter && statusFilter !== "all") {
+      where.status = statusFilter;
+    } else {
+      // Default list: hide cancelled invoices unless Status filter = Cancelled
+      where.status = { notIn: ["cancelled", "Canceled", "CANCELLED"] };
     }
 
     if (paymentStatus && paymentStatus !== "all") {
@@ -2853,7 +2898,12 @@ router.post("/invoices", async (req: Request, res: Response) => {
 
           if (prsList.length > 0) {
             let remainingQty = item.orderedQty;
-            const invoiceRackShelves = [];
+            const invoiceRackShelves: Array<{
+              storeId: string | null;
+              rackId: string | null;
+              shelfId: string | null;
+              quantity: number;
+            }> = [];
 
             for (let i = 0; i < prsList.length; i++) {
               const prs = prsList[i];
@@ -3165,7 +3215,7 @@ router.post("/invoices", async (req: Request, res: Response) => {
         });
 
         // Get customer receivable account
-        let customerReceivableAccount = null;
+        let customerReceivableAccount: any = null;
         if (
           customerId &&
           (customerType === "walking" || customerType === "registered")
@@ -3233,10 +3283,17 @@ router.post("/invoices", async (req: Request, res: Response) => {
         }
 
         // Build JV voucher entries
-        const jvVoucherEntries = [];
+        const jvVoucherEntries: Array<{
+          accountId: string;
+          accountName: string;
+          description: string;
+          debit: number;
+          credit: number;
+          sortOrder: number;
+        }> = [];
 
         // Determine receivable account to use
-        let receivableAccount = customerReceivableAccount;
+        let receivableAccount: any = customerReceivableAccount;
         if (!receivableAccount) {
           // Fallback to generic Accounts Receivable
           const receivableSubgroup = await prisma.subgroup.findUnique({
@@ -3972,7 +4029,12 @@ router.put("/invoices/:id", async (req: Request, res: Response) => {
         const locationIds =
           item.selectedLocationIds ||
           (item.selectedLocationId ? [item.selectedLocationId] : []);
-        const invoiceRackShelves = [];
+        const invoiceRackShelves: Array<{
+          storeId: string | null;
+          rackId: string | null;
+          shelfId: string | null;
+          quantity: number;
+        }> = [];
 
         if (locationIds.length > 0 && !item.useUnlocatedStock) {
           const prsList = await prisma.partRackShelf.findMany({
@@ -6116,7 +6178,12 @@ router.post("/invoices/bulk-reverse", async (req: Request, res: Response) => {
 
       let totalReversedAmount = 0;
       let totalReversedCost = 0;
-      const reversedItems = [];
+      const reversedItems: Array<{
+        item: (typeof invoice.SalesInvoiceItem)[number];
+        quantity: number;
+        total: number;
+        cost: number;
+      }> = [];
 
       // Process each item
       for (const reverseItem of items) {

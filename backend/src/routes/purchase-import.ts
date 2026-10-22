@@ -33,12 +33,23 @@ const normalizeSupplierIds = (supplierIdsRaw: any): string[] =>
   );
 
 /** Live DBs may be missing this column if migration 20260713120000 was not applied. */
+/** Chart subgroup for forwarder accounts on import shipment / invoice. */
+const IMPORT_FRT_CLEARENCE_SUBGROUP_CODE = "310";
+/** Chart subgroup for clearing agent accounts on import invoice clearance JV. */
+const CLEARING_AGENTS_SUBGROUP_CODE = "311";
+
 let purchaseOrderForwarderColumnReady: Promise<void> | null = null;
 const ensurePurchaseOrderForwarderColumn = async () => {
   if (!purchaseOrderForwarderColumnReady) {
     purchaseOrderForwarderColumnReady = (async () => {
       await prisma.$executeRawUnsafe(
         `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "forwarder" TEXT`,
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "forwarderAccountId" TEXT`,
+      );
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "clearingAgentAccountId" TEXT`,
       );
     })().catch((error) => {
       purchaseOrderForwarderColumnReady = null;
@@ -63,6 +74,136 @@ const readPurchaseOrderForwarder = async (
   } catch {
     return null;
   }
+};
+
+const readPurchaseOrderForwarderAccountId = async (
+  orderId: string,
+): Promise<string | null> => {
+  try {
+    await ensurePurchaseOrderForwarderColumn();
+    const rows = await prisma.$queryRawUnsafe<
+      Array<{ forwarderAccountId: string | null }>
+    >(
+      `SELECT "forwarderAccountId" FROM "PurchaseOrder" WHERE "id" = $1 LIMIT 1`,
+      orderId,
+    );
+    const value = rows?.[0]?.forwarderAccountId;
+    const trimmed = String(value ?? "").trim();
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeForwarderMatchKey = (value: unknown) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const tokenEditDistance = (a: string, b: string) => {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i += 1) {
+    let left = i - 1;
+    prev[0] = i;
+    for (let j = 1; j <= n; j += 1) {
+      const diag = left;
+      left = prev[j];
+      prev[j] =
+        a[i - 1] === b[j - 1]
+          ? diag
+          : 1 + Math.min(diag, left, prev[j - 1]);
+    }
+  }
+  return prev[n];
+};
+
+const tokensRoughlyEqual = (a: string, b: string) => {
+  if (a === b) return true;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen <= 2) return false;
+  const dist = tokenEditDistance(a, b);
+  const allowed = maxLen <= 5 ? 1 : Math.max(1, Math.floor(maxLen * 0.3));
+  return dist <= allowed;
+};
+
+/** Match free-text forwarder names (incl. typos) to Import F.R.T clearence accounts. */
+const scoreForwarderNameMatch = (rawName: string, account: { code: string; name: string }) => {
+  const key = normalizeForwarderMatchKey(rawName);
+  const nameKey = normalizeForwarderMatchKey(account.name);
+  const codeNameKey = normalizeForwarderMatchKey(`${account.code} ${account.name}`);
+  const dashKey = normalizeForwarderMatchKey(`${account.code}-${account.name}`);
+  if (!key) return 0;
+  if (key === nameKey || key === codeNameKey || key === dashKey) return 100;
+  if (nameKey.includes(key) || key.includes(nameKey)) return 90;
+
+  const keyTokens = key.split(" ").filter(Boolean);
+  const nameTokens = nameKey.split(" ").filter(Boolean);
+  if (!keyTokens.length || !nameTokens.length) return 0;
+
+  let matched = 0;
+  for (const kt of keyTokens) {
+    if (nameTokens.some((nt) => tokensRoughlyEqual(kt, nt))) matched += 1;
+  }
+  const coverage = matched / keyTokens.length;
+  // Require most typed tokens to land on the account name (handles RELLIANCE/LOGESTICS typos).
+  if (coverage >= 0.6 && matched >= 2) return Math.round(60 + coverage * 30);
+  return 0;
+};
+
+const resolveImportFrtClearenceForwarder = async (
+  forwarderAccountIdRaw: unknown,
+  forwarderNameFallback?: unknown,
+): Promise<{ accountId: string | null; name: string | null }> => {
+  const accountId = String(forwarderAccountIdRaw ?? "").trim();
+  const legacyName = String(forwarderNameFallback ?? "").trim();
+
+  const toLabel = (account: { code: string; name: string }) =>
+    `${account.code}-${account.name}`.trim() || account.name;
+
+  if (accountId) {
+    const account = await prisma.account.findFirst({
+      where: {
+        id: accountId,
+        status: { equals: "Active", mode: "insensitive" },
+        Subgroup: { code: IMPORT_FRT_CLEARENCE_SUBGROUP_CODE },
+      },
+      select: { id: true, name: true, code: true },
+    });
+    if (!account) {
+      throw new Error(
+        "Selected forwarder must be an active account under Import F.R.T clearence",
+      );
+    }
+    return { accountId: account.id, name: toLabel(account) };
+  }
+
+  if (legacyName) {
+    const candidates = await prisma.account.findMany({
+      where: {
+        status: { equals: "Active", mode: "insensitive" },
+        Subgroup: { code: IMPORT_FRT_CLEARENCE_SUBGROUP_CODE },
+      },
+      select: { id: true, name: true, code: true },
+    });
+    let best: { account: (typeof candidates)[number]; score: number } | null = null;
+    for (const acc of candidates) {
+      const score = scoreForwarderNameMatch(legacyName, acc);
+      if (score > 0 && (!best || score > best.score)) {
+        best = { account: acc, score };
+      }
+    }
+    if (best) {
+      return { accountId: best.account.id, name: toLabel(best.account) };
+    }
+  }
+
+  return { accountId: null, name: legacyName || null };
 };
 
 const normalizeItems = (itemsRaw: any) =>
@@ -5333,6 +5474,28 @@ const IMPORT_PO_EXPENSE_AMOUNT_KEYS: Array<
   "locFrt",
 ];
 
+/** Payable expense accounts posted as Dr on clearance JV (Cr = clearing agent). */
+const CLEARANCE_EXPENSE_ACCOUNTS: Array<{
+  field: keyof ImportPurchaseOrderExpenses;
+  code: string;
+  label: string;
+}> = [
+  { field: "customsDuty", code: "302003", label: "C.D" },
+  { field: "additionalCustomsDuty", code: "302004", label: "A.C.D" },
+  { field: "regulatoryDuty", code: "302005", label: "R.D" },
+  { field: "ed", code: "302009", label: "E.D" },
+  { field: "salesTax", code: "302006", label: "S.T" },
+  { field: "additionalSalesTax", code: "302007", label: "A.S.T" },
+  { field: "incomeTax", code: "302008", label: "I.T" },
+  { field: "doAmount", code: "302010", label: "D.O" },
+  { field: "crnExp", code: "302013", label: "Dmg.Exp" },
+  { field: "miscExp", code: "302011", label: "Misc.Exp" },
+  { field: "agencyExp", code: "302016", label: "Agency.Exp" },
+];
+
+const roundClearanceMoney = (n: unknown) =>
+  Math.round((Number(n) || 0) * 100) / 100;
+
 function normalizeExpenseNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
@@ -5772,6 +5935,9 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
     const forwarderValue =
       String((order as any).forwarder ?? "").trim() ||
       (await readPurchaseOrderForwarder(order.id));
+    const forwarderAccountIdValue =
+      String((order as any).forwarderAccountId ?? "").trim() ||
+      (await readPurchaseOrderForwarderAccountId(order.id));
 
     res.json({
       data: {
@@ -5785,6 +5951,25 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         blNo: (order as any).blNo ?? null,
         blDate: (order as any).blDate ?? null,
         forwarder: forwarderValue,
+        forwarderAccountId: forwarderAccountIdValue,
+        clearingAgentAccountId: await (async () => {
+          const fromModel = String(
+            (order as any).clearingAgentAccountId ?? "",
+          ).trim();
+          if (fromModel) return fromModel;
+          try {
+            await ensurePurchaseOrderForwarderColumn();
+            const rows = await prisma.$queryRawUnsafe<
+              Array<{ clearingAgentAccountId: string | null }>
+            >(
+              `SELECT "clearingAgentAccountId" FROM "PurchaseOrder" WHERE "id" = $1 LIMIT 1`,
+              order.id,
+            );
+            return String(rows?.[0]?.clearingAgentAccountId ?? "").trim() || null;
+          } catch {
+            return null;
+          }
+        })(),
         estTimeDate: (order as any).expectedDate ?? null,
         importSaved,
         totalAmount: order.totalAmount,
@@ -5829,7 +6014,6 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     const blNo = String(req.body?.blNo ?? "").trim() || null;
     const invoiceDate = parseOptionalDate(req.body?.invoiceDate);
     const blDate = parseOptionalDate(req.body?.blDate);
-    const forwarder = String(req.body?.forwarder ?? "").trim() || null;
     const estTimeDate = parseOptionalDate(
       req.body?.estTimeDate ?? req.body?.expectedDate,
     );
@@ -5839,8 +6023,23 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       return res.status(400).json({ error: "Valid conversion rate is required" });
     }
 
-    // Ensure forwarder column exists on live DB before save.
+    // Ensure forwarder columns exist on live DB before save.
     await ensurePurchaseOrderForwarderColumn();
+
+    let forwarder: string | null = null;
+    let forwarderAccountId: string | null = null;
+    try {
+      const resolvedForwarder = await resolveImportFrtClearenceForwarder(
+        req.body?.forwarderAccountId ?? req.body?.forwarder_account_id,
+        req.body?.forwarder,
+      );
+      forwarder = resolvedForwarder.name;
+      forwarderAccountId = resolvedForwarder.accountId;
+    } catch (forwarderError: any) {
+      return res.status(400).json({
+        error: forwarderError?.message || "Invalid forwarder account",
+      });
+    }
 
     const order = await prisma.purchaseOrder.findUnique({
       where: { id },
@@ -6149,6 +6348,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
           "blNo" = ${blNo},
           "blDate" = ${blDate},
           "forwarder" = ${forwarder},
+          "forwarderAccountId" = ${forwarderAccountId},
           "expectedDate" = ${estTimeDate},
           "pkgExpPercent" = ${expenses.pkgExpPercent},
           "invDiscPercent" = ${expenses.invDiscPercent},
@@ -6177,7 +6377,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       try {
         await tx.purchaseOrder.update({
           where: { id },
-          data: { forwarder } as any,
+          data: { forwarder, forwarderAccountId } as any,
         });
       } catch {
         // Column may still be unknown to an outdated Prisma client; raw update above is source of truth.
@@ -6209,6 +6409,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       String((updated as any).forwarder ?? "").trim() ||
       (await readPurchaseOrderForwarder(id)) ||
       forwarder;
+    const savedForwarderAccountId =
+      String((updated as any).forwarderAccountId ?? "").trim() ||
+      (await readPurchaseOrderForwarderAccountId(id)) ||
+      forwarderAccountId;
 
     res.json({
       data: {
@@ -6224,6 +6428,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         blNo: (updated as any).blNo ?? null,
         blDate: (updated as any).blDate ?? null,
         forwarder: savedForwarder,
+        forwarderAccountId: savedForwarderAccountId,
         estTimeDate: (updated as any).expectedDate ?? null,
         expenses: readImportPoExpensesFromOrder(updated),
         items: updated.PurchaseOrderItem.map((item) => ({
@@ -6251,6 +6456,225 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
     res.status(status).json({ error: message });
   }
 });
+
+/**
+ * After store receive: post clearance JV —
+ * Dr each clearing expense payable / Cr selected Clearing Agents (311) account.
+ */
+router.post(
+  "/purchase-orders/:id/clearance",
+  async (req: Request, res: Response) => {
+    try {
+      const orderId = String(req.params.id || "").trim();
+      const clearingAgentAccountId = String(
+        req.body?.clearingAgentAccountId ??
+          req.body?.clearing_agent_account_id ??
+          "",
+      ).trim();
+      const voucherDateRaw = req.body?.date ?? req.body?.voucherDate;
+      const voucherDate = voucherDateRaw
+        ? new Date(voucherDateRaw)
+        : new Date();
+
+      if (!orderId) {
+        return res.status(400).json({ error: "Purchase order id is required." });
+      }
+      if (!clearingAgentAccountId) {
+        return res
+          .status(400)
+          .json({ error: "Clearing agent account is required." });
+      }
+      if (Number.isNaN(voucherDate.getTime())) {
+        return res.status(400).json({ error: "Valid voucher date is required." });
+      }
+
+      await ensurePurchaseOrderForwarderColumn();
+
+      const order = await prisma.purchaseOrder.findUnique({
+        where: { id: orderId },
+      });
+      if (!order) {
+        return res.status(404).json({ error: "Purchase order not found." });
+      }
+      if (!order.purchaseQuotationId) {
+        return res.status(400).json({
+          error: "Clearance is only available for import purchase orders.",
+        });
+      }
+      if (String(order.status || "").trim().toLowerCase() !== "received") {
+        return res.status(400).json({
+          error:
+            "Clearance is only available after the purchase order is received.",
+        });
+      }
+
+      const existingClearance = await prisma.voucher.findFirst({
+        where: {
+          type: "journal",
+          narration: {
+            contains: `Import PO ${order.poNumber}: Clearance`,
+            mode: "insensitive",
+          },
+        },
+        select: { id: true, voucherNumber: true },
+      });
+      if (existingClearance) {
+        return res.status(400).json({
+          error: `Clearance JV already exists (${existingClearance.voucherNumber}).`,
+          voucherNumber: existingClearance.voucherNumber,
+        });
+      }
+
+      const agentAccount = await prisma.account.findFirst({
+        where: {
+          id: clearingAgentAccountId,
+          status: { equals: "Active", mode: "insensitive" },
+          Subgroup: { code: CLEARING_AGENTS_SUBGROUP_CODE },
+        },
+        select: { id: true, code: true, name: true },
+      });
+      if (!agentAccount) {
+        return res.status(400).json({
+          error:
+            "Selected account must be an active Clearing Agents (311) account.",
+        });
+      }
+
+      const expenses = readImportPoExpensesFromOrder(order);
+      const expenseLines = CLEARANCE_EXPENSE_ACCOUNTS.map((def) => ({
+        ...def,
+        amount: roundClearanceMoney(expenses[def.field]),
+      })).filter((line) => line.amount > 0.001);
+
+      if (!expenseLines.length) {
+        return res.status(400).json({
+          error:
+            "No clearance expense amounts found on this purchase order (C.D, A.C.D, R.D, E.D, S.T, A.S.T, I.T, D.O, Dmg.Exp, Misc.Exp, Agency.Exp).",
+        });
+      }
+
+      const codes = expenseLines.map((line) => line.code);
+      const payableAccounts = await prisma.account.findMany({
+        where: {
+          status: { equals: "Active", mode: "insensitive" },
+          code: { in: codes },
+        },
+        select: { id: true, code: true, name: true },
+      });
+      const accountByCode = new Map(
+        payableAccounts.map((acc) => [acc.code, acc]),
+      );
+      const missingCodes = codes.filter((code) => !accountByCode.has(code));
+      if (missingCodes.length) {
+        return res.status(400).json({
+          error: `Missing chart accounts for clearance expenses: ${missingCodes.join(", ")}`,
+        });
+      }
+
+      const totalCredit = roundClearanceMoney(
+        expenseLines.reduce((sum, line) => sum + line.amount, 0),
+      );
+      const agentLabel = `${agentAccount.code}-${agentAccount.name}`;
+
+      const result = await prisma.$transaction(async (tx) => {
+        const debitEntries = expenseLines.map((line, index) => {
+          const acc = accountByCode.get(line.code)!;
+          return {
+            id: randomUUID(),
+            accountId: acc.id,
+            accountName: `${acc.code}-${acc.name}`,
+            description: `Import PO ${order.poNumber}: ${line.label}`,
+            debit: line.amount,
+            credit: 0,
+            sortOrder: index,
+          };
+        });
+        const creditEntry = {
+          id: randomUUID(),
+          accountId: agentAccount.id,
+          accountName: agentLabel,
+          description: `Import PO ${order.poNumber}: Clearing agent`,
+          debit: 0,
+          credit: totalCredit,
+          sortOrder: debitEntries.length,
+        };
+        const entries = [...debitEntries, creditEntry];
+
+        const lastVoucher = await tx.voucher.findFirst({
+          where: { type: "journal", voucherNumber: { startsWith: "JV" } },
+          orderBy: { voucherNumber: "desc" },
+        });
+        let next = 1;
+        const match = lastVoucher?.voucherNumber.match(/^JV(\d+)$/);
+        if (match) next = parseInt(match[1], 10) + 1;
+        const voucherNumber = `JV${String(next).padStart(4, "0")}`;
+
+        const voucher = await tx.voucher.create({
+          data: {
+            id: randomUUID(),
+            voucherNumber,
+            type: "journal",
+            date: voucherDate,
+            narration: `Import PO ${order.poNumber}: Clearance — ${agentLabel}`,
+            totalDebit: totalCredit,
+            totalCredit: totalCredit,
+            status: "posted",
+            createdBy: "System",
+            approvedBy: "System",
+            approvedAt: new Date(),
+            isSystemGenerated: true,
+            conversionRate: Number(order.conversionRate) || 1,
+            updatedAt: new Date(),
+            VoucherEntry: { create: entries },
+          } as any,
+        });
+
+        for (const entry of entries) {
+          const acc = await tx.account.findUnique({
+            where: { id: entry.accountId },
+            include: { Subgroup: { include: { MainGroup: true } } },
+          });
+          if (!acc) continue;
+          const type = acc.Subgroup.MainGroup.type.toLowerCase();
+          const change =
+            type === "asset" || type === "expense" || type === "cost"
+              ? entry.debit - entry.credit
+              : entry.credit - entry.debit;
+          await tx.account.update({
+            where: { id: entry.accountId },
+            data: { currentBalance: { increment: change } },
+          });
+        }
+
+        await tx.$executeRawUnsafe(
+          `UPDATE "PurchaseOrder" SET "clearingAgentAccountId" = $1 WHERE "id" = $2`,
+          agentAccount.id,
+          order.id,
+        );
+
+        return {
+          voucherNumber: voucher.voucherNumber,
+          voucherId: voucher.id,
+          total: totalCredit,
+          clearingAgentAccountId: agentAccount.id,
+          clearingAgent: agentLabel,
+          lines: expenseLines.map((line) => ({
+            field: line.field,
+            code: line.code,
+            label: line.label,
+            amount: line.amount,
+          })),
+        };
+      });
+
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error?.message || "Failed to create clearance voucher",
+      });
+    }
+  },
+);
 
 // Delete import purchase order only when it has not been received
 router.delete("/purchase-orders/:id", async (req: Request, res: Response) => {
@@ -6384,6 +6808,26 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
       prisma.purchaseOrder.count({ where }),
     ]);
 
+    await ensurePurchaseOrderForwarderColumn();
+    const orderIds = orders.map((po) => po.id);
+    const clearingAgentByPoId = new Map<string, string | null>();
+    if (orderIds.length) {
+      const clearingRows = await prisma.$queryRawUnsafe<
+        Array<{ id: string; clearingAgentAccountId: string | null }>
+      >(
+        `SELECT "id", "clearingAgentAccountId" FROM "PurchaseOrder" WHERE "id" = ANY($1::text[])`,
+        orderIds,
+      );
+      for (const row of clearingRows) {
+        clearingAgentByPoId.set(
+          row.id,
+          row.clearingAgentAccountId
+            ? String(row.clearingAgentAccountId)
+            : null,
+        );
+      }
+    }
+
     const khiReceivedOrders = orders.filter((po: any) => {
       const status = String(po.status || "")
         .trim()
@@ -6483,6 +6927,11 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         totalAmount: po.totalAmount,
         notes: po.notes,
         forwarder: po.forwarder ?? null,
+        forwarderAccountId: (po as any).forwarderAccountId ?? null,
+        clearingAgentAccountId:
+          clearingAgentByPoId.get(String(po.id)) ??
+          (po as any).clearingAgentAccountId ??
+          null,
         estTimeDate: po.expectedDate ?? null,
         importSaved,
         transferOutInvoiceId: po.transferOutInvoiceId || null,

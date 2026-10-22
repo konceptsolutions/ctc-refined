@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const base = "http://localhost:5001/api";
+const base = "http://localhost:5005/api";
 
 async function login(email: string, password: string) {
   const res = await fetch(`${base}/auth/login`, {
