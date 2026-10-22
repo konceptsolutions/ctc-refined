@@ -1,18 +1,20 @@
 import express from "express";
 import cors from "cors";
 import * as dotenv from "dotenv";
+import * as fs from "fs";
 import * as path from "path";
 import prisma from "./config/database.js";
 
-// Load .env BEFORE any other imports that might use DATABASE_URL
-// Load .env based on NODE_ENV
-const envFile =
+// Prefer .env.production in production, but fall back to .env when missing.
+const preferredEnv =
   process.env.NODE_ENV === "production" ? ".env.production" : ".env";
-const envPath = path.resolve(__dirname, `../${envFile}`);
+const preferredPath = path.resolve(__dirname, `../${preferredEnv}`);
+const fallbackPath = path.resolve(__dirname, "../.env");
+const envPath = fs.existsSync(preferredPath) ? preferredPath : fallbackPath;
 dotenv.config({ path: envPath, override: true });
 
 // ============================================================
-// DATABASE SAFETY GUARD � ALWAYS USE koncepts_dev
+// DATABASE SAFETY GUARD — ALWAYS USE koncepts_dev
 // Never allow any other database to be used.
 // This guard overrides stale system/user environment variables.
 // ============================================================
@@ -21,11 +23,15 @@ const currentDbUrl = process.env.DATABASE_URL || "";
 
 if (!currentDbUrl.includes(REQUIRED_DB)) {
   // Force-override: set it back to the correct DB from .env
-  const fs = require("fs");
+  if (!fs.existsSync(envPath)) {
+    throw new Error(
+      `[SERVER] FATAL: Missing env file at ${envPath}. Refusing to start.`,
+    );
+  }
   const envContent = fs.readFileSync(envPath, "utf-8");
   const match = envContent.match(/DATABASE_URL=([^\r\n]+)/);
   if (match && match[1].includes(REQUIRED_DB)) {
-    const overriddenUrl = match[1].trim();
+    const overriddenUrl = match[1].trim().replace(/^["']|["']$/g, "");
     process.env.DATABASE_URL = overriddenUrl;
     console.warn(
       `[SERVER] ⚠  DATABASE_URL was pointing to wrong DB. Overridden to: ${overriddenUrl.replace(/:[^:@]+@/, ":****@")}`,
@@ -96,7 +102,55 @@ const allowedOrigins = process.env.CORS_ORIGIN
       "http://localhost:8080",
       "http://localhost:8081",
       "http://localhost:83",
+      "https://crystaltrading.net",
+      "https://www.crystaltrading.net",
+      "http://crystaltrading.net",
+      "http://www.crystaltrading.net",
+      "https://erpsystem.crystaltrading.net",
     ];
+
+function isAllowedCorsOrigin(origin: string): boolean {
+  if (allowedOrigins.includes(origin)) return true;
+  if (origin.includes("localhost") || origin.includes("127.0.0.1")) return true;
+
+  try {
+    const originHost = new URL(origin).hostname.toLowerCase();
+    // Production site + subdomains (nginx fronts the same API)
+    if (
+      originHost === "crystaltrading.net" ||
+      originHost.endsWith(".crystaltrading.net")
+    ) {
+      return true;
+    }
+
+    const serverOrigin =
+      process.env.SERVER_ORIGIN || "https://crystaltrading.net";
+    const serverHost = new URL(serverOrigin).hostname.toLowerCase();
+    if (
+      originHost === serverHost ||
+      originHost.endsWith(`.${serverHost}`) ||
+      serverHost.endsWith(`.${originHost}`)
+    ) {
+      return true;
+    }
+    if (
+      origin.includes("103.60.12.157") ||
+      origin.includes("155.94.150.168") ||
+      origin.includes(serverHost)
+    ) {
+      return true;
+    }
+  } catch {
+    if (
+      origin.includes("crystaltrading.net") ||
+      origin.includes("103.60.12.157") ||
+      origin.includes("155.94.150.168")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 app.use(
   cors({
@@ -106,56 +160,13 @@ app.use(
         return callback(null, true);
       }
 
-      // Check explicit allowed origins
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      if (isAllowedCorsOrigin(origin)) {
         return callback(null, true);
       }
 
-      // For development, allow all localhost origins
-      if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-        return callback(null, true);
-      }
-
-      // In production, allow requests from same origin (when served through Nginx)
-      // This allows the frontend served from the same domain to access the API
-      const isProduction = process.env.NODE_ENV === "production";
-      if (isProduction) {
-        // Get server origin from environment or default
-        const serverOrigin =
-          process.env.SERVER_ORIGIN || "http://155.94.150.168/";
-        const serverHost = new URL(serverOrigin).hostname;
-
-        // Extract hostname from origin
-        try {
-          const originUrl = new URL(origin);
-          const originHost = originUrl.hostname;
-
-          // Allow if hostname matches (regardless of protocol http/https)
-          if (
-            originHost === serverHost ||
-            originHost.includes(serverHost) ||
-            serverHost.includes(originHost)
-          ) {
-            return callback(null, true);
-          }
-
-          // Also allow if origin contains the server IP
-          if (origin.includes("103.60.12.157") || origin.includes(serverHost)) {
-            return callback(null, true);
-          }
-        } catch (e) {
-          // If URL parsing fails, try string matching
-          if (origin.includes(serverHost) || origin.includes("103.60.12.157")) {
-            return callback(null, true);
-          }
-        }
-
-        // Log CORS rejection for debugging
-        return callback(new Error("Not allowed by CORS"));
-      }
-
-      // In development, be more permissive
-      return callback(null, true);
+      // Reject without throwing — a thrown Error becomes HTTP 500 "Internal server error"
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -533,10 +544,7 @@ app.get("/api/inventory/adjustment-parts", async (req, res) => {
   try {
     console.log("Fetching parts that are in adjustments (public endpoint)");
     
-    // Get unique part IDs from all AdjustmentItem records
-    const { PrismaClient } = await import("@prisma/client");
-    const prisma = new PrismaClient();
-    
+    // Get unique part IDs from all AdjustmentItem records (shared Prisma singleton)
     const adjustmentItems = await prisma.adjustmentItem.findMany({
       where: {
         Adjustment: {

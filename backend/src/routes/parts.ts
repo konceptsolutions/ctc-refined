@@ -1269,9 +1269,14 @@ router.get("/", async (req: Request, res: Response) => {
     ]);
 
     // Attach models in one grouped query (avoids per-row Model subquery).
-    // Large catalog loads (skipHeavyMeta) still need models for sales filters.
-    // Items List passes include_history=false and skips models.
-    const needModels = skipHeavyMeta || !skipSaleHistory;
+    // Large catalog loads (limit=all / skipHeavyMeta) must NOT pull every Model
+    // row — Sales Invoice fetches models on demand via /parts/:id.
+    // Opt in with include_models=true when a screen truly needs them inline.
+    const includeModels =
+      String((req.query as any).include_models || "").toLowerCase() ===
+        "true" || (req.query as any).include_models === "1";
+    const needModels =
+      includeModels || (!skipHeavyMeta && !skipSaleHistory);
     if (needModels && result.rows.length > 0) {
       const partIds = result.rows.map((row: any) => row.id).filter(Boolean);
       if (partIds.length > 0) {
@@ -1552,13 +1557,16 @@ router.get("/price-management", async (req: Request, res: Response) => {
       subcategory_name,
       brand_name,
       status,
-      model,
       page = "1",
       limit = "100",
     } = req.query;
 
-    const pageNum = parseInt(page as string) || 1;
-    let limitNum = limit === "all" ? 100000 : parseInt(limit as string) || 1000;
+    const pageNum = Math.max(parseInt(page as string) || 1, 1);
+    // Cap “all” so a mistaken client cannot force a full stock-table scan of 7k+ parts.
+    let limitNum =
+      limit === "all"
+        ? 2000
+        : Math.min(Math.max(parseInt(limit as string) || 100, 1), 500);
     const offset = (pageNum - 1) * limitNum;
 
     const conditions: string[] = [];
@@ -1599,67 +1607,86 @@ router.get("/price-management", async (req: Request, res: Response) => {
     const whereClause =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
+    const needsJoin =
+      Boolean(search) ||
+      Boolean(catSearch && catSearch !== "all") ||
+      Boolean(subcategory_name && subcategory_name !== "all") ||
+      Boolean(brand_name && brand_name !== "all");
+
+    const limitParam = paramIdx++;
+    const offsetParam = paramIdx++;
+
+    // Page the Part rows first, then aggregate stock / price history only for that page.
     const sql = `
-      SELECT 
-        p.id, p."partNo", p.description, p.cost, p."purchasePrice", p."avgCost", 
-        p."priceA", p."priceB", p."priceM", p."updatedAt", p."createdAt",
-        mp."masterPartNo" as master_part_no,
-        b."name" as brand_name,
-        c."name" as category_name,
-        sc."name" as subcategory_name,
+      WITH page_parts AS (
+        SELECT
+          p.id, p."partNo", p.description, p.cost, p."purchasePrice", p."avgCost",
+          p."priceA", p."priceB", p."priceM", p."updatedAt", p."createdAt",
+          mp."masterPartNo" as master_part_no,
+          b."name" as brand_name,
+          c."name" as category_name,
+          sc."name" as subcategory_name
+        FROM "Part" p
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        LEFT JOIN "Category" c ON p."categoryId" = c.id
+        LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+        ${whereClause}
+        ORDER BY p."updatedAt" DESC, p."partNo" ASC
+        LIMIT $${limitParam} OFFSET $${offsetParam}
+      )
+      SELECT
+        pp.*,
         ls.last_sale_price,
         COALESCE(st.stock, 0) as stock,
         COALESCE(st.reserved, 0) as reserved_stock,
         ph."updateValue" as last_update_value,
         ph."updateType" as last_update_type,
         ph."priceField" as last_price_field,
-        COALESCE(
-          (
-            SELECT json_agg(
-              json_build_object(
-                'id', m.id,
-                'name', m.name,
-                'qty_used', m."qtyUsed"
-              )
-            )
-            FROM "Model" m 
-            WHERE m."partId" = p.id
-          ),
-          '[]'::json
-        ) as models
-      FROM "Part" p
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
-      LEFT JOIN "Category" c ON p."categoryId" = c.id
-      LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+        '[]'::json as models
+      FROM page_parts pp
       LEFT JOIN (
-          SELECT "partId", 
+          SELECT "partId",
             SUM(CASE WHEN "referenceType" IS NULL OR "referenceType" != 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as stock,
             SUM(CASE WHEN "referenceType" = 'stock_reservation' THEN (CASE WHEN type = 'in' THEN quantity ELSE -quantity END) ELSE 0 END) as reserved
           FROM "StockMovement"
+          WHERE "partId" IN (SELECT id FROM page_parts)
           GROUP BY "partId"
-      ) st ON p.id = st."partId"
+      ) st ON pp.id = st."partId"
       LEFT JOIN (
           SELECT DISTINCT ON ("partId") "partId", "updateValue", "updateType", "priceField"
           FROM "PriceHistory"
+          WHERE "partId" IN (SELECT id FROM page_parts)
           ORDER BY "partId", "createdAt" DESC
-      ) ph ON p.id = ph."partId"
+      ) ph ON pp.id = ph."partId"
       LEFT JOIN LATERAL (
           SELECT
             sii."unitPrice" as last_sale_price
           FROM "SalesInvoiceItem" sii
           JOIN "SalesInvoice" si ON sii."invoiceId" = si.id
-          WHERE sii."partId" = p.id
+          WHERE sii."partId" = pp.id
           ORDER BY si."invoiceDate" DESC, sii."createdAt" DESC
           LIMIT 1
       ) ls ON true
-      ${whereClause}
-      ORDER BY p."updatedAt" DESC, p."partNo" ASC
-      LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+      ORDER BY pp."updatedAt" DESC, pp."partNo" ASC
     `;
 
-    params.push(limitNum, offset);
-    const result = await query(sql, params);
+    const listParams = [...params, limitNum, offset];
+    const countSql = needsJoin
+      ? `SELECT COUNT(*)::int AS total
+         FROM "Part" p
+         LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+         LEFT JOIN "Brand" b ON p."brandId" = b.id
+         LEFT JOIN "Category" c ON p."categoryId" = c.id
+         LEFT JOIN "Subcategory" sc ON p."subcategoryId" = sc.id
+         ${whereClause}`
+      : `SELECT COUNT(*)::int AS total FROM "Part" p ${whereClause}`;
+
+    const [result, countResult] = await Promise.all([
+      query(sql, listParams),
+      query(countSql, params),
+    ]);
+    const total = Number(countResult.rows?.[0]?.total) || 0;
 
     const transformedParts = result.rows.map((p: any) => ({
       id: p.id,
@@ -1682,12 +1709,18 @@ router.get("/price-management", async (req: Request, res: Response) => {
       last_percentage: p.last_update_value || p.lastupdatevalue,
       last_change_type: p.last_update_type || p.lastupdatetype,
       last_price_field: p.last_price_field || p.lastpricefield,
-      models: p.models || [],
+      models: [],
     }));
 
     res.json({
       success: true,
       data: transformedParts,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limitNum)),
+      },
     });
   } catch (error: any) {
     console.error("Error fetching price management parts:", error.message);
@@ -2101,7 +2134,8 @@ router.post("/batch-images", async (req: Request, res: Response) => {
     if (ids.length === 0) {
       return res.json({ data: [] });
     }
-    const capped = ids.slice(0, 100);
+    // Cap per request; frontend chunks larger pages into multiple calls.
+    const capped = ids.slice(0, 200);
     const rows = await prisma.part.findMany({
       where: { id: { in: capped } },
       select: { id: true, imageP1: true, imageP2: true },

@@ -4,7 +4,7 @@
  * Update this file when modules, routes, or workflows change.
  */
 
-export const ERP_KNOWLEDGE_VERSION = "2026-10-06-top-customers";
+export const ERP_KNOWLEDGE_VERSION = "2026-10-17-deterministic-db";
 
 function pakistanTodayYmd(): string {
   try {
@@ -85,10 +85,13 @@ Specialized tools (use when they fit):
 - \`export_data\` — create a downloadable **Excel (.xlsx)** or **PDF** from an entity query or custom rows. Use whenever the user asks for export, PDF, Excel, spreadsheet, or downloadable report.
 
 Rules:
-- Prefer tools over guessing for any live figure.
-- For "maximum sale customer in September" (or similar): call \`get_top_customers_by_sales\` with dateFrom/dateTo for that month in **${todayYear}** (unless another year is stated). Report the #1 customer and amount from the tool result.
+- Prefer tools over guessing for any live figure. **Never invent or estimate amounts.**
+- For **"X account details"** / account balance / chart lookup: call \`query_erp\` with \`entity: "accounts"\` and \`query\` set to the **user's exact spelling** (e.g. babalbhar). Do **not** invent spaced versions like "Bab Al Bhar". Also try customers/suppliers only if accounts returns nothing.
+- For "maximum sale customer in September" (or similar): call \`get_top_customers_by_sales\` with dateFrom/dateTo for that month in **${todayYear}** (unless another year is stated). Report the #1 customer and amount **exactly** from the tool result — same question must yield the same numbers.
+- \`query_erp\` on sales_invoices returns only a **sample**. If the tool result says \`sampleOnly\` / truncated, do not sum or rank from it — call \`get_top_customers_by_sales\` instead.
 - If many matches, summarize top results and ask which one if needed.
 - Never claim you queried the DB unless you used a tool.
+- Never say an account/customer "was not found" unless the tool result returned zero rows.
 - Never say there were "no sales" for a month unless \`get_top_customers_by_sales\` (or a full-period query) returned zero invoices for the correct year.
 - Tools are **read-only** for create/update — but you **can** generate PDF/Excel files via \`export_data\`.
 - After \`export_data\`, tell the user a download button will appear in the chat (do not invent a URL).

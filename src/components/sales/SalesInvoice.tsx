@@ -130,6 +130,7 @@ import {
   isDateInPakistanFinancialYear,
 } from "@/utils/dateUtils";
 import { resolveInvoiceLinePartFields } from "@/utils/invoiceLinePart";
+import { formatStockLocationsDisplay } from "@/lib/stockLocationDisplay";
 import {
   Invoice,
   InvoiceItem,
@@ -186,20 +187,8 @@ function formatPartLocationDisplay(
     (partId && partLocations[partId]?.length
       ? partLocations[partId]
       : part?.locations) || [];
-  if (!locs.length) return "—";
-  const labels = [
-    ...new Set(
-      locs
-        .map((loc) => {
-          const rack = String(loc.rackCode || loc.rack || "").trim();
-          const shelf = String(loc.shelfNo || loc.shelf || "").trim();
-          if (!rack && !shelf) return "";
-          return `${rack || "-"}${shelf ? `-${shelf}` : ""}`;
-        })
-        .filter(Boolean),
-    ),
-  ];
-  return labels.length ? labels.join(", ") : "—";
+  const text = formatStockLocationsDisplay(locs);
+  return text || "—";
 }
 
 function mapApiSalesInvoiceItemsToInvoiceItems(fullItems: any[]): InvoiceItem[] {
@@ -861,6 +850,16 @@ export const SalesInvoice = ({
   const [partsApplicationFilter, setPartsApplicationFilter] = useState<string>(
     "",
   );
+  /** Full model name catalog for the filter dropdown (independent of selected items). */
+  const [catalogModelNames, setCatalogModelNames] = useState<string[]>([]);
+  /** Part IDs matching the selected model filter (from model-associations API). */
+  const [modelFilterPartIds, setModelFilterPartIds] = useState<Set<string> | null>(
+    null,
+  );
+  /** Association rows for the selected model filter (qty used per part). */
+  const [modelFilterAssociations, setModelFilterAssociations] = useState<
+    ModelAssociationRow[]
+  >([]);
   const [showPartsDropdown, setShowPartsDropdown] = useState<
     Record<string, boolean>
   >({});
@@ -931,16 +930,25 @@ export const SalesInvoice = ({
         (response as any).data || (Array.isArray(response) ? response : []);
 
       // Normalize to match parts list format (rackCode, shelfNo, storeName)
-      const normalized = locData.map((loc: any) => ({
-        id: loc.id || `${loc.rackId}-${loc.shelfId}`,
-        storeId: loc.storeId,
-        storeName: loc.store || loc.storeName || "No Store",
-        rackId: loc.rackId,
-        rackCode: loc.rack || loc.rackCode || "No Rack",
-        shelfId: loc.shelfId,
-        shelfNo: loc.shelf || loc.shelfNo || "No Shelf",
-        quantity: loc.quantity,
-      }));
+      const normalized = locData
+        .filter(
+          (loc: any) =>
+            !loc?.isVirtualUnallocated &&
+            !(typeof loc?.id === "string" && loc.id.startsWith("unallocated-")) &&
+            String(loc?.store || loc?.storeName || "").toLowerCase() !==
+              "unallocated",
+        )
+        .map((loc: any) => ({
+          id: loc.id || `${loc.storeId || "s"}-${loc.rackId || "r"}-${loc.shelfId || "sh"}`,
+          storeId: loc.storeId,
+          storeName: loc.store || loc.storeName || "",
+          rackId: loc.rackId,
+          rackCode: loc.rack || loc.rackCode || "",
+          shelfId: loc.shelfId,
+          shelfNo: loc.shelf || loc.shelfNo || "",
+          quantity: loc.quantity,
+          isVirtualUnallocated: !!loc.isVirtualUnallocated,
+        }));
 
       setPartLocations((prev) => ({
         ...prev,
@@ -1750,15 +1758,33 @@ export const SalesInvoice = ({
     }
   }, [showDocumentForm]);
 
-  // Derive Part Association rows from the loaded parts list whenever any of the
-  // top filters (Model / Description / Application) is active. Each row is one
-  // part-model pair so the panel can show the requiredQty per model.
+  // Derive Part Association rows whenever any of the top filters is active.
+  // When a model is selected, prefer the associations API result (works even
+  // though the parts catalog loads without machineModels).
   const filterAssociationRows = useMemo<ModelAssociationRow[]>(() => {
     const selectedModel = partsModelFilter.trim().toLowerCase();
     const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
     const selectedApplication = partsApplicationFilter.trim().toLowerCase();
     if (!selectedModel && !selectedDescription && !selectedApplication) {
       return [];
+    }
+
+    if (selectedModel && modelFilterAssociations.length > 0) {
+      return modelFilterAssociations.filter((row) => {
+        if (
+          selectedDescription &&
+          String(row.description || "").toLowerCase() !== selectedDescription
+        ) {
+          return false;
+        }
+        if (
+          selectedApplication &&
+          String(row.application || "").toLowerCase() !== selectedApplication
+        ) {
+          return false;
+        }
+        return true;
+      });
     }
 
     const rows: ModelAssociationRow[] = [];
@@ -1832,6 +1858,7 @@ export const SalesInvoice = ({
     partsModelFilter,
     partsDescriptionFilter,
     partsApplicationFilter,
+    modelFilterAssociations,
   ]);
 
   // Helper to derive unit price from selected price type + part data
@@ -2305,6 +2332,7 @@ export const SalesInvoice = ({
         quantity?: number;
         images?: string[];
         grade?: string;
+        remarks?: string;
       },
       options?: { silent?: boolean },
     ) => {
@@ -2341,6 +2369,7 @@ export const SalesInvoice = ({
         brands: brandName ? [{ id: "", name: brandName }] : [],
         origin: String(part.origin || "").trim() || undefined,
         images: part.images,
+        remarks: String((part as any).remarks || "").trim() || undefined,
       };
 
       setSelectedPartsMap((prev) => ({ ...prev, [newPartId]: mappedPart }));
@@ -2684,15 +2713,19 @@ export const SalesInvoice = ({
     }
     try {
       const params: any = {
-        limit: "all", // Load all active parts as requested
+        limit: "all", // Catalog for dropdown filtering
         page: 1,
         status: "active",
+        // Skip sale-history joins + image blobs; models load on demand per part.
+        include_history: "false",
+        include_images: "false",
+        include_models: "false",
       };
 
       // Use search parameter if provided (for server-side search when needed)
       if (searchTerm && searchTerm.trim().length > 0) {
         params.search = searchTerm.trim();
-        params.limit = "all"; // Load all matching parts
+        params.limit = "all";
       }
 
       const response = await apiClient.getParts(params);
@@ -2801,6 +2834,91 @@ export const SalesInvoice = ({
     void fetchPartsRef.current("", false);
   }, [showDocumentForm]);
 
+  // Load model names for the top filter independently of selected line items.
+  useEffect(() => {
+    if (!showDocumentForm) return;
+    if (catalogModelNames.length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiClient.getModelNames();
+        const names = Array.isArray(response)
+          ? response
+          : (response as any)?.data || [];
+        if (cancelled) return;
+        setCatalogModelNames(
+          names
+            .map((name: string) => String(name || "").trim())
+            .filter(Boolean)
+            .sort((a: string, b: string) => a.localeCompare(b)),
+        );
+      } catch (error) {
+        console.error("Failed to fetch model names:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDocumentForm, catalogModelNames.length]);
+
+  // Resolve which parts belong to the selected model (catalog loads without models).
+  useEffect(() => {
+    const model = partsModelFilter.trim();
+    if (!model) {
+      setModelFilterPartIds(null);
+      setModelFilterAssociations([]);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const application = partsApplicationFilter.trim();
+        const response = await apiClient.getPartsByModelAssociation(
+          model,
+          application || undefined,
+        );
+        const data = Array.isArray((response as any)?.data)
+          ? (response as any).data
+          : Array.isArray(response)
+            ? response
+            : [];
+        if (cancelled) return;
+
+        const ids = new Set<string>();
+        const rows: ModelAssociationRow[] = [];
+        for (const row of data) {
+          const partId = String(row.partId || row.part_id || "").trim();
+          if (!partId) continue;
+          ids.add(partId);
+          rows.push({
+            partId,
+            masterPart: String(row.masterPart || row.master_part || ""),
+            partNo: String(row.partNo || row.part_no || ""),
+            description: String(row.description || ""),
+            brand: String(row.brand || ""),
+            origin: String(row.origin || ""),
+            application: String(row.application || ""),
+            model: String(row.model || model),
+            quantity: Number(row.quantity || row.qtyUsed || 0),
+          });
+        }
+        setModelFilterPartIds(ids);
+        setModelFilterAssociations(rows);
+      } catch (error) {
+        console.error("Failed to resolve model filter parts:", error);
+        if (!cancelled) {
+          setModelFilterPartIds(new Set());
+          setModelFilterAssociations([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [partsModelFilter, partsApplicationFilter]);
+
   const getFilteredPartsForInlineRow = useCallback(
     (
       rowId: string,
@@ -2833,7 +2951,9 @@ export const SalesInvoice = ({
           const matchesModel =
             options?.ignoreModel ||
             !selectedModel ||
-            modelNames.some((name) => name === selectedModel);
+            (modelFilterPartIds
+              ? modelFilterPartIds.has(part.id)
+              : modelNames.some((name) => name === selectedModel));
           if (!matchesModel) return false;
 
           const matchesDescription =
@@ -2883,6 +3003,7 @@ export const SalesInvoice = ({
       partsDescriptionFilter,
       partsApplicationFilter,
       selectedPartsMap,
+      modelFilterPartIds,
     ],
   );
 
@@ -3015,9 +3136,16 @@ export const SalesInvoice = ({
   }, [showDocumentForm]);
 
   const addItemModelOptions = useMemo(() => {
+    // Catalog models load independently — do not wait for a selected line item.
     const selectedDescription = partsDescriptionFilter.trim().toLowerCase();
     const selectedApplication = partsApplicationFilter.trim().toLowerCase();
-    return Array.from(
+    if (!selectedDescription && !selectedApplication) {
+      return catalogModelNames;
+    }
+
+    // When description/application filters are active, narrow models from parts
+    // that already have models loaded, then fall back to the full catalog.
+    const narrowed = Array.from(
       new Set(
         parts
           .filter((part) => {
@@ -3035,7 +3163,14 @@ export const SalesInvoice = ({
           ),
       ),
     ).sort((a, b) => a.localeCompare(b));
-  }, [parts, partsDescriptionFilter, partsApplicationFilter]);
+
+    return narrowed.length > 0 ? narrowed : catalogModelNames;
+  }, [
+    catalogModelNames,
+    parts,
+    partsDescriptionFilter,
+    partsApplicationFilter,
+  ]);
 
   const addItemDescriptionOptions = useMemo(() => {
     const selectedModel = partsModelFilter.trim().toLowerCase();
@@ -3048,9 +3183,13 @@ export const SalesInvoice = ({
             const modelNames = (part.machineModels || []).map((m) =>
               String(m.name || "").toLowerCase(),
             );
+            const matchesModel =
+              !selectedModel ||
+              (modelFilterPartIds
+                ? modelFilterPartIds.has(part.id)
+                : modelNames.some((name) => name === selectedModel));
             return (
-              (!selectedModel ||
-                modelNames.some((name) => name === selectedModel)) &&
+              matchesModel &&
               (!selectedApplication || application === selectedApplication)
             );
           })
@@ -3058,7 +3197,12 @@ export const SalesInvoice = ({
           .filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b));
-  }, [parts, partsModelFilter, partsApplicationFilter]);
+  }, [
+    parts,
+    partsModelFilter,
+    partsApplicationFilter,
+    modelFilterPartIds,
+  ]);
 
   const addItemApplicationOptions = useMemo(() => {
     const selectedModel = partsModelFilter.trim().toLowerCase();
@@ -3071,9 +3215,13 @@ export const SalesInvoice = ({
             const modelNames = (part.machineModels || []).map((m) =>
               String(m.name || "").toLowerCase(),
             );
+            const matchesModel =
+              !selectedModel ||
+              (modelFilterPartIds
+                ? modelFilterPartIds.has(part.id)
+                : modelNames.some((name) => name === selectedModel));
             return (
-              (!selectedModel ||
-                modelNames.some((name) => name === selectedModel)) &&
+              matchesModel &&
               (!selectedDescription || description === selectedDescription)
             );
           })
@@ -3081,7 +3229,12 @@ export const SalesInvoice = ({
           .filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b));
-  }, [parts, partsModelFilter, partsDescriptionFilter]);
+  }, [
+    parts,
+    partsModelFilter,
+    partsDescriptionFilter,
+    modelFilterPartIds,
+  ]);
 
   const searchableModelFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [
@@ -3168,88 +3321,85 @@ export const SalesInvoice = ({
     });
   }, [inlineItems, fetchPartImages, fetchPartLocations, fetchPartPriceLastUpdated, isTransferOut]);
 
-  // Background stock polling (every 60 seconds)
+  // Background stock polling (every 60s) — only refresh lines on the invoice.
+  // Do NOT reload the full parts catalog (limit=all ~7k rows / ~2s) every minute;
+  // that saturates the DB pool and slows the whole system after the Node upgrade.
   useEffect(() => {
-    // Only start polling if we have initial data and we are not currently searching
     const hasSearchTerm = Object.values(partsSearchTerm).some(
       (s) => s.length > 0,
     );
 
     if (hasFetchedInitialPartsRef.current && !hasSearchTerm) {
       const interval = setInterval(() => {
-        // Quietly background refresh parts data to capture external stock changes
-        void fetchPartsRef.current("", true, true);
+        if (inlineItems.length === 0) return;
 
-        // Also refresh individual stock balances for visible items if any
-        if (inlineItems.length > 0) {
-          if (isTransferOut) {
-            const partIds = Array.from(
-              new Set(
-                inlineItems
-                  .map((item) => item.selectedPartId)
-                  .filter((id): id is string => Boolean(id)),
-              ),
-            );
-            if (partIds.length > 0) {
-              void (async () => {
-                try {
-                  const response = (await apiClient.getPartCostLookupBatch(
-                    partIds,
-                  )) as any;
-                  const data = (response?.data || response || {}) as Record<
-                    string,
-                    any
-                  >;
-                  setPartStockBalances((prev) => {
-                    const next = { ...prev };
-                    for (const partId of partIds) {
-                      const stockData = data[partId];
-                      if (!stockData) continue;
-                      const avgCost =
-                        Number(stockData.avg_cost ?? stockData.avgCost) || 0;
-                      const purchasePrice =
-                        Number(
-                          stockData.purchase_price ?? stockData.purchasePrice,
-                        ) || 0;
-                      const cost = Number(stockData.cost) || 0;
-                      next[partId] = {
-                        current_stock: stockData.current_stock || 0,
-                        available_stock:
-                          stockData.available_stock ||
-                          stockData.current_stock ||
-                          0,
-                        reserved_stock: stockData.reserved_stock || 0,
-                        avg_cost: avgCost || cost || purchasePrice,
-                        cost,
-                        purchase_price: purchasePrice || cost,
-                      };
-                    }
-                    return next;
-                  });
-                } catch {
-                  // ignore poll failures
-                }
-              })();
-            }
-            inlineItems.forEach((item) => {
-              if (item.selectedPartId) {
-                fetchPartLocations(item.selectedPartId);
+        if (isTransferOut) {
+          const partIds = Array.from(
+            new Set(
+              inlineItems
+                .map((item) => item.selectedPartId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          );
+          if (partIds.length > 0) {
+            void (async () => {
+              try {
+                const response = (await apiClient.getPartCostLookupBatch(
+                  partIds,
+                )) as any;
+                const data = (response?.data || response || {}) as Record<
+                  string,
+                  any
+                >;
+                setPartStockBalances((prev) => {
+                  const next = { ...prev };
+                  for (const partId of partIds) {
+                    const stockData = data[partId];
+                    if (!stockData) continue;
+                    const avgCost =
+                      Number(stockData.avg_cost ?? stockData.avgCost) || 0;
+                    const purchasePrice =
+                      Number(
+                        stockData.purchase_price ?? stockData.purchasePrice,
+                      ) || 0;
+                    const cost = Number(stockData.cost) || 0;
+                    next[partId] = {
+                      current_stock: stockData.current_stock || 0,
+                      available_stock:
+                        stockData.available_stock ||
+                        stockData.current_stock ||
+                        0,
+                      reserved_stock: stockData.reserved_stock || 0,
+                      avg_cost: avgCost || cost || purchasePrice,
+                      cost,
+                      purchase_price: purchasePrice || cost,
+                    };
+                  }
+                  return next;
+                });
+              } catch {
+                // ignore poll failures
               }
-            });
-          } else {
-            inlineItems.forEach((item) => {
-              if (item.selectedPartId) {
-                fetchPartStockBalance(item.selectedPartId, true);
-                fetchPartLocations(item.selectedPartId);
-              }
-            });
+            })();
           }
+          inlineItems.forEach((item) => {
+            if (item.selectedPartId) {
+              fetchPartLocations(item.selectedPartId);
+            }
+          });
+        } else {
+          inlineItems.forEach((item) => {
+            if (item.selectedPartId) {
+              fetchPartStockBalance(item.selectedPartId, true);
+              fetchPartLocations(item.selectedPartId);
+            }
+          });
         }
       }, 60000);
 
       return () => clearInterval(interval);
     }
-  }, [partsSearchTerm, inlineItems, fetchPartStockBalance, fetchPartLocations, isTransferOut]); // Dependencies to ensure we don't poll while user is active or context changes inappropriately
+  }, [partsSearchTerm, inlineItems, fetchPartStockBalance, fetchPartLocations, isTransferOut]);
 
   // Force refresh parts list and clear stock balance cache
   const refreshPartsData = async () => {
@@ -5053,6 +5203,7 @@ export const SalesInvoice = ({
               (prs: any) => ({
                 id: prs.id,
                 storeId: prs.storeId,
+                storeName: prs.Store?.name || prs.storeName || "",
                 rackId: prs.Rack?.id,
                 rackCode: prs.Rack?.codeNo,
                 shelfId: prs.Shelf?.id,
@@ -8470,21 +8621,23 @@ export const SalesInvoice = ({
                                     }}
                                     className="w-full h-10 text-sm"
                                   />
+                                  {item.selectedPartId ? (
+                                    <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-0.5">
+                                      <span className="font-semibold text-foreground/80">
+                                        Remarks
+                                      </span>
+                                      {part?.remarks?.trim() ? (
+                                        <span className="whitespace-pre-wrap text-foreground">
+                                          {part.remarks.trim()}
+                                        </span>
+                                      ) : (
+                                        <span>No remarks for this item</span>
+                                      )}
+                                    </div>
+                                  ) : null}
                                   {showLastSaleInfo &&
                                     item.selectedPartId && (
                                       <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-2">
-                                        <div className="flex flex-col gap-0.5">
-                                          <span className="font-semibold">
-                                            Remarks
-                                          </span>
-                                          {part?.remarks?.trim() ? (
-                                            <span className="whitespace-pre-wrap text-foreground">
-                                              {part.remarks.trim()}
-                                            </span>
-                                          ) : (
-                                            <span>No remarks for this item</span>
-                                          )}
-                                        </div>
                                         <div className="flex flex-col gap-1">
                                           <span className="font-semibold">
                                             Last 3 sales (all customers)

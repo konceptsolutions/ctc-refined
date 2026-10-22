@@ -188,7 +188,30 @@ export async function getLoginHoursMap(userIds: string[]) {
   );
 }
 
+type LoginHoursRow = {
+  loginStartTime: string | null;
+  loginEndTime: string | null;
+  loginAllowedDays: number[] | null;
+};
+
+/** Short TTL cache — enforceLoginWindow runs on nearly every API call. */
+const loginHoursCache = new Map<
+  string,
+  { expiresAt: number; value: LoginHoursRow | null }
+>();
+const LOGIN_HOURS_TTL_MS = 60_000;
+
+function invalidateLoginHoursCache(userId?: string) {
+  if (userId) loginHoursCache.delete(userId);
+  else loginHoursCache.clear();
+}
+
 export async function getLoginHours(userId: string) {
+  const cached = loginHoursCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const rows = await prisma.$queryRaw<
     Array<{ loginStartTime: string | null; loginEndTime: string | null; loginAllowedDays: string | null }>
   >`
@@ -197,12 +220,20 @@ export async function getLoginHours(userId: string) {
     WHERE id = ${userId}
     LIMIT 1
   `;
-  if (!rows[0]) return null;
-  return {
+  if (!rows[0]) {
+    loginHoursCache.set(userId, { expiresAt: Date.now() + LOGIN_HOURS_TTL_MS, value: null });
+    return null;
+  }
+  const value: LoginHoursRow = {
     loginStartTime: rows[0].loginStartTime,
     loginEndTime: rows[0].loginEndTime,
     loginAllowedDays: normalizeLoginDays(rows[0].loginAllowedDays ?? null) ?? null,
   };
+  loginHoursCache.set(userId, {
+    expiresAt: Date.now() + LOGIN_HOURS_TTL_MS,
+    value,
+  });
+  return value;
 }
 
 export async function setLoginHours(
@@ -219,6 +250,7 @@ export async function setLoginHours(
           "updatedAt" = NOW()
       WHERE id = ${userId}
     `;
+    invalidateLoginHoursCache(userId);
     return;
   }
   const daysSerialized = serializeLoginDays(loginAllowedDays) ?? null;
@@ -230,4 +262,5 @@ export async function setLoginHours(
         "updatedAt" = NOW()
     WHERE id = ${userId}
   `;
+  invalidateLoginHoursCache(userId);
 }

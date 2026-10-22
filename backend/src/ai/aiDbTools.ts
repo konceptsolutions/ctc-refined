@@ -72,7 +72,7 @@ export const AI_DB_TOOLS = [
     function: {
       name: "query_erp",
       description:
-        "Search live ERP records for ANY supported entity (customers, suppliers, invoices, vouchers, parts+stock, POs, accounts, employees, etc.). Prefer this for general data questions.",
+        "Search live ERP records for ANY supported entity (customers, suppliers, invoices, vouchers, parts+stock, POs, accounts, employees, etc.). Returns a SMALL SAMPLE (max ~20 rows) — never use it to compute period totals, rankings, or 'max/top customer'. For those use get_top_customers_by_sales.",
       parameters: {
         type: "object",
         properties: {
@@ -274,28 +274,64 @@ function parseDate(v?: string): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
-/** Parse YYYY-MM-DD (or ISO) as local calendar day start/end — avoids UTC off-by-one. */
+/** Parse YYYY-MM-DD as Pakistan (Asia/Karachi) calendar day start/end. */
 function parseDateBound(v: string | undefined, endOfDay: boolean): Date | undefined {
   if (!v) return undefined;
   const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) {
-    const y = Number(m[1]);
-    const mo = Number(m[2]) - 1;
-    const d = Number(m[3]);
-    const dt = endOfDay
-      ? new Date(y, mo, d, 23, 59, 59, 999)
-      : new Date(y, mo, d, 0, 0, 0, 0);
+    const ymd = `${m[1]}-${m[2]}-${m[3]}`;
+    const iso = endOfDay
+      ? `${ymd}T23:59:59.999+05:00`
+      : `${ymd}T00:00:00.000+05:00`;
+    const dt = new Date(iso);
     return Number.isNaN(dt.getTime()) ? undefined : dt;
   }
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return undefined;
-  if (endOfDay) d.setHours(23, 59, 59, 999);
-  else d.setHours(0, 0, 0, 0);
   return d;
 }
 
 function contains(q: string) {
   return { contains: q, mode: "insensitive" as const };
+}
+
+/**
+ * Name lookups often fail when the model "corrects" spelling (e.g. Bab Al Bhar)
+ * while the chart stores a compacted name (BABALBHAR). Try several variants.
+ */
+function searchVariants(query: string): string[] {
+  const raw = String(query || "").trim();
+  if (!raw) return [];
+  const variants = new Set<string>();
+  variants.add(raw);
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  if (collapsed) variants.add(collapsed);
+  const noSpace = raw.replace(/\s+/g, "");
+  if (noSpace) variants.add(noSpace);
+  // Drop common filler words from "X account details" style queries
+  const stripped = collapsed
+    .replace(
+      /\b(account|accounts|accout|acct|details?|detail|info|information|balance|please|pls|plz|show|find|get|for|of|the|a|an)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped) {
+    variants.add(stripped);
+    variants.add(stripped.replace(/\s+/g, ""));
+  }
+  return [...variants].filter((v) => v.length >= 2);
+}
+
+function orContainsFields(fields: string[], query: string): any[] {
+  const variants = searchVariants(query);
+  const clauses: any[] = [];
+  for (const v of variants) {
+    for (const field of fields) {
+      clauses.push({ [field]: contains(v) });
+    }
+  }
+  return clauses;
 }
 
 async function findCustomers(query: string, take = MAX_ROWS) {
@@ -330,13 +366,10 @@ async function findCustomers(query: string, take = MAX_ROWS) {
   }
   return prisma.customer.findMany({
     where: {
-      OR: [
-        { name: contains(q) },
-        { code: contains(q) },
-        { shortTitle: contains(q) },
-        { contactNo: contains(q) },
-        { cellNumber: contains(q) },
-      ],
+      OR: orContainsFields(
+        ["name", "code", "shortTitle", "contactNo", "cellNumber"],
+        q,
+      ),
     },
     select: {
       id: true,
@@ -493,14 +526,10 @@ async function queryErp(args: {
       const where: any = {};
       if (status) where.status = status;
       if (q) {
-        where.OR = [
-          { name: contains(q) },
-          { code: contains(q) },
-          { companyName: contains(q) },
-          { shortTitle: contains(q) },
-          { phone: contains(q) },
-          { cellNumber: contains(q) },
-        ];
+        where.OR = orContainsFields(
+          ["name", "code", "companyName", "shortTitle", "phone", "cellNumber"],
+          q,
+        );
       }
       const rows = await prisma.supplier.findMany({
         where,
@@ -590,7 +619,7 @@ async function queryErp(args: {
       const where: any = {};
       if (status) where.status = status;
       if (q) {
-        where.OR = [{ code: contains(q) }, { name: contains(q) }];
+        where.OR = orContainsFields(["code", "name"], q);
       }
       const rows = await prisma.account.findMany({
         where,
@@ -609,6 +638,7 @@ async function queryErp(args: {
       return {
         entity,
         count: rows.length,
+        searchedAs: q ? searchVariants(q) : undefined,
         rows: rows.map((a) => ({
           id: a.id,
           code: a.code,
@@ -658,6 +688,10 @@ async function queryErp(args: {
       return {
         entity,
         count: rows.length,
+        truncated: true,
+        sampleOnly: true,
+        warning:
+          "SAMPLE ONLY — at most a few recent invoices. Do NOT sum or rank customers from these rows. Use get_top_customers_by_sales for period totals / max / top customers.",
         rows: rows.map((inv) => ({
           ...inv,
           grandTotal: money(inv.grandTotal),
@@ -1265,12 +1299,15 @@ async function toolGetInvoiceDetail(args: {
   };
 }
 
+/** Keep in sync with SALES_REPORT_INVOICE_STATUSES in routes/reports.ts */
 const SALES_RANK_STATUSES = [
   "approved",
   "partially_delivered",
   "fully_delivered",
   "delivered",
   "return",
+  "partially_return",
+  "completed",
 ];
 
 async function toolGetTopCustomersBySales(args: {

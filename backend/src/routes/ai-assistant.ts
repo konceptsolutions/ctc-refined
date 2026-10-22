@@ -19,6 +19,41 @@ const router = express.Router();
 const MAX_LEARNED_FACTS_IN_PROMPT = 40;
 const MAX_TOOL_ROUNDS = 5;
 
+/** Detect questions that need real DB numbers (not how-to guidance). */
+function shouldForceLiveDataTools(text: string): boolean {
+  const q = String(text || "").toLowerCase().replace(/[?!.,]/g, " ");
+  if (!q.trim()) return false;
+
+  const isHowTo =
+    /\b(how (do|to|can|does|should)|explain|guide|steps?|walk me|navigate|take me|go to|open)\b/.test(
+      q,
+    );
+  const hasLiveSignal =
+    /\b(balance|outstanding|receivable|payable|stock|inventory|grand total|amount due|paid amount)\b/.test(
+      q,
+    ) ||
+    // "babalbhar account details" / typos like "accout"
+    /\b(account|accounts|accout|acct|customer|supplier|employee)\b/.test(q) ||
+    (/\b(details?|info|information|lookup|find|show)\b/.test(q) &&
+      !/\b(how to|how do|explain|guide)\b/.test(q)) ||
+    (/\b(top|highest|maximum|max|lowest|least|best|worst)\b/.test(q) &&
+      /\b(sale|sales|customer|revenue|turnover|buyer|client)\b/.test(q)) ||
+    (/\b(who|which)\b/.test(q) &&
+      /\b(customer|buyer|client|sold|sale|sales)\b/.test(q)) ||
+    /\b(total|sum|overall)\s+(sale|sales|revenue|turnover)\b/.test(q) ||
+    (/\b(how much|how many)\b/.test(q) &&
+      /\b(sale|sales|stock|balance|invoice|owing|owe|due)\b/.test(q)) ||
+    /\blist\s+(of\s+)?(invoice|customer|supplier|voucher|part|account)/.test(
+      q,
+    ) ||
+    /\b(invoice|voucher|po|dpo)\s*(no\.?|number|#)?\s*[a-z0-9-]{3,}/i.test(
+      text,
+    );
+
+  if (isHowTo && !hasLiveSignal) return false;
+  return hasLiveSignal;
+}
+
 async function callChatCompletions(opts: {
   apiKey: string;
   baseUrl: string;
@@ -459,14 +494,20 @@ router.post("/chat", async (req: AuthRequest, res: Response) => {
       title: string;
     }> = [];
 
+    const forceLiveTools = shouldForceLiveDataTools(lastUserText);
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const requestBody: Record<string, unknown> = {
         model,
         messages: apiMessages,
         max_tokens: max_tokens ?? 1600,
-        temperature: temperature ?? 0.7,
+        // Deterministic answers for the same question + same DB
+        temperature: temperature ?? 0,
         tools: AI_DB_TOOLS,
-        tool_choice: "auto",
+        // First round: require a tool for live-number questions so the model
+        // cannot invent totals from memory or a partial sample.
+        tool_choice:
+          round === 0 && forceLiveTools ? "required" : "auto",
       };
 
       const result = await callChatCompletions({

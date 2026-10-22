@@ -288,6 +288,95 @@ router.post("/seed-required-accounts", async (req: Request, res: Response) => {
   }
 });
 
+const FIXED_SUBGROUP_CODES = [
+  "101",
+  "102",
+  "103",
+  "104",
+  "301",
+  "302",
+  "403",
+  "501",
+  "701",
+  "801",
+  "901",
+];
+const PRESERVE_ACCOUNT_CODES = new Set(["101001"]);
+
+async function nextSubgroupCodeForMainGroup(
+  mainGroupCode: string,
+  excludeId?: string,
+): Promise<string> {
+  const prefix = String(mainGroupCode || "").trim();
+  const existing = await prisma.subgroup.findMany({
+    where: {
+      code: { startsWith: prefix },
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    },
+    select: { code: true },
+  });
+  let maxSeq = 0;
+  for (const row of existing) {
+    const seqPart = String(row.code).slice(prefix.length);
+    const num = parseInt(seqPart, 10);
+    if (!isNaN(num) && num > maxSeq) maxSeq = num;
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(2, "0")}`;
+}
+
+async function nextAccountCodeForSubgroup(subgroupCode: string): Promise<string> {
+  const prefix = String(subgroupCode || "").trim();
+  const existing = await prisma.account.findMany({
+    where: { code: { startsWith: prefix } },
+    select: { code: true },
+  });
+  let maxSeq = 0;
+  for (const row of existing) {
+    const seqPart = String(row.code).slice(prefix.length);
+    const num = parseInt(seqPart, 10);
+    if (!isNaN(num) && num > maxSeq) maxSeq = num;
+  }
+  return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+}
+
+async function recodeAccountForSubgroupPrefix(
+  account: { id: string; code: string; name: string },
+  oldSubgroupCode: string,
+  newSubgroupCode: string,
+): Promise<string> {
+  if (PRESERVE_ACCOUNT_CODES.has(account.code)) return account.code;
+  const newPrefix = String(newSubgroupCode || "").trim();
+  const oldPrefix = String(oldSubgroupCode || "").trim();
+  if (!newPrefix || String(account.code).startsWith(newPrefix)) {
+    return account.code;
+  }
+
+  let nextCode: string;
+  if (oldPrefix && String(account.code).startsWith(oldPrefix)) {
+    const seq = String(account.code).slice(oldPrefix.length) || "001";
+    const candidate = `${newPrefix}${seq}`;
+    const clash = await prisma.account.findFirst({
+      where: { code: candidate, NOT: { id: account.id } },
+      select: { id: true },
+    });
+    nextCode = clash ? await nextAccountCodeForSubgroup(newPrefix) : candidate;
+  } else {
+    nextCode = await nextAccountCodeForSubgroup(newPrefix);
+  }
+
+  if (nextCode !== account.code) {
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { code: nextCode },
+    });
+    await prisma.voucherEntry.updateMany({
+      where: { accountId: account.id },
+      data: { accountName: `${nextCode} - ${account.name}` },
+    });
+  }
+  return nextCode;
+}
+
 // ========== Subgroups ==========
 router.get("/subgroups", async (req: Request, res: Response) => {
   try {
@@ -329,21 +418,57 @@ router.post("/subgroups", async (req: Request, res: Response) => {
 router.put("/subgroups/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { mainGroupId, name, isActive } = req.body;
+    const { mainGroupId, name, isActive, code } = req.body;
 
-    // Restriction removed as per user request
-    // const existingSubgroup = await prisma.subgroup.findUnique({ where: { id } });
-    // if (existingSubgroup && ['101', '102', '103', '104', '301', '302', '403', '501', '701', '801', '901'].includes(existingSubgroup.code)) {
-    //   return res.status(403).json({ error: 'This Subgroup is fixed and cannot be edited' });
-    // }
+    const existing = await prisma.subgroup.findUnique({
+      where: { id },
+      include: { Account: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Subgroup not found" });
+    }
 
+    const nextMainGroupId = mainGroupId || existing.mainGroupId;
+    const mainGroup = await prisma.mainGroup.findUnique({
+      where: { id: nextMainGroupId },
+    });
+    if (!mainGroup) {
+      return res.status(400).json({ error: "Main group not found" });
+    }
+
+    const mainGroupCode = String(mainGroup.code || "").trim();
+    const requestedCode = code !== undefined && code !== null ? String(code).trim() : "";
+    let nextCode = String(existing.code || "").trim();
+    const isFixed = FIXED_SUBGROUP_CODES.includes(existing.code);
+
+    if (!isFixed && mainGroupCode) {
+      if (requestedCode && requestedCode.startsWith(mainGroupCode)) {
+        nextCode = requestedCode;
+      } else if (!nextCode.startsWith(mainGroupCode)) {
+        nextCode = await nextSubgroupCodeForMainGroup(mainGroupCode, id);
+      }
+    }
+
+    const oldCode = String(existing.code || "").trim();
     const Subgroup = await prisma.subgroup.update({
       where: { id },
-      data: { mainGroupId, name, isActive },
+      data: { mainGroupId: nextMainGroupId, name, isActive, code: nextCode },
       include: { MainGroup: true },
     });
+
+    if (nextCode !== oldCode) {
+      for (const account of existing.Account || []) {
+        await recodeAccountForSubgroupPrefix(account, oldCode, nextCode);
+      }
+    }
+
     res.json({ data: Subgroup });
   } catch (error: any) {
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        error: "Subgroup code already exists. Please use a unique code.",
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -542,18 +667,85 @@ router.post("/accounts", async (req: Request, res: Response) => {
 router.put("/accounts/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { subgroupId, name, description, status } = req.body;
+    const { subgroupId, name, description, status, code } = req.body;
+
+    const existing = await prisma.account.findUnique({
+      where: { id },
+      include: { Subgroup: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+
+    const nextSubgroupId = subgroupId || existing.subgroupId;
+    const subgroup = await prisma.subgroup.findUnique({
+      where: { id: nextSubgroupId },
+    });
+    if (!subgroup) {
+      return res.status(400).json({ error: "Subgroup not found" });
+    }
+
+    const subgroupCode = String(subgroup.code || "").trim();
+    if (!subgroupCode) {
+      return res.status(400).json({
+        error:
+          "Subgroup does not have a code. Please add a code to the Subgroup first.",
+      });
+    }
+
+    const subgroupChanged = nextSubgroupId !== existing.subgroupId;
+    const codeInBody =
+      code !== undefined && code !== null && String(code).trim() !== "";
+    const requestedCode = codeInBody ? String(code).trim() : "";
+    let nextCode = String(existing.code).trim();
+
+    if (PRESERVE_ACCOUNT_CODES.has(nextCode) && !subgroupChanged) {
+      // Keep system accounts (e.g. Inventory 101001) on status-only updates.
+    } else if (requestedCode && requestedCode.startsWith(subgroupCode)) {
+      nextCode = requestedCode;
+    } else if (!nextCode.startsWith(subgroupCode)) {
+      const preservingMismatchedCode = codeInBody && !subgroupChanged;
+      if (!preservingMismatchedCode) {
+        nextCode = await recodeAccountForSubgroupPrefix(
+          existing,
+          String(existing.Subgroup?.code || "").trim(),
+          subgroupCode,
+        );
+      }
+    }
+
     const account = await prisma.account.update({
       where: { id },
-      data: { subgroupId, name, description, status },
+      data: {
+        subgroupId: nextSubgroupId,
+        name,
+        description,
+        status,
+        code: nextCode,
+      },
       include: {
         Subgroup: {
           include: { MainGroup: true },
         },
       },
     });
+
+    if (nextCode !== existing.code) {
+      await prisma.voucherEntry.updateMany({
+        where: { accountId: id },
+        data: {
+          accountName: `${nextCode} - ${account.name}`,
+        },
+      });
+    }
+
     res.json({ data: account });
   } catch (error: any) {
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        error: "Account code already exists. Please use a unique code.",
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });

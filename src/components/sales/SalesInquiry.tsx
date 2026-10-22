@@ -73,6 +73,10 @@ import {
 import { getCustomerTypeLabel } from "@/types/invoice";
 import { formatPartIdentityFromUi } from "@/lib/part-identity";
 import { shareImagesAcrossFamilyItems } from "@/lib/part-images";
+import {
+  formatBalanceLocationDisplay,
+  formatStockLocationsDisplay,
+} from "@/lib/stockLocationDisplay";
 import { InquiryPartDropdownList } from "./InquiryPartDropdownList";
 
 interface Inquiry {
@@ -144,6 +148,8 @@ interface PartDetail {
   /** From parts API when present; used in dropdown before available qty */
   reservedQty?: number;
   images?: string[];
+  /** Item remarks from Part master */
+  remarks?: string;
 }
 
 interface ModelAssociationItem {
@@ -246,6 +252,7 @@ const transformPart = (
     imageP1: p.imageP1,
     imageP2: p.imageP2,
   }),
+  remarks: String(p.remarks || "").trim() || undefined,
 });
 
 const extractPartModels = (part: any) => {
@@ -755,11 +762,7 @@ export const SalesInquiry = ({
             if (Array.isArray(balancesData)) {
               balancesData.forEach((b: any) => {
                 if (b.part_id) {
-                  const loc =
-                    b.location ||
-                    (b.rack && b.shelf
-                      ? `${b.rack}/${b.shelf}`
-                      : b.rack || b.shelf || b.rack_no || "");
+                  const loc = formatBalanceLocationDisplay(b);
                   if (loc) rackMapData[b.part_id] = loc;
                   if (b.current_stock !== undefined) {
                     stockMapData[b.part_id] = b.current_stock;
@@ -1807,13 +1810,29 @@ export const SalesInquiry = ({
     if (part.id) {
       setLoadingPartDetails(true);
       try {
-        const [partResponse, stockResponse] = await Promise.all([
+        const [partResponse, stockResponse, locationsResponse] = await Promise.all([
           apiClient.getPart(part.id).catch(() => ({ data: {}, error: 'Failed to fetch' })),
-          apiClient.getPartCostLookup(part.id).catch(() => ({ current_stock: 0, error: null }))
+          apiClient.getPartCostLookup(part.id).catch(() => ({ current_stock: 0, error: null })),
+          apiClient.getPartLocations(part.id).catch(() => ({ data: [] })),
         ]);
 
         const p = (partResponse as any).data || partResponse;
         const stockData = (stockResponse as any).data || stockResponse;
+        const locData =
+          (locationsResponse as any)?.data ||
+          (Array.isArray(locationsResponse) ? locationsResponse : []);
+        const locationText =
+          formatStockLocationsDisplay(locData) ||
+          (rackMap[part.id] && rackMap[part.id] !== "N/A"
+            ? rackMap[part.id]
+            : "");
+        if (locationText) {
+          setRackMap((prev) =>
+            prev[part.id!] === locationText
+              ? prev
+              : { ...prev, [part.id!]: locationText },
+          );
+        }
         const fetchedQty = Math.max(
           0,
           Number(
@@ -1870,10 +1889,11 @@ export const SalesInquiry = ({
           origin: String((p as any).origin || '').trim() || 'N/A',
           grade: String((p as any).grade || 'A').trim(),
           status: ((p as any).status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
-          rackNo: (rackMap[(p as any).id] && rackMap[(p as any).id] !== 'N/A') ? rackMap[(p as any).id] : 'N/A',
+          rackNo: locationText || "N/A",
           reOrderLevel: formatNumber((p as any).reorder_level || (p as any).reorderLevel),
           quantity: bestQty,
           images: getPartImageList(p),
+          remarks: String((p as any).remarks || part.remarks || "").trim() || undefined,
         };
 
         if (part.id) {
@@ -2770,6 +2790,7 @@ export const SalesInquiry = ({
         rackNo: "N/A",
         reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
         quantity: Number(item.quantity || 0),
+        remarks: String(p.remarks || "").trim() || undefined,
       };
     } catch {
       return null;
@@ -2887,6 +2908,7 @@ export const SalesInquiry = ({
             rackNo: rackMap[p.id] || "N/A",
             reOrderLevel: formatNumber(p.reorder_level || p.reorderLevel),
             quantity: resolvePartStockQty(p),
+            remarks: String(p.remarks || "").trim() || undefined,
           };
         })
         .filter((p: PartDetail) => p.partNo && p.partNo.trim() !== '');
@@ -4250,6 +4272,20 @@ export const SalesInquiry = ({
                                   )}
                                 />
                               </div>
+                              {rowPart ? (
+                                <div className="text-xs text-muted-foreground flex flex-col gap-0.5">
+                                  <span className="font-semibold text-foreground/80">
+                                    Remarks
+                                  </span>
+                                  {rowPart.remarks?.trim() ? (
+                                    <span className="whitespace-pre-wrap text-foreground">
+                                      {rowPart.remarks.trim()}
+                                    </span>
+                                  ) : (
+                                    <span>No remarks for this item</span>
+                                  )}
+                                </div>
+                              ) : null}
                               {rowDropdownOpen &&
                                 typeof window !== "undefined" &&
                                 lookupDropdownRects[row.id] &&

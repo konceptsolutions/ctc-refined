@@ -1978,8 +1978,15 @@ router.post(
 router.get("/invoices", async (req: Request, res: Response) => {
   try {
     console.log("GET /invoices query:", req.query);
-    const { status, paymentStatus, customerType, search, partId, brandId } =
-      req.query;
+    const {
+      status,
+      paymentStatus,
+      customerType,
+      search,
+      partId,
+      brandId,
+      include_items,
+    } = req.query;
     const where: any = {};
 
     if (status && status !== "all") {
@@ -1996,6 +2003,11 @@ router.get("/invoices", async (req: Request, res: Response) => {
       // Sales invoice list: exclude transfer-out documents
       where.customerType = { not: "transfer" };
     }
+
+    // Exclude demo customers in SQL (was in-memory filter)
+    where.NOT = {
+      customerName: { contains: "demo", mode: "insensitive" },
+    };
 
     const andExtra: any[] = [];
     if (search) {
@@ -2033,7 +2045,12 @@ router.get("/invoices", async (req: Request, res: Response) => {
       where.AND = andExtra;
     }
 
-    // Fetch all invoices (we'll filter out "Demo" customers in memory since SQLite doesn't support case-insensitive mode)
+    // List view does not need line items + Part joins (edit/view loads /invoices/:id).
+    // Pass include_items=true only when the client truly needs every line on the list payload.
+    const wantItems =
+      String(include_items || "false").toLowerCase() === "true" ||
+      include_items === "1";
+
     const allInvoices = await prisma.salesInvoice.findMany({
       where,
       orderBy: [{ invoiceDate: "desc" }, { invoiceNo: "desc" }],
@@ -2041,42 +2058,41 @@ router.get("/invoices", async (req: Request, res: Response) => {
         Customer: {
           select: { id: true, name: true, shortTitle: true, code: true },
         },
-        SalesInvoiceItem: {
-          select: {
-            id: true,
-            partId: true,
-            partNo: true,
-            description: true,
-            orderedQty: true,
-            deliveredQty: true,
-            pendingQty: true,
-            unitPrice: true,
-            discount: true,
-            lineTotal: true,
-            grade: true,
-            brand: true,
-            Part: {
-              select: {
-                partNo: true,
-                description: true,
-                Brand: { select: { name: true } },
-                MasterPart: { select: { masterPartNo: true } },
+        ...(wantItems
+          ? {
+              SalesInvoiceItem: {
+                select: {
+                  id: true,
+                  partId: true,
+                  partNo: true,
+                  description: true,
+                  orderedQty: true,
+                  deliveredQty: true,
+                  pendingQty: true,
+                  unitPrice: true,
+                  discount: true,
+                  lineTotal: true,
+                  grade: true,
+                  brand: true,
+                },
               },
-            },
-          },
-        },
+            }
+          : {
+              _count: { select: { SalesInvoiceItem: true } },
+            }),
       },
     });
 
-    // Filter out invoices with "Demo" customers (case-insensitive) - SQLite doesn't support mode: 'insensitive'
-    const filteredInvoices = allInvoices.filter(
-      (invoice) => !invoice.customerName.toLowerCase().includes("demo"),
-    );
-
     res.json(
-      filteredInvoices.map((invoice) => ({
+      allInvoices.map((invoice: any) => ({
         ...invoice,
-        SalesInvoiceItem: hydrateSalesInvoiceItems(invoice.SalesInvoiceItem),
+        SalesInvoiceItem: wantItems
+          ? hydrateSalesInvoiceItems(invoice.SalesInvoiceItem || [])
+          : [],
+        itemCount:
+          wantItems
+            ? (invoice.SalesInvoiceItem || []).length
+            : invoice._count?.SalesInvoiceItem ?? 0,
       })),
     );
   } catch (error: any) {

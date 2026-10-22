@@ -1006,6 +1006,9 @@ class ApiClient {
     brand_name?: string;
     model_name?: string;
     sort_stock_first?: boolean;
+    in_stock?: boolean;
+    out_of_stock?: boolean;
+    low_stock?: boolean;
     page?: number;
     limit?: number;
   }) {

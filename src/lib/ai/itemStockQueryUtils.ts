@@ -33,11 +33,23 @@ export function isGenericPartPlaceholder(term: string): boolean {
 export function isSalesAnalyticsStyleQuery(query: string): boolean {
   if (isTopCustomerSalesQuery(query)) return false;
   const q = normalizeQueryForMatching(query);
+
+  // Period totals / customer rankings without item intent → not item analytics
+  if (
+    !/\b(item|items|part|parts|product|products|sku)\b/.test(q) &&
+    (/\b(total|sum|overall)\s+(sale|sales|revenue)\b/.test(q) ||
+      (/\b(customer|buyer|client)\b/.test(q) &&
+        /\b(sale|sales|revenue)\b/.test(q)))
+  ) {
+    return false;
+  }
+
   if (containsItemMetricPhrase(query) && containsReportIntentPhrase(query)) {
     return true;
   }
   return (
     /\b(sold|selling|sales)\b/.test(q) &&
+    /\b(item|items|part|parts|product|products)\b/.test(q) &&
     /\b(month|july|august|january|february|march|april|may|june|september|october|november|december|year|period)\b/.test(
       q,
     )

@@ -531,14 +531,25 @@ export const AccountsTab = () => {
       return;
     }
     try {
-      // Find subgroup ID from state or API
-      let subgroup = subGroups.find((sg: any) => sg.name === formData.subGroup || sg.id === formData.subGroup);
+      const mainGroup = mainGroups.find(
+        (mg: any) => mg.name === formData.mainGroup || mg.id === formData.mainGroup,
+      );
+      let subgroup = subGroups.find(
+        (sg: any) =>
+          (sg.name === formData.subGroup || sg.id === formData.subGroup) &&
+          (!mainGroup || sg.mainGroupId === mainGroup.id),
+      );
 
       if (!subgroup) {
-        // Try to fetch from API if not in state
         const result = await apiClient.get<any>("/accounting/subgroups");
         const subgroups = result.data || [];
-        subgroup = subgroups.find((sg: any) => sg.name === formData.subGroup);
+        subgroup = subgroups.find(
+          (sg: any) =>
+            (sg.name === formData.subGroup || sg.id === formData.subGroup) &&
+            (!mainGroup ||
+              sg.mainGroupId === mainGroup.id ||
+              sg.MainGroup?.id === mainGroup.id),
+        );
       }
 
       if (!subgroup) {
@@ -546,19 +557,29 @@ export const AccountsTab = () => {
         return;
       }
 
-      const result = await apiClient.put<any>(`/accounting/accounts/${editingAccount.id}`, {
-        subgroupId: subgroup.id,
-        name: formData.name,
-        description: formData.description || formData.name,
-        status: formData.status === "Inactive" ? "Inactive" : "Active",
-      });
+      // Do not send code. Backend assigns the next code for the subgroup
+      // whenever the current code does not match group/subgroup.
+      const result = await apiClient.put<any>(
+        `/accounting/accounts/${editingAccount.id}`,
+        {
+          subgroupId: subgroup.id,
+          name: formData.name,
+          description: formData.description || formData.name,
+          status: formData.status === "Inactive" ? "Inactive" : "Active",
+        },
+      );
 
       if (result.data) {
         await fetchAccounts();
         setIsEditDialogOpen(false);
         setEditingAccount(null);
         resetForm();
-        toast.success("Account updated successfully!");
+        const newCode = String(result.data.code || "").trim();
+        if (newCode && newCode !== String(editingAccount.code || "").trim()) {
+          toast.success(`Account updated. Code is now ${newCode}.`);
+        } else {
+          toast.success("Account updated successfully!");
+        }
       } else if (result.error) {
         toast.error(result.error || "Failed to update account");
       }
@@ -588,6 +609,7 @@ export const AccountsTab = () => {
         name: account.name,
         description: account.name,
         status: nextStatus,
+        code: account.code,
       });
 
       if (result.data) {
@@ -1234,7 +1256,9 @@ export const AccountsTab = () => {
               <Pencil className="h-5 w-5 text-primary" />
               <div>
                 <DialogTitle>Editing Account: {editingAccount?.name}</DialogTitle>
-                <p className="text-sm text-muted-foreground">Account Code: {editingAccount?.code}</p>
+                <p className="text-sm text-muted-foreground">
+                  Account Code: {editingAccount?.code} (updates automatically if you change group or subgroup)
+                </p>
               </div>
             </div>
           </DialogHeader>

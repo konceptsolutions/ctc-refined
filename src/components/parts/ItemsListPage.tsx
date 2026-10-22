@@ -597,84 +597,91 @@ export const ItemsListPage = ({
           });
         }
 
-        // Set items immediately for faster display
+        // Apply reserved qty once before setState — avoid a second setItems that
+        // races with background image hydration and wipes thumbnails.
+        let itemsWithReserved = transformedItems;
+        try {
+          itemsWithReserved = transformedItems.map((item) => ({
+            ...item,
+            reservedQuantity: ReservedQuantityManager.get(item.id),
+          }));
+        } catch {
+          itemsWithReserved = transformedItems.map((item) => ({
+            ...item,
+            reservedQuantity: 0,
+          }));
+        }
+
         if (latestRequestIdRef.current === requestId) {
-          setItems(transformedItems);
+          setItems(itemsWithReserved);
         }
 
         // Hydrate images in background (list API skips image blobs for speed)
         const idsNeedingImages = partsData
-          .filter((p: any) => p?.has_image_p1 || p?.has_image_p2)
+          .filter(
+            (p: any) =>
+              p?.has_image_p1 === true ||
+              p?.has_image_p1 === "t" ||
+              p?.has_image_p2 === true ||
+              p?.has_image_p2 === "t" ||
+              p?.hasimagep1 === true ||
+              p?.hasimagep2 === true,
+          )
           .map((p: any) => p.id)
           .filter(Boolean);
+
+        const normalizeImg = (raw: unknown): string | null => {
+          const s = String(raw || "").trim();
+          if (!s) return null;
+          if (
+            s.startsWith("data:") ||
+            s.startsWith("/") ||
+            s.startsWith("http")
+          ) {
+            return s;
+          }
+          return `data:image/jpeg;base64,${s}`;
+        };
+
         if (idsNeedingImages.length > 0) {
-          apiClient
-            .getPartBatchImages(idsNeedingImages)
-            .then((imgRes: any) => {
+          const chunkSize = 100;
+          const chunks: string[][] = [];
+          for (let i = 0; i < idsNeedingImages.length; i += chunkSize) {
+            chunks.push(idsNeedingImages.slice(i, i + chunkSize));
+          }
+
+          Promise.all(
+            chunks.map((chunk) => apiClient.getPartBatchImages(chunk)),
+          )
+            .then((responses) => {
               if (latestRequestIdRef.current !== requestId) return;
-              const rows = Array.isArray(imgRes?.data)
-                ? imgRes.data
-                : Array.isArray(imgRes)
-                  ? imgRes
-                  : [];
               const byId = new Map<string, string[]>();
-              rows.forEach((row: any) => {
-                const imgs = [
-                  row.image_p1
-                    ? row.image_p1.startsWith("data:") ||
-                      row.image_p1.startsWith("/") ||
-                      row.image_p1.startsWith("http")
-                      ? row.image_p1
-                      : `data:image/jpeg;base64,${row.image_p1}`
-                    : null,
-                  row.image_p2
-                    ? row.image_p2.startsWith("data:") ||
-                      row.image_p2.startsWith("/") ||
-                      row.image_p2.startsWith("http")
-                      ? row.image_p2
-                      : `data:image/jpeg;base64,${row.image_p2}`
-                    : null,
-                ].filter((img) => img && String(img).trim() !== "") as string[];
-                if (imgs.length > 0) byId.set(row.id, imgs);
-              });
+              for (const imgRes of responses) {
+                const rows = Array.isArray((imgRes as any)?.data)
+                  ? (imgRes as any).data
+                  : Array.isArray(imgRes)
+                    ? imgRes
+                    : [];
+                for (const row of rows) {
+                  const imgs = [
+                    normalizeImg(row.image_p1),
+                    normalizeImg(row.image_p2),
+                  ].filter(Boolean) as string[];
+                  if (imgs.length > 0) byId.set(row.id, imgs);
+                }
+              }
               if (byId.size === 0) return;
               setItems((prev) =>
-                prev.map((item) =>
-                  byId.has(item.id)
-                    ? { ...item, images: byId.get(item.id) || item.images }
-                    : item,
+                shareImagesAcrossFamilyItems(
+                  prev.map((item) =>
+                    byId.has(item.id)
+                      ? { ...item, images: byId.get(item.id) || item.images }
+                      : item,
+                  ),
                 ),
               );
             })
             .catch(() => {});
-        }
-
-        // FIXED: Load reserved quantities from localStorage instead of broken backend API
-        try {
-          const itemsWithReserved = transformedItems.map((item) => ({
-            ...item,
-            reservedQuantity: ReservedQuantityManager.get(item.id),
-          }));
-
-          const totalReserved = itemsWithReserved.reduce(
-            (sum, item) => sum + (item.reservedQuantity || 0),
-            0,
-          );
-
-          // Update items with reserved quantities (only if still latest request)
-          if (latestRequestIdRef.current === requestId) {
-            setItems(itemsWithReserved);
-          }
-        } catch (error: any) {
-          // If loading fails, still set items without reserved quantities
-          if (latestRequestIdRef.current === requestId) {
-            setItems(
-              transformedItems.map((item) => ({
-                ...item,
-                reservedQuantity: 0,
-              })),
-            );
-          }
         }
 
         const pagination = response.pagination;

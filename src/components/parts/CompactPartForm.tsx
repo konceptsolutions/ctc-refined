@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Image as ImageIcon, Trash, Save } from "lucide-react";
+import { Plus, Image as ImageIcon, Trash, Save, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Item } from "./ItemsListView";
 import { apiClient } from "@/lib/api";
@@ -1648,12 +1648,12 @@ export const CompactPartForm = ({
       <Button
         variant="ghost"
         size="icon"
-        className="absolute top-2 right-2 h-7 w-7 z-10"
+        className="absolute top-2 right-2 h-7 w-7 z-10 text-muted-foreground hover:text-foreground"
         onClick={onCancel}
         aria-label="Close form"
         title="Close"
       >
-        <Trash className="w-4 h-4" />
+        <X className="w-4 h-4" />
       </Button>
       {/* Scrollable Form Content */}
       <div className="flex-1 overflow-auto p-3">

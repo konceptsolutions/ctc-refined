@@ -2801,7 +2801,7 @@ const AIChatBot: React.FC = () => {
         currentPath: pathname,
         conversationSummary: conversationContext.slice(-3).join('\n'),
         max_tokens: 1600,
-        temperature: 0.7,
+        temperature: 0,
       });
 
       if (response.error) {

@@ -115,7 +115,30 @@ export function parseReportDateRange(query: string): ReportDateRange | null {
   const fyRange = parsePakistanFinancialYearFromQuery(q);
   if (fyRange) return fyRange;
 
-  const pakistanYear = parseInt(getCurrentDatePakistan().slice(0, 4), 10);
+  const todayYmd = getCurrentDatePakistan();
+  const pakistanYear = parseInt(todayYmd.slice(0, 4), 10);
+  const pakistanMonth = parseInt(todayYmd.slice(5, 7), 10) - 1; // 0-based
+  const pakistanDay = parseInt(todayYmd.slice(8, 10), 10);
+
+  if (/\b(today|todays)\b/.test(q)) {
+    return { from: todayYmd, to: todayYmd, label: `Today (${todayYmd})` };
+  }
+
+  if (/\b(this\s+month|current\s+month)\b/.test(q)) {
+    const from = new Date(pakistanYear, pakistanMonth, 1);
+    const to = new Date(pakistanYear, pakistanMonth, pakistanDay);
+    const label = `${MONTHS[pakistanMonth].charAt(0).toUpperCase()}${MONTHS[pakistanMonth].slice(1)} ${pakistanYear} (to date)`;
+    return { from: toInputDate(from), to: toInputDate(to), label };
+  }
+
+  if (/\b(last\s+month|previous\s+month)\b/.test(q)) {
+    const from = new Date(pakistanYear, pakistanMonth - 1, 1);
+    const to = new Date(pakistanYear, pakistanMonth, 0);
+    const m = from.getMonth();
+    const y = from.getFullYear();
+    const label = `${MONTHS[m].charAt(0).toUpperCase()}${MONTHS[m].slice(1)} ${y}`;
+    return { from: toInputDate(from), to: toInputDate(to), label };
+  }
 
   for (let i = 0; i < MONTHS.length; i += 1) {
     const monthPattern = new RegExp(`\\b(${MONTHS[i]}|${MONTH_SHORT[i]})\\b`, "i");
@@ -477,15 +500,25 @@ export function isCustomerWiseReportQuery(query: string): boolean {
 export function isTopCustomerSalesQuery(query: string): boolean {
   if (isCustomerWiseReportQuery(query)) return false;
   const q = normalizeQueryForMatching(query);
-  if (!/\bcustomer\b/.test(q)) return false;
+
+  const hasCustomer =
+    /\bcustomer\b/.test(q) ||
+    /\bbuyer\b/.test(q) ||
+    /\bclient\b/.test(q) ||
+    (/\b(who|which)\b/.test(q) &&
+      /\b(sold|sale|sales|bought|purchase)\b/.test(q));
+
+  if (!hasCustomer) return false;
 
   const hasRank =
     /\b(maximum|max|highest|top|best|lowest|least|minimum|min)\b/.test(q) ||
-    /\bmost\s+(sale|sales)\b/.test(q);
+    /\bmost\s+(sale|sales)\b/.test(q) ||
+    /\b(who|which).{0,40}\b(most|highest|max|top|best)\b/.test(q);
 
   const hasSales =
     /\b(sale|sales|revenue|turnover)\b/.test(q) ||
-    /\bselling\b/.test(q);
+    /\bselling\b/.test(q) ||
+    /\bsold\b/.test(q);
 
   return hasRank && hasSales;
 }

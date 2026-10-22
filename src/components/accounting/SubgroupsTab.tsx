@@ -297,14 +297,23 @@ export const SubgroupsTab = () => {
         mainGroupId: mainGroup.id,
         name: formData.name.trim(),
         isActive: editingSubgroup.isActive,
+        code: formData.code.trim(),
       });
 
       if (result.data) {
         await fetchSubgroups();
         setIsEditDialogOpen(false);
+        const previousCode = editingSubgroup.code;
         setEditingSubgroup(null);
         resetForm();
-        toast.success("Subgroup updated successfully!");
+        const newCode = String(result.data.code || "").trim();
+        if (newCode && newCode !== String(previousCode || "").trim()) {
+          toast.success(
+            `Subgroup updated. Code is now ${newCode}. Linked account codes were updated too.`,
+          );
+        } else {
+          toast.success("Subgroup updated successfully!");
+        }
       } else if (result.error) {
         toast.error(result.error || "Failed to update subgroup");
       }
@@ -763,7 +772,7 @@ export const SubgroupsTab = () => {
               <Select
                 value={formData.mainGroup}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, mainGroup: value })
+                  setFormData({ ...formData, mainGroup: value, code: "" })
                 }
               >
                 <SelectTrigger>
@@ -826,7 +835,7 @@ export const SubgroupsTab = () => {
               <Select
                 value={formData.mainGroup}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, mainGroup: value })
+                  setFormData({ ...formData, mainGroup: value, code: "" })
                 }
               >
                 <SelectTrigger>

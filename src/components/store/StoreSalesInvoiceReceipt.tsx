@@ -206,15 +206,34 @@ export const StoreSalesInvoiceReceipt = ({
             const locs: PartLocationOption[] = data
               .filter((l: any) => {
                 if (!l.id) return false;
-                // Located rows, real unlocated PartRackShelf (null rack/shelf), or synthetic "unallocated-*" bucket
-                return Boolean(l.isUnlocated || l.rackId || l.shelfId);
+                if (Number(l.quantity || 0) <= 0) return false;
+                const idStr = String(l.id);
+                // Located, store-only (local purchase with store but no rack/shelf),
+                // real unlocated PartRackShelf, or synthetic unallocated bucket.
+                return Boolean(
+                  l.isUnlocated ||
+                    l.isStoreOnly ||
+                    l.isVirtualUnallocated ||
+                    l.rackId ||
+                    l.shelfId ||
+                    l.storeId ||
+                    idStr.startsWith("unallocated-"),
+                );
               })
               .map((l: any) => {
                 const idStr = String(l.id);
+                const hasRackOrShelf = Boolean(l.rackId || l.shelfId);
+                const isUnlocatedBucket = Boolean(
+                  l.isUnlocated ||
+                    l.isStoreOnly ||
+                    l.isVirtualUnallocated ||
+                    idStr.startsWith("unallocated-") ||
+                    !hasRackOrShelf,
+                );
                 let label: string;
-                if (idStr.startsWith("unallocated-")) {
-                  label = `${l.store || "—"} · Not on shelf`;
-                } else if (l.isUnlocated) {
+                if (idStr.startsWith("unallocated-") || l.isVirtualUnallocated) {
+                  label = `${l.store || "Unallocated"} · Not on shelf`;
+                } else if (isUnlocatedBucket) {
                   label = `${l.store || "—"} · Unlocated (no rack/shelf)`;
                 } else {
                   label = `${l.store || "—"} · ${l.rack || l.rack_code || "—"} / ${l.shelf || l.shelf_no || "—"}`;
@@ -225,7 +244,7 @@ export const StoreSalesInvoiceReceipt = ({
                   storeId: l.storeId ?? null,
                   rackId: l.rackId ?? null,
                   shelfId: l.shelfId ?? null,
-                  isUnlocated: Boolean(l.isUnlocated),
+                  isUnlocated: isUnlocatedBucket,
                   quantity: Number(l.quantity || 0),
                 };
               });

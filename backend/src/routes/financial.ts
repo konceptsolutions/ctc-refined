@@ -1081,12 +1081,12 @@ router.get("/account-groups", async (req: Request, res: Response) => {
 });
 
 // International supplier linked accounts (for International Supplier Ledger dropdown)
-// Also includes Supplier Security (402), Shipping Agents (405), Clearing Agents (406),
+// Also includes Supplier Security (402), Shipping Agents (405), Clearing Agents (311),
 // and Karachi branch Transfer In/Out subgroups (305 liability / 1106 asset).
 const INTERNATIONAL_SUPPLIER_EXTRA_SUBGROUPS = [
   "402",
   "405",
-  "406",
+  "311",
   "305",
   "1106",
 ] as const;
@@ -1099,17 +1099,37 @@ function internationalSupplierAccountWhere() {
         Supplier: { type: "international" },
       },
       {
-        Subgroup: { code: { in: [...INTERNATIONAL_SUPPLIER_EXTRA_SUBGROUPS] } },
+        Subgroup: {
+          OR: [
+            { code: { in: [...INTERNATIONAL_SUPPLIER_EXTRA_SUBGROUPS] } },
+            {
+              name: {
+                in: ["Supplier Security", "Shipping Agents", "Clearing Agents"],
+              },
+            },
+          ],
+        },
       },
     ],
   };
 }
 
-function internationalSupplierAccountCategory(subgroupCode: string | null | undefined) {
-  const code = String(subgroupCode || "").trim();
-  if (code === "402") return "supplier_security";
-  if (code === "405") return "shipping_agent";
-  if (code === "406") return "clearing_agent";
+function internationalSupplierAccountCategory(
+  subgroup: { code?: string | null; name?: string | null } | string | null | undefined,
+) {
+  const code =
+    typeof subgroup === "string"
+      ? subgroup.trim()
+      : String(subgroup?.code || "").trim();
+  const name =
+    typeof subgroup === "object" && subgroup
+      ? String(subgroup.name || "").trim().toLowerCase()
+      : "";
+  if (code === "402" || name === "supplier security") return "supplier_security";
+  if (code === "405" || name === "shipping agents") return "shipping_agent";
+  if (code === "311" || code === "406" || name === "clearing agents") {
+    return "clearing_agent";
+  }
   if (code === "305") return "transfer_in_branch";
   if (code === "1106") return "transfer_out_branch";
   return "supplier_payable";
@@ -1120,9 +1140,14 @@ function internationalSupplierDisplayName(acc: any) {
     return acc.Supplier?.companyName || acc.Supplier?.name;
   }
   const code = String(acc.Subgroup?.code || "").trim();
-  if (code === "402") return "Supplier Security";
-  if (code === "405") return acc.name || "Shipping Agent";
-  if (code === "406") return acc.name || "Clearing Agent";
+  const name = String(acc.Subgroup?.name || "").trim().toLowerCase();
+  if (code === "402" || name === "supplier security") return "Supplier Security";
+  if (code === "405" || name === "shipping agents") {
+    return acc.name || "Shipping Agent";
+  }
+  if (code === "311" || code === "406" || name === "clearing agents") {
+    return acc.name || "Clearing Agent";
+  }
   if (code === "305") return acc.name || "Transfer In (Branch)";
   if (code === "1106") return acc.name || "Transfer Out (Branch)";
   return acc.name;
@@ -1158,7 +1183,7 @@ router.get("/international-supplier-accounts", async (_req: Request, res: Respon
         supplierId: acc.supplierId,
         supplierName: internationalSupplierDisplayName(acc),
         currencyName: acc.Supplier?.currencyName || "USD",
-        accountCategory: internationalSupplierAccountCategory(acc.Subgroup?.code),
+        accountCategory: internationalSupplierAccountCategory(acc.Subgroup),
       })),
     });
   } catch (error: any) {

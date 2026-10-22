@@ -223,8 +223,9 @@ export const PricingCosting = () => {
     useState(false);
   const [showModifiedItems, setShowModifiedItems] = useState(false);
   const [showAllItems, setShowAllItems] = useState(false); // Toggle to show all items without pagination
+  const [serverTotalItems, setServerTotalItems] = useState(0);
   const historyPerPage = 10;
-  const itemsPerPage = 100; // Increased from 25 to 100 for better performance with large datasets
+  const itemsPerPage = 100; // Server-side page size for fast Pricing & Costing loads
 
   // Profitability tab filters
   const [profitabilitySearch, setProfitabilitySearch] = useState("");
@@ -388,7 +389,7 @@ export const PricingCosting = () => {
       }
 
       // Create a key for current fetch parameters
-      const currentParams = `${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${filterModel}-${currentPage}`;
+      const currentParams = `${searchTerm}-${filterCategory}-${filterSubCategory}-${filterBrand}-${filterModel}-${currentPage}-${showAllItems}`;
 
       // On initial mount, fetch immediately without debounce
       if (isInitialMount.current) {
@@ -423,6 +424,7 @@ export const PricingCosting = () => {
     filterBrand,
     filterModel,
     currentPage,
+    showAllItems,
   ]);
 
   // Fetch price history
@@ -445,8 +447,9 @@ export const PricingCosting = () => {
         setLoading(true);
       }
       const params: any = {
-        page: 1,
-        limit: 1000000, // Very high limit to fetch all items - backend will handle efficiently
+        page: showAllItems ? 1 : currentPage,
+        // Server pages results; "Show All" caps at 2000 for responsiveness.
+        limit: showAllItems ? 2000 : itemsPerPage,
       };
 
       if (searchTerm) {
@@ -481,7 +484,7 @@ export const PricingCosting = () => {
       // Validate params before sending
       const cleanParams: any = {
         page: params.page || 1,
-        limit: params.limit || 1000000, // Very high default limit to fetch all items
+        limit: params.limit || itemsPerPage,
         _t: params._t, // Include cache-busting timestamp
       };
 
@@ -821,8 +824,18 @@ export const PricingCosting = () => {
           };
         });
         setItems(priceItems);
+        const pagination =
+          response?.pagination ||
+          response?.data?.pagination ||
+          (responseData && !Array.isArray(responseData)
+            ? (responseData as any).pagination
+            : null);
+        setServerTotalItems(
+          Number(pagination?.total) || priceItems.length || 0,
+        );
       } else {
         setItems([]);
+        setServerTotalItems(0);
       }
       setLoading(false);
     } catch (error: any) {
@@ -1259,14 +1272,12 @@ export const PricingCosting = () => {
     }
   }, [profitabilityPage, profitabilityTotalPages]);
 
-  // Pagination - show all items if showAllItems is true
+  // Server already returns one page (or capped "show all"); don't slice again.
   const totalPages = showAllItems
     ? 1
-    : Math.ceil(sortedItems.length / itemsPerPage);
+    : Math.max(1, Math.ceil((serverTotalItems || sortedItems.length) / itemsPerPage));
   const startIndex = showAllItems ? 0 : (currentPage - 1) * itemsPerPage;
-  const paginatedItems = showAllItems
-    ? sortedItems
-    : sortedItems.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedItems = sortedItems;
 
   // Selected and modified counts
   const selectedCount = items.filter((item) => item.selected).length;
@@ -2163,7 +2174,7 @@ export const PricingCosting = () => {
                             className={item.modified ? "bg-warning/5" : ""}
                             data-part-id={item.id}
                           >
-                            <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={sortedItems.length} />
+                            <ListNumberCell index={index} page={currentPage} pageSize={itemsPerPage} total={serverTotalItems || sortedItems.length} />
                             <TableCell>
                               <Checkbox
                                 checked={item.selected}
@@ -2391,8 +2402,11 @@ export const PricingCosting = () => {
                   ) : (
                     <>
                       Showing {startIndex + 1} to{" "}
-                      {Math.min(startIndex + itemsPerPage, sortedItems.length)}{" "}
-                      of {sortedItems.length}
+                      {Math.min(
+                        startIndex + sortedItems.length,
+                        serverTotalItems || sortedItems.length,
+                      )}{" "}
+                      of {serverTotalItems || sortedItems.length}
                       <Button
                         variant="outline"
                         size="sm"

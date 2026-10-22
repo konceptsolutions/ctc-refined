@@ -6,10 +6,7 @@ import { randomUUID } from "crypto";
 import * as crypto from "crypto";
 import prisma from "../config/database.js";
 import { Prisma } from "@prisma/client";
-import {
-  buildPartListSearchWithFamilySql,
-  buildPartSearchWhereWithFamily,
-} from "../utils/partFamilySearch.js";
+import { buildPartSearchWhereWithFamily } from "../utils/partFamilySearch.js";
 import {
   processPurchaseReceive,
   calculateAverageCostDPO,
@@ -665,19 +662,27 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       `[API] part-locations partId=${partId} brand=${partInfo?.brand_name} partNo=${partInfo?.partNo} => found ${records.rows.length} PartRackShelf rows using RAW SQL`,
     );
 
-    // Aggregate by Store/Rack/Shelf — only fully located rows (rack and/or shelf).
-    // Store-only / orphan rows are folded into the Unallocated bucket below.
+    // Show store-only rows (store set, no rack/shelf) as real locations — they appear
+    // on Current Stock list as stores and must match View/Edit breakdown.
+    // Only orphan rows (no store AND no rack/shelf) fold into virtual Unallocated.
     const locationMap = new Map();
-    let softLocatedQty = 0;
+    let storeOnlyQty = 0;
+    let orphanSoftQty = 0;
 
     for (const r of records.rows) {
       const qty = Number(r.quantity) || 0;
       if (qty <= 0) continue;
 
       const hasRackOrShelf = !!(r.rackId || r.shelfId);
-      if (!hasRackOrShelf) {
-        softLocatedQty += qty;
+      const hasStore = !!r.storeId;
+
+      if (!hasRackOrShelf && !hasStore) {
+        orphanSoftQty += qty;
         continue;
+      }
+
+      if (!hasRackOrShelf && hasStore) {
+        storeOnlyQty += qty;
       }
 
       const storeKey = r.storeId || "null";
@@ -695,6 +700,7 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
           shelfId: r.shelfId,
           shelf: r.shelf_no || "No Shelf",
           isUnlocated: false,
+          isStoreOnly: !hasRackOrShelf && hasStore,
           quantity: 0,
         });
       }
@@ -702,14 +708,22 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
       locationMap.get(key).quantity += qty;
     }
 
-    const { totalActualStock, hardLocatedQty, available: unallocatedAvailable } =
-      await getUnallocatedAvailable(prisma, partId);
+    const { totalActualStock, hardLocatedQty } = await getUnallocatedAvailable(
+      prisma,
+      partId,
+    );
+
+    // Pure gap + orphans: stock not assigned to any store/rack/shelf row we display.
+    // (Assign-from-Unallocated still uses getUnallocatedAvailable which includes store-only.)
+    const unallocatedAvailable = Math.max(
+      0,
+      totalActualStock - hardLocatedQty - storeOnlyQty,
+    );
 
     const locations = Array.from(locationMap.values()).filter(
       (l: any) => l.quantity > 0,
     );
 
-    // Single Unallocated row = everything not yet on a rack/shelf
     if (unallocatedAvailable > 0) {
       locations.push({
         id: `unallocated-${partId}`,
@@ -733,7 +747,7 @@ router.get("/part-locations/:partId", async (req: Request, res: Response) => {
     });
 
     console.log(
-      `[API] part-locations ${partId}: actual=${totalActualStock} hardLocated=${hardLocatedQty} soft=${softLocatedQty} unallocated=${unallocatedAvailable}`,
+      `[API] part-locations ${partId}: actual=${totalActualStock} hardLocated=${hardLocatedQty} storeOnly=${storeOnlyQty} orphan=${orphanSoftQty} unallocated=${unallocatedAvailable}`,
     );
 
     res.json({ data: locations });
@@ -1878,7 +1892,7 @@ router.get("/balance/:partId", async (req: Request, res: Response) => {
 });
 
 // DEDICATED API FOR CURRENT STOCK PAGE
-// Optimized to link Part, StockMovement (for totals), and PartRackShelf (for locations)
+// Page-first: filter + stock + LIMIT, then location aggregate only for the page rows
 router.get("/part-rack-shelf", async (req: Request, res: Response) => {
   try {
     const {
@@ -1888,17 +1902,19 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       stock_as_of_date,
       brand_name,
       model_name,
+      in_stock,
+      out_of_stock,
+      low_stock,
       page = "1",
       limit = "50",
     } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(500, Math.max(1, parseInt(limit as string) || 50));
     const skip = (pageNum - 1) * limitNum;
 
-    // 1. Build Query for Parts
-    let whereClause = "WHERE p.status = 'active'";
-    let params: any[] = [];
+    let whereClause = `WHERE p.status = 'active'`;
+    const params: any[] = [];
     let paramIdx = 1;
     let stockAsOfDate: Date | null = null;
 
@@ -1929,19 +1945,48 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       params.push(String(model_name).trim());
     }
 
-    if (search) {
-      whereClause += ` AND ${buildPartListSearchWithFamilySql(paramIdx)}`;
-      params.push(`%${search}%`);
+    const searchTerm = search ? String(search).trim() : "";
+    // Direct ILIKE only (no family subquery) — keeps search snappy on large catalogs
+    if (searchTerm) {
+      whereClause += ` AND (
+        p."partNo" ILIKE $${paramIdx} OR
+        p.description ILIKE $${paramIdx} OR
+        b.name ILIKE $${paramIdx} OR
+        mp."masterPartNo" ILIKE $${paramIdx}
+      )`;
+      params.push(`%${searchTerm}%`);
       paramIdx++;
     }
 
+    const flagOn = (v: unknown) => {
+      const s = String(v ?? "").trim().toLowerCase();
+      return s === "true" || s === "1";
+    };
+    const wantInStock = flagOn(in_stock);
+    const wantOutOfStock = flagOn(out_of_stock);
+    const wantLowStock = flagOn(low_stock);
+
+    let stockHaving = "";
+    if (wantInStock) {
+      stockHaving = `WHERE COALESCE(sm_agg.current_stock, 0) > 0`;
+    } else if (wantOutOfStock) {
+      stockHaving = `WHERE COALESCE(sm_agg.current_stock, 0) <= 0`;
+    } else if (wantLowStock) {
+      stockHaving = `WHERE COALESCE(sm_agg.current_stock, 0) > 0
+        AND COALESCE(p."reorderLevel", 0) > 0
+        AND COALESCE(sm_agg.current_stock, 0) <= COALESCE(p."reorderLevel", 0)`;
+    }
+
     const hasActiveFilter = !!(
-      (search && String(search).trim()) ||
+      searchTerm ||
       category_id ||
       (brand_name && String(brand_name).trim()) ||
       (model_name && String(model_name).trim()) ||
       store_id ||
       stock_as_of_date ||
+      wantInStock ||
+      wantOutOfStock ||
+      wantLowStock ||
       req.query.sort_stock_first === "true" ||
       req.query.sort_stock_first === "1"
     );
@@ -1954,35 +1999,69 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
       ? `WHERE "createdAt" <= '${stockAsOfDate.toISOString()}'`
       : "";
 
-    const sql = `
-      SELECT 
-        p.id as part_id,
-        p."partNo" as part_no,
-        mp."masterPartNo" as master_part_no,
-        p.description,
-        b.name as brand,
-        p.origin as origin,
-        c.name as category,
-        -- Official Stock from Movements (Picking only, no adding/effecting)
-        COALESCE(sm_agg.current_stock, 0) as current_stock,
-        -- Aggregated Locations from PartRackShelf
-        COALESCE(loc.racks, '-') as rack,
-        COALESCE(loc.shelves, '-') as shelf,
-        COALESCE(loc.stores, 'Unallocated') as store
+    // Count without location joins / stock (unless stock status filter needs it)
+    const needsStockForCount = wantInStock || wantOutOfStock || wantLowStock;
+    const countSql = needsStockForCount
+      ? `
+      SELECT COUNT(*) as total
       FROM "Part" p
       LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
       LEFT JOIN "Brand" b ON p."brandId" = b.id
-      LEFT JOIN "Category" c ON p."categoryId" = c.id
       LEFT JOIN (
-        SELECT 
+        SELECT
           "partId",
           SUM(CASE WHEN type = 'in' THEN quantity ELSE -quantity END) as current_stock
         FROM "StockMovement"
         ${stockDateFilterClause}
         GROUP BY "partId"
       ) sm_agg ON sm_agg."partId" = p.id
+      ${whereClause}
+      ${stockHaving}
+    `
+      : `
+      SELECT COUNT(*) as total
+      FROM "Part" p
+      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+      LEFT JOIN "Brand" b ON p."brandId" = b.id
+      ${whereClause}
+    `;
+
+    const sql = `
+      WITH page AS (
+        SELECT
+          p.id as part_id,
+          p."partNo" as part_no,
+          mp."masterPartNo" as master_part_no,
+          p.description,
+          b.name as brand,
+          p.origin as origin,
+          c.name as category,
+          COALESCE(sm_agg.current_stock, 0) as current_stock
+        FROM "Part" p
+        LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
+        LEFT JOIN "Brand" b ON p."brandId" = b.id
+        LEFT JOIN "Category" c ON p."categoryId" = c.id
+        LEFT JOIN (
+          SELECT
+            "partId",
+            SUM(CASE WHEN type = 'in' THEN quantity ELSE -quantity END) as current_stock
+          FROM "StockMovement"
+          ${stockDateFilterClause}
+          GROUP BY "partId"
+        ) sm_agg ON sm_agg."partId" = p.id
+        ${whereClause}
+        ${stockHaving}
+        ${orderByClause}
+        LIMIT ${limitNum} OFFSET ${skip}
+      )
+      SELECT
+        page.*,
+        COALESCE(loc.racks, '-') as rack,
+        COALESCE(loc.shelves, '-') as shelf,
+        COALESCE(loc.stores, 'Unallocated') as store
+      FROM page
       LEFT JOIN LATERAL (
-        SELECT 
+        SELECT
           STRING_AGG(DISTINCT r."codeNo", ', ') as racks,
           STRING_AGG(DISTINCT sh."shelfNo", ', ') as shelves,
           STRING_AGG(DISTINCT s."name", ', ') as stores
@@ -1990,20 +2069,9 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
         LEFT JOIN "Rack" r ON prs."rackId" = r.id
         LEFT JOIN "Shelf" sh ON prs."shelfId" = sh.id
         LEFT JOIN "Store" s ON prs."storeId" = s.id
-        WHERE prs."partId" = p.id
+        WHERE prs."partId" = page.part_id
         GROUP BY prs."partId"
       ) loc ON true
-      ${whereClause}
-      ${orderByClause}
-      LIMIT ${limitNum} OFFSET ${skip}
-    `;
-
-    const countSql = `
-      SELECT COUNT(*) as total 
-      FROM "Part" p 
-      LEFT JOIN "MasterPart" mp ON p."masterPartId" = mp.id
-      LEFT JOIN "Brand" b ON p."brandId" = b.id
-      ${whereClause}
     `;
 
     const [result, countResult] = await Promise.all([
@@ -2022,7 +2090,7 @@ router.get("/part-rack-shelf", async (req: Request, res: Response) => {
         page: pageNum,
         limit: limitNum,
         total: total,
-        totalPages: Math.ceil(total / limitNum),
+        totalPages: Math.ceil(total / limitNum) || 1,
       },
     });
   } catch (error: any) {
@@ -2100,6 +2168,7 @@ router.get("/balances", async (req: Request, res: Response) => {
           COALESCE(sm_agg.stock_in, 0) as stock_in,
           COALESCE(sm_agg.stock_out, 0) as stock_out,
           COALESCE(sm_agg.stock_in, 0) - COALESCE(sm_agg.stock_out, 0) as current_stock,
+          loc.location_labels as location_labels,
           loc.racks as rack,
           loc.shelves as shelf,
           loc.stores as store
@@ -2118,9 +2187,34 @@ router.get("/balances", async (req: Request, res: Response) => {
           ${store_id ? `WHERE "storeId" = '${store_id}'` : ""}
           GROUP BY "partId"
         ) sm_agg ON sm_agg."partId" = p.id
-        -- Aggregated Locations from PartRackShelf
+        -- Aggregated Locations from PartRackShelf (per-row labels with store)
         LEFT JOIN LATERAL (
           SELECT 
+            STRING_AGG(
+              TRIM(BOTH ' /' FROM CONCAT_WS(' / ',
+                NULLIF(TRIM(s.name), ''),
+                NULLIF(
+                  CASE
+                    WHEN NULLIF(TRIM(r."codeNo"), '') IS NOT NULL
+                      AND NULLIF(TRIM(sh."shelfNo"), '') IS NOT NULL
+                      THEN TRIM(r."codeNo") || '-' || TRIM(sh."shelfNo")
+                    WHEN NULLIF(TRIM(r."codeNo"), '') IS NOT NULL THEN TRIM(r."codeNo")
+                    WHEN NULLIF(TRIM(sh."shelfNo"), '') IS NOT NULL THEN TRIM(sh."shelfNo")
+                    ELSE NULL
+                  END,
+                  ''
+                )
+              )),
+              ', '
+              ORDER BY s.name NULLS LAST, r."codeNo" NULLS LAST, sh."shelfNo" NULLS LAST
+            ) FILTER (
+              WHERE prs.quantity > 0
+                AND (
+                  prs."storeId" IS NOT NULL
+                  OR prs."rackId" IS NOT NULL
+                  OR prs."shelfId" IS NOT NULL
+                )
+            ) as location_labels,
             STRING_AGG(DISTINCT r."codeNo", ', ') as racks,
             STRING_AGG(DISTINCT sh."shelfNo", ', ') as shelves,
             STRING_AGG(DISTINCT s."name", ', ') as stores
@@ -2129,7 +2223,6 @@ router.get("/balances", async (req: Request, res: Response) => {
           LEFT JOIN "Shelf" sh ON prs."shelfId" = sh.id
           LEFT JOIN "Store" s ON prs."storeId" = s.id
           WHERE prs."partId" = p.id
-          GROUP BY prs."partId"
         ) loc ON true
         ${whereClause}
         ORDER BY p."partNo" ASC
@@ -2158,9 +2251,14 @@ router.get("/balances", async (req: Request, res: Response) => {
         brand: row.brand,
         category: row.category,
         location:
-          row.rack && row.shelf
-            ? `${row.rack}/${row.shelf}`
-            : row.rack || row.shelf || null,
+          row.location_labels ||
+          (row.store
+            ? row.rack || row.shelf
+              ? `${row.store} / ${row.rack && row.shelf ? `${row.rack}-${row.shelf}` : row.rack || row.shelf}`
+              : row.store
+            : row.rack && row.shelf
+              ? `${row.rack}/${row.shelf}`
+              : row.rack || row.shelf || null),
         rack: row.rack,
         shelf: row.shelf,
         store: row.store,
@@ -2238,14 +2336,21 @@ router.get("/balances", async (req: Request, res: Response) => {
 
     const locationByPart: Record<
       string,
-      { racks: Set<string>; shelves: Set<string>; stores: Set<string> }
+      {
+        racks: Set<string>;
+        shelves: Set<string>;
+        stores: Set<string>;
+        labels: string[];
+      }
     > = {};
     for (const record of locationRecords) {
+      if ((record.quantity || 0) <= 0) continue;
       if (!locationByPart[record.partId]) {
         locationByPart[record.partId] = {
           racks: new Set(),
           shelves: new Set(),
           stores: new Set(),
+          labels: [],
         };
       }
       if (record.Rack?.codeNo)
@@ -2254,6 +2359,22 @@ router.get("/balances", async (req: Request, res: Response) => {
         locationByPart[record.partId].shelves.add(record.Shelf.shelfNo);
       if (record.Store?.name)
         locationByPart[record.partId].stores.add(record.Store.name);
+
+      const storeName = String(record.Store?.name || "").trim();
+      const rackCode = String(record.Rack?.codeNo || "").trim();
+      const shelfNo = String(record.Shelf?.shelfNo || "").trim();
+      if (!storeName && !rackCode && !shelfNo) continue;
+      const rackShelf =
+        rackCode && shelfNo
+          ? `${rackCode}-${shelfNo}`
+          : rackCode || shelfNo || "";
+      const label =
+        storeName && rackShelf
+          ? `${storeName} / ${rackShelf}`
+          : storeName || rackShelf;
+      if (label && !locationByPart[record.partId].labels.includes(label)) {
+        locationByPart[record.partId].labels.push(label);
+      }
     }
 
     // Get reserved quantities
@@ -2284,6 +2405,7 @@ router.get("/balances", async (req: Request, res: Response) => {
         racks: new Set(),
         shelves: new Set(),
         stores: new Set(),
+        labels: [] as string[],
       };
 
       const currentStock = Math.max(0, stock.in - stock.out);
@@ -2294,11 +2416,14 @@ router.get("/balances", async (req: Request, res: Response) => {
       const shelf = Array.from(locations.shelves).join(", ") || null;
       const store = Array.from(locations.stores).join(", ") || null;
 
-      let location: string | null = null;
-      if (rack && shelf) {
-        location = `${rack}/${shelf}`;
-      } else {
-        location = rack || shelf || null;
+      let location: string | null =
+        locations.labels.length > 0 ? locations.labels.join(", ") : null;
+      if (!location) {
+        if (store && (rack || shelf)) {
+          location = `${store} / ${rack && shelf ? `${rack}-${shelf}` : rack || shelf}`;
+        } else {
+          location = store || rack || shelf || null;
+        }
       }
 
       return {

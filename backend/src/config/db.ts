@@ -2,10 +2,14 @@ import { Pool } from "pg";
 import * as dotenv from "dotenv";
 import * as path from "path";
 
-// Load env vars
-const envFile =
+import * as fs from "fs";
+
+// Load env vars (fall back to .env if .env.production is absent)
+const preferredEnv =
   process.env.NODE_ENV === "production" ? ".env.production" : ".env";
-const envPath = path.resolve(__dirname, `../../${envFile}`);
+const preferredPath = path.resolve(__dirname, `../../${preferredEnv}`);
+const fallbackPath = path.resolve(__dirname, "../../.env");
+const envPath = fs.existsSync(preferredPath) ? preferredPath : fallbackPath;
 dotenv.config({ path: envPath, override: true });
 
 // Parse DATABASE_URL for pg config if needed, or just pass it
@@ -19,6 +23,10 @@ if (!connectionString) {
 const pool = new Pool({
   connectionString,
   ssl: false, // Localhost usually doesn't need SSL
+  // Cap so pg + Prisma do not exhaust PostgreSQL max_connections together
+  max: Number(process.env.PG_POOL_MAX || 10),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
 });
 
 // Test connection

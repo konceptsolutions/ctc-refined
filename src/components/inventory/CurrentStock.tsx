@@ -95,6 +95,9 @@ const CurrentStockInner = () => {
   const [searchQuery, setSearchQuery] = useState(
     () => searchParams.get("search")?.trim() || "",
   );
+  const [debouncedSearch, setDebouncedSearch] = useState(
+    () => searchParams.get("search")?.trim() || "",
+  );
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedBrand, setSelectedBrand] = useState("all");
   const [selectedModel, setSelectedModel] = useState("all");
@@ -174,6 +177,8 @@ const CurrentStockInner = () => {
     },
   ]);
   const searchQueryRef = useRef(searchQuery);
+  const fetchRequestIdRef = useRef(0);
+  const categoryIdByNameRef = useRef<Record<string, string>>({});
 
   const fetchCategories = async () => {
     try {
@@ -181,12 +186,21 @@ const CurrentStockInner = () => {
       const data = Array.isArray(response)
         ? response
         : (response as any).data || [];
+      const idMap: Record<string, string> = {};
       const categoryNames = data
-        .map((cat: any) => cat.name || cat.category_name)
+        .map((cat: any) => {
+          const name = cat.name || cat.category_name;
+          if (name && name.trim() !== "" && cat.id) {
+            idMap[name] = cat.id;
+          }
+          return name;
+        })
         .filter((name: string) => name && name.trim() !== "");
+      categoryIdByNameRef.current = idMap;
       setCategories(["all", ...categoryNames]);
     } catch (error) {
       console.error("Failed to fetch categories:", error);
+      categoryIdByNameRef.current = {};
       setCategories(["all"]);
     }
   };
@@ -234,7 +248,8 @@ const CurrentStockInner = () => {
     [models],
   );
 
-  const fetchStockData = useCallback(async (searchTerm?: string) => {
+  const fetchStockData = useCallback(async () => {
+    const requestId = ++fetchRequestIdRef.current;
     try {
       setTableLoading(true);
       const params: any = {
@@ -247,16 +262,9 @@ const CurrentStockInner = () => {
       }
 
       if (selectedCategory !== "all") {
-        // Find category by name
-        const response = await apiClient.getCategories();
-        const data = Array.isArray(response)
-          ? response
-          : (response as any).data || [];
-        const category = data.find(
-          (cat: any) => (cat.name || cat.category_name) === selectedCategory,
-        );
-        if (category) {
-          params.category_id = category.id;
+        const categoryId = categoryIdByNameRef.current[selectedCategory];
+        if (categoryId) {
+          params.category_id = categoryId;
         }
       }
 
@@ -276,7 +284,7 @@ const CurrentStockInner = () => {
         params.low_stock = true;
       }
 
-      const effectiveSearch = ((searchTerm ?? searchQueryRef.current) || "").trim();
+      const effectiveSearch = (debouncedSearch || "").trim();
       if (effectiveSearch) {
         params.search = effectiveSearch;
       }
@@ -294,26 +302,33 @@ const CurrentStockInner = () => {
       }
 
       const response = await apiClient.getPartRackShelfSummary(params);
-      let data = (response as any).data || [];
-      const pagination = (response as any).pagination;
+      if (requestId !== fetchRequestIdRef.current) return;
 
-      // Client-side enforcement of stock status filter (in case backend doesn't apply it)
-      if (stockStatusFilter === "in_stock") {
-        data = data.filter((item: StockItem) => (item.current_stock ?? 0) > 0);
-      } else if (stockStatusFilter === "out_of_stock") {
-        data = data.filter((item: StockItem) => (item.current_stock ?? 0) <= 0);
-      }
+      const data = (response as any).data || [];
+      const pagination = (response as any).pagination;
 
       setStockData(data);
       setTotalItems(pagination?.total || data.length);
       setTotalPages(pagination?.totalPages || 1);
     } catch (error: any) {
+      if (requestId !== fetchRequestIdRef.current) return;
       toast.error(error.error || "Failed to fetch stock data");
       setStockData([]);
     } finally {
-      setTableLoading(false);
+      if (requestId === fetchRequestIdRef.current) {
+        setTableLoading(false);
+      }
     }
-  }, [currentPage, itemsPerPage, selectedCategory, selectedBrand, selectedModel, stockStatusFilter, stockAsOfDate]);
+  }, [
+    currentPage,
+    itemsPerPage,
+    selectedCategory,
+    selectedBrand,
+    selectedModel,
+    stockStatusFilter,
+    stockAsOfDate,
+    debouncedSearch,
+  ]);
 
   // Fetch initial data
   useEffect(() => {
@@ -328,29 +343,30 @@ const CurrentStockInner = () => {
     searchQueryRef.current = searchQuery;
   }, [searchQuery]);
 
+  // Debounce search input — only this triggers a reload (via debouncedSearch dep)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      const next = searchQuery.trim();
+      setCurrentPage(1);
+      setDebouncedSearch(next);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
   // Apply search from URL (e.g. AI chat "Open Current Stock" with ?search=...)
   useEffect(() => {
     const fromUrl = searchParams.get("search")?.trim() || "";
     if (fromUrl !== searchQueryRef.current) {
       setSearchQuery(fromUrl);
+      setDebouncedSearch(fromUrl);
       setCurrentPage(1);
     }
   }, [searchParams]);
 
-  // Fetch stock data when filters change
+  // Single fetch path for filters / page / debounced search
   useEffect(() => {
     fetchStockData();
   }, [fetchStockData]);
-
-  // Debounce search query
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setCurrentPage(1);
-      fetchStockData(searchQuery);
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery, fetchStockData]);
 
   const fetchStores = async () => {
     try {
