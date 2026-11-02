@@ -2138,6 +2138,10 @@ router.get("/invoices", async (req: Request, res: Response) => {
           wantItems
             ? (invoice.SalesInvoiceItem || []).length
             : invoice._count?.SalesInvoiceItem ?? 0,
+        items_count:
+          wantItems
+            ? (invoice.SalesInvoiceItem || []).length
+            : invoice._count?.SalesInvoiceItem ?? 0,
       })),
     );
   } catch (error: any) {

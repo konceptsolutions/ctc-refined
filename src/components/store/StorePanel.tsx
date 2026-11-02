@@ -381,6 +381,23 @@ const buildStorePartSelectOption = (part: StorePartOption): SearchableSelectOpti
   };
 };
 
+const invoiceItemsCount = (invoice: any, mappedItems?: any[]) => {
+  const counted =
+    Number(invoice.items_count) ||
+    Number(invoice.itemCount) ||
+    Number(invoice._count?.SalesInvoiceItem) ||
+    0;
+  if (counted > 0) return counted;
+  if (Array.isArray(mappedItems) && mappedItems.length > 0) return mappedItems.length;
+  if (Array.isArray(invoice.SalesInvoiceItem) && invoice.SalesInvoiceItem.length > 0) {
+    return invoice.SalesInvoiceItem.length;
+  }
+  if (Array.isArray(invoice.items) && invoice.items.length > 0) {
+    return invoice.items.length;
+  }
+  return 0;
+};
+
 const mapInvoiceLineItems = (invoice: any) => {
   const rawItems =
     invoice.SalesInvoiceItem ||
@@ -945,24 +962,22 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
               String(invoice.customerType || invoice.customer_type || "")
                 .toLowerCase() !== "transfer",
           )
-          .map((invoice: any) => ({
+          .map((invoice: any) => {
+            const items = mapInvoiceLineItems(invoice);
+            return {
             id: invoice.id,
             invoiceNo: invoice.invoiceNo,
             invoiceDate: invoice.invoiceDate || invoice.invoice_date,
             customerName: invoice.customerName || invoice.customer_name,
             status: invoice.status || "pending",
             grandTotal: invoice.grandTotal || invoice.grand_total || 0,
-            items_count:
-              Number(invoice.items_count) ||
-              (Array.isArray(invoice.SalesInvoiceItem)
-                ? invoice.SalesInvoiceItem.length
-                : 0) ||
-              (Array.isArray(invoice.items) ? invoice.items.length : 0),
+            items_count: invoiceItemsCount(invoice, items),
             deliveredTo: invoice.deliveredTo || invoice.delivered_to,
             createdAt: invoice.createdAt || invoice.created_at,
             customerType: invoice.customerType || 'walking',
-            items: mapInvoiceLineItems(invoice),
-          }));
+            items,
+            };
+          });
 
         if (isStoreOnlyUser) {
           const previousStatusById = new Map(
@@ -1132,7 +1147,9 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
 
       const invoicesData = Array.isArray(response) ? response : (response.data || []);
       if (Array.isArray(invoicesData)) {
-        const formattedInvoices = invoicesData.map((invoice: any) => ({
+        const formattedInvoices = invoicesData.map((invoice: any) => {
+          const items = mapInvoiceLineItems(invoice);
+          return {
           id: invoice.id,
           invoiceNo: invoice.invoiceNo,
           invoiceDate: invoice.invoiceDate || invoice.invoice_date,
@@ -1143,17 +1160,13 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
             "Branch",
           status: invoice.status || "pending",
           grandTotal: invoice.grandTotal || invoice.grand_total || 0,
-          items_count:
-            Number(invoice.items_count) ||
-            (Array.isArray(invoice.SalesInvoiceItem)
-              ? invoice.SalesInvoiceItem.length
-              : 0) ||
-            (Array.isArray(invoice.items) ? invoice.items.length : 0),
+          items_count: invoiceItemsCount(invoice, items),
           deliveredTo: invoice.deliveredTo || invoice.delivered_to,
           createdAt: invoice.createdAt || invoice.created_at,
           customerType: "transfer",
-          items: mapInvoiceLineItems(invoice),
-        }));
+          items,
+          };
+        });
         setTransferOutOrders(formattedInvoices);
       } else {
         setTransferOutOrders([]);
@@ -1778,7 +1791,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPart = orderContainsSelectedPart(filterPartId, invoice.items);
+    const matchesPart =
+      !filterPartId ||
+      (invoice.items && invoice.items.length > 0
+        ? orderContainsSelectedPart(filterPartId, invoice.items)
+        : true);
     return inDateRange && matchesSearch && matchesPart;
   });
 
@@ -1810,7 +1827,11 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
     const matchesSearch =
       invoice.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPart = orderContainsSelectedPart(filterPartId, invoice.items);
+    const matchesPart =
+      !filterPartId ||
+      (invoice.items && invoice.items.length > 0
+        ? orderContainsSelectedPart(filterPartId, invoice.items)
+        : true);
     return inDateRange && matchesSearch && matchesPart;
   });
 
@@ -2212,7 +2233,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                             <TableHead>Supplier/Store/Customer</TableHead>
                             <TableHead>Items</TableHead>
                             <TableHead>Quantity</TableHead>
-                            <TableHead>Amount</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Deliver To</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
@@ -2241,11 +2261,6 @@ export const StorePanel = ({ onStoreChange }: StorePanelProps) => {
                               <TableCell>{row.itemsCount} items</TableCell>
                               <TableCell>
                                 {row.type === "stock-out" ? "-" : row.quantity}
-                              </TableCell>
-                              <TableCell>
-                                {row.type === "stock-out" || row.type === "sales-return"
-                                  ? "-"
-                                  : `Rs ${Number(row.amount || 0).toFixed(2)}`}
                               </TableCell>
                               <TableCell>
                                 {row.type === "stock-out" ? (
