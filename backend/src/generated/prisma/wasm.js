@@ -188,7 +188,7 @@ exports.Prisma.AdjustmentItemScalarFieldEnum = {
   createdAt: 'createdAt',
   priceA: 'priceA',
   priceB: 'priceB',
-  priceM: 'priceM',
+  priceN: 'priceN',
   updatedAt: 'updatedAt',
   deletedAt: 'deletedAt'
 };
@@ -404,7 +404,7 @@ exports.Prisma.DirectPurchaseOrderItemScalarFieldEnum = {
   amount: 'amount',
   priceA: 'priceA',
   priceB: 'priceB',
-  priceM: 'priceM',
+  priceN: 'priceN',
   rackId: 'rackId',
   shelfId: 'shelfId',
   createdAt: 'createdAt'
@@ -517,7 +517,7 @@ exports.Prisma.PartScalarFieldEnum = {
   costUpdatedAt: 'costUpdatedAt',
   priceA: 'priceA',
   priceB: 'priceB',
-  priceM: 'priceM',
+  priceN: 'priceN',
   smc: 'smc',
   size: 'size',
   origin: 'origin',
@@ -758,7 +758,7 @@ exports.Prisma.SalesInquiryItemScalarFieldEnum = {
   purchasePrice: 'purchasePrice',
   priceA: 'priceA',
   priceB: 'priceB',
-  priceM: 'priceM',
+  priceN: 'priceN',
   location: 'location',
   stock: 'stock',
   reservedQty: 'reservedQty',

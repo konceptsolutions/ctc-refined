@@ -464,6 +464,7 @@ const buildKitOperationDetails = async (kitPartId: string) => {
           purchasePrice: true,
           priceA: true,
           priceB: true,
+          priceN: true,
           origin: true,
           MasterPart: { select: { masterPartNo: true } },
           Brand: { select: { name: true } },
@@ -483,6 +484,7 @@ const buildKitOperationDetails = async (kitPartId: string) => {
           purchasePrice: true,
           priceA: true,
           priceB: true,
+          priceN: true,
           origin: true,
           MasterPart: { select: { masterPartNo: true } },
           Brand: { select: { name: true } },
@@ -548,6 +550,9 @@ const buildKitOperationDetails = async (kitPartId: string) => {
       const priceB = Number(
         linked?.priceB ?? legacyMatch?.priceB ?? 0,
       );
+      const priceN = Number(
+        (linked as any)?.priceN ?? (legacyMatch as any)?.priceN ?? 0,
+      );
 
       return {
         item_part_id: itemPartId,
@@ -569,6 +574,7 @@ const buildKitOperationDetails = async (kitPartId: string) => {
         cost_per_unit: Number(row.costPerUnit || 0),
         price_a: priceA,
         price_b: priceB,
+        price_n: priceN,
       };
     })
     .filter(Boolean);
@@ -579,11 +585,13 @@ const buildKitOperationDetails = async (kitPartId: string) => {
     kit_avg_cost: Number(kitPart.avgCost ?? kitPart.cost ?? 0),
     kit_price_a: Number(kitPart.priceA ?? 0),
     kit_price_b: Number(kitPart.priceB ?? 0),
+    kit_price_n: Number((kitPart as any).priceN ?? 0),
     // camelCase aliases for clients that normalize keys
     kitCost: Number(kitPart.cost ?? kitPart.avgCost ?? kitPart.purchasePrice ?? 0),
     kitAvgCost: Number(kitPart.avgCost ?? kitPart.cost ?? 0),
     kitPriceA: Number(kitPart.priceA ?? 0),
     kitPriceB: Number(kitPart.priceB ?? 0),
+    kitPriceN: Number((kitPart as any).priceN ?? 0),
     kit_items: kitItems,
   };
 };
@@ -716,7 +724,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
     const sql = `
       WITH page_parts AS (
         SELECT
-          p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."type",
+          p.id, p."partNo" as part_no, p."masterPartId", p.description, p.cost, p."priceA" as price_a, p."priceB" as price_b, p."priceN" as price_n, p."type",
           p.uom, p.weight, p.origin, p."updatedAt" as updated_at,
           mp."masterPartNo" as master_part_no,
           b."name" as brand_name
@@ -863,6 +871,7 @@ router.get("/part-entry-list", async (req: Request, res: Response) => {
         cost: p.cost,
         price_a: p.price_a,
         price_b: p.price_b,
+        price_n: p.price_n,
         stock: parseInt(p.stock) || 0,
         reserved_stock: parseInt(p.reserved_stock) || 0,
         updated_at: p.updated_at,
@@ -1072,7 +1081,7 @@ router.get("/", async (req: Request, res: Response) => {
         SELECT
           p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
           p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
-          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
+          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceN",
           mp."masterPartNo" as master_part_no,
           b."name" as brand_name,
           c."name" as category_name,
@@ -1104,7 +1113,7 @@ router.get("/", async (req: Request, res: Response) => {
         SELECT
           p.id, p."partNo", p."type", p.description, p.remarks, p."hsCode", p.weight, p."reorderLevel", p.uom, p.status, p.origin, p."createdAt", p."updatedAt",
           p."masterPartId", p."brandId", p."categoryId", p."subcategoryId", p."applicationId",
-          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceM",
+          p.cost, p."purchasePrice", p."avgCost", p."priceA", p."priceB", p."priceN",
           mp."masterPartNo" as master_part_no,
           b."name" as brand_name,
           c."name" as category_name,
@@ -1366,7 +1375,7 @@ router.get("/", async (req: Request, res: Response) => {
 
         price_a: part.priceA ?? part.pricea ?? null,
         price_b: part.priceB ?? part.priceb ?? null,
-        price_m: part.priceM ?? part.pricem ?? null,
+        price_n: (part as any).priceN ?? (part as any).pricen ?? null,
         lastSaleQty: parseInt(part.last_sale_qty) || 0,
         lastSalePrice: parseFloat(part.last_sale_price) || 0,
         lastSaleCustomerName: part.last_sale_customer || "",
@@ -1478,7 +1487,7 @@ router.get("/details-search", async (req: Request, res: Response) => {
     const sql = `
       SELECT 
         p.id, p."partNo" as part_no, p.description, p.cost, p."purchasePrice" as purchase_price, p."avgCost" as avg_cost, 
-        p."priceA" as price_a, p."priceB" as price_b, p."priceM" as price_m, p.origin, p."updatedAt" as updated_at,
+        p."priceA" as price_a, p."priceB" as price_b, p."priceN" as price_n, p.origin, p."updatedAt" as updated_at,
         mp."masterPartNo" as master_part_no,
         b."name" as brand_name,
         c."name" as category_name,
@@ -1621,7 +1630,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       WITH page_parts AS (
         SELECT
           p.id, p."partNo", p.description, p.cost, p."purchasePrice", p."avgCost",
-          p."priceA", p."priceB", p."priceM", p."updatedAt", p."createdAt",
+          p."priceA", p."priceB", p."priceN", p."updatedAt", p."createdAt",
           mp."masterPartNo" as master_part_no,
           b."name" as brand_name,
           c."name" as category_name,
@@ -1703,7 +1712,7 @@ router.get("/price-management", async (req: Request, res: Response) => {
       updated_at: p.updatedAt || p.updatedat,
       price_a: parseFloat(p.priceA || p.pricea) || 0,
       price_b: parseFloat(p.priceB || p.priceb) || 0,
-      price_m: parseFloat(p.priceM || p.pricem) || 0,
+      price_n: parseFloat((p as any).priceN || (p as any).pricen) || 0,
       category: p.category_name || p.categoryname,
       subcategory: p.subcategory_name || p.subcategoryname,
       last_percentage: p.last_update_value || p.lastupdatevalue,
@@ -1733,7 +1742,7 @@ router.post("/bulk-update-prices", async (req: Request, res: Response) => {
   try {
     const {
       part_ids,
-      price_field, // 'cost', 'priceA', 'priceB', 'all'
+      price_field, // 'cost', 'priceA', 'priceB', 'priceN', 'all'
       update_type, // 'percentage', 'fixed'
       update_value,
       reason,
@@ -1773,8 +1782,8 @@ router.post("/bulk-update-prices", async (req: Request, res: Response) => {
     }
 
     // Update parts and create history records
-    const updatedParts = [];
-    const historyRecords = [];
+    const updatedParts: any[] = [];
+    const historyRecords: any[] = [];
 
     for (const part of parts) {
       const updates: any = {};
@@ -1825,6 +1834,16 @@ router.post("/bulk-update-prices", async (req: Request, res: Response) => {
         if (price_field === "priceB") {
           historyData.oldValue = oldPriceB;
           historyData.newValue = newPriceB;
+        }
+      }
+
+      if (price_field === "priceN" || price_field === "all") {
+        const oldPriceN = (part as any).priceN || 0;
+        const newPriceN = applyUpdate(oldPriceN);
+        (updates as any).priceN = newPriceN;
+        if (price_field === "priceN") {
+          historyData.oldValue = oldPriceN;
+          historyData.newValue = newPriceN;
         }
       }
 
@@ -2022,7 +2041,7 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       avgCost: part.avgCost,
       price_a: part.priceA || (part as any).pricea || null,
       price_b: part.priceB || (part as any).priceb || null,
-      price_m: part.priceM || (part as any).pricem || null,
+      price_n: (part as any).priceN ?? (part as any).pricen ?? null,
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
@@ -2038,6 +2057,108 @@ router.get("/by-part-no", async (req: Request, res: Response) => {
       })),
       created_at: part.createdAt,
       updated_at: part.updatedAt,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Distinct HS codes across parts (Part Entry → HS Code)
+router.get("/hs-codes", async (req: Request, res: Response) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+    const limit = Math.min(
+      500,
+      Math.max(1, parseInt(String(req.query.limit || "200"), 10) || 200),
+    );
+    const skip = (page - 1) * limit;
+
+    const params: any[] = [];
+    let searchSql = "";
+    if (search) {
+      params.push(`%${search}%`);
+      searchSql = `AND p."hsCode" ILIKE $${params.length}`;
+    }
+
+    const countResult = await query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM (
+        SELECT TRIM(p."hsCode") AS hs_code
+        FROM "Part" p
+        WHERE p."hsCode" IS NOT NULL
+          AND TRIM(p."hsCode") <> ''
+          ${searchSql}
+        GROUP BY TRIM(p."hsCode")
+      ) t
+      `,
+      params,
+    );
+
+    const total = Number(countResult.rows[0]?.total || 0);
+
+    const rowsResult = await query(
+      `
+      SELECT
+        TRIM(p."hsCode") AS hs_code,
+        COUNT(*)::int AS part_count
+      FROM "Part" p
+      WHERE p."hsCode" IS NOT NULL
+        AND TRIM(p."hsCode") <> ''
+        ${searchSql}
+      GROUP BY TRIM(p."hsCode")
+      ORDER BY TRIM(p."hsCode") ASC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `,
+      [...params, limit, skip],
+    );
+
+    res.json({
+      data: rowsResult.rows.map((row: any) => ({
+        hsCode: String(row.hs_code || "").trim(),
+        partCount: Number(row.part_count || 0),
+      })),
+      total,
+      page,
+      limit,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rename an HS code across every part that uses it
+router.put("/hs-codes", async (req: Request, res: Response) => {
+  try {
+    const from = String(req.body?.from || req.body?.oldHsCode || "").trim();
+    const to = String(req.body?.to || req.body?.newHsCode || "").trim();
+
+    if (!from) {
+      return res.status(400).json({ error: "Current HS code is required" });
+    }
+    if (!to) {
+      return res.status(400).json({ error: "New HS code is required" });
+    }
+    if (from === to) {
+      return res.json({ hsCode: to, updatedCount: 0, unchanged: true });
+    }
+
+    const result = await query(
+      `
+      UPDATE "Part"
+      SET "hsCode" = $1, "updatedAt" = NOW()
+      WHERE "hsCode" IS NOT NULL
+        AND TRIM("hsCode") ILIKE $2
+      `,
+      [to, from],
+    );
+
+    res.json({
+      hsCode: to,
+      from,
+      updatedCount: Number(result.rowCount || 0),
+      unchanged: false,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -2062,6 +2183,280 @@ router.get("/model-names", async (req: Request, res: Response) => {
       .filter(Boolean);
 
     res.json(names);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List all part↔model rows (Part Entry → Models)
+router.get("/models", async (req: Request, res: Response) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+    const limit = Math.min(
+      500,
+      Math.max(1, parseInt(String(req.query.limit || "100"), 10) || 100),
+    );
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ModelWhereInput = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            {
+              Part: {
+                OR: [
+                  { partNo: { contains: search, mode: "insensitive" } },
+                  {
+                    MasterPart: {
+                      masterPartNo: { contains: search, mode: "insensitive" },
+                    },
+                  },
+                  {
+                    description: { contains: search, mode: "insensitive" },
+                  },
+                  {
+                    Brand: {
+                      name: { contains: search, mode: "insensitive" },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }
+      : {};
+
+    const [total, rows] = await Promise.all([
+      prisma.model.count({ where }),
+      prisma.model.findMany({
+        where,
+        include: {
+          Part: {
+            include: {
+              MasterPart: true,
+              Brand: true,
+              Application: true,
+            },
+          },
+        },
+        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    res.json({
+      data: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        qtyUsed: row.qtyUsed ?? 1,
+        partId: row.partId,
+        // UI Part No = DB master_part_no; UI Master Part = DB part_no
+        partNo: row.Part?.MasterPart?.masterPartNo || "",
+        masterPartNo: row.Part?.partNo || "",
+        description: row.Part?.description || "",
+        brand: row.Part?.Brand?.name || "",
+        application: row.Part?.Application?.name || "",
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })),
+      total,
+      page,
+      limit,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/models", async (req: Request, res: Response) => {
+  try {
+    const partId = String(req.body?.partId || "").trim();
+    const name = String(req.body?.name || "").trim();
+    const qtyUsed = Math.max(
+      1,
+      parseInt(String(req.body?.qtyUsed ?? req.body?.qty_used ?? "1"), 10) || 1,
+    );
+
+    if (!partId) {
+      return res.status(400).json({ error: "Part is required" });
+    }
+    if (!name) {
+      return res.status(400).json({ error: "Model name is required" });
+    }
+
+    const part = await prisma.part.findUnique({
+      where: { id: partId },
+      include: {
+        MasterPart: true,
+        Brand: true,
+        Application: true,
+      },
+    });
+    if (!part) {
+      return res.status(404).json({ error: "Part not found" });
+    }
+
+    const existing = await prisma.model.findFirst({
+      where: {
+        partId,
+        name: { equals: name, mode: "insensitive" },
+      },
+    });
+    if (existing) {
+      return res
+        .status(400)
+        .json({ error: `Model "${name}" already exists on this part` });
+    }
+
+    const created = await prisma.model.create({
+      data: { partId, name, qtyUsed },
+    });
+
+    res.status(201).json({
+      id: created.id,
+      name: created.name,
+      qtyUsed: created.qtyUsed ?? 1,
+      partId: created.partId,
+      partNo: part.MasterPart?.masterPartNo || "",
+      masterPartNo: part.partNo || "",
+      description: part.description || "",
+      brand: part.Brand?.name || "",
+      application: part.Application?.name || "",
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Model already exists on this part" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put("/models/:id", async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Model id is required" });
+    }
+
+    const existing = await prisma.model.findUnique({
+      where: { id },
+      include: {
+        Part: {
+          include: {
+            MasterPart: true,
+            Brand: true,
+            Application: true,
+          },
+        },
+      },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Model not found" });
+    }
+
+    const name =
+      req.body?.name != null
+        ? String(req.body.name).trim()
+        : existing.name;
+    if (!name) {
+      return res.status(400).json({ error: "Model name is required" });
+    }
+
+    const qtyRaw = req.body?.qtyUsed ?? req.body?.qty_used;
+    const qtyUsed =
+      qtyRaw != null
+        ? Math.max(1, parseInt(String(qtyRaw), 10) || 1)
+        : existing.qtyUsed ?? 1;
+
+    const nameChanged =
+      name.toLowerCase() !== String(existing.name || "").toLowerCase();
+    let renamedCount = 0;
+
+    // Renaming updates every part that uses the same model name.
+    if (nameChanged) {
+      const oldNameRows = await prisma.model.findMany({
+        where: {
+          name: { equals: existing.name, mode: "insensitive" },
+        },
+        select: { id: true, partId: true },
+      });
+      const oldIds = oldNameRows.map((row) => row.id);
+      const partIds = oldNameRows.map((row) => row.partId);
+
+      const conflicts = await prisma.model.findMany({
+        where: {
+          partId: { in: partIds },
+          name: { equals: name, mode: "insensitive" },
+          id: { notIn: oldIds },
+        },
+        select: { partId: true },
+      });
+      if (conflicts.length > 0) {
+        return res.status(400).json({
+          error: `Cannot rename to "${name}": ${conflicts.length} part(s) already have that model`,
+        });
+      }
+
+      const renamed = await prisma.model.updateMany({
+        where: {
+          name: { equals: existing.name, mode: "insensitive" },
+        },
+        data: { name },
+      });
+      renamedCount = renamed.count;
+    }
+
+    // Qty used stays per part — only the edited row is updated.
+    const updated = await prisma.model.update({
+      where: { id },
+      data: { qtyUsed },
+    });
+
+    res.json({
+      id: updated.id,
+      name: updated.name,
+      qtyUsed: updated.qtyUsed ?? 1,
+      partId: updated.partId,
+      partNo: existing.Part?.MasterPart?.masterPartNo || "",
+      masterPartNo: existing.Part?.partNo || "",
+      description: existing.Part?.description || "",
+      brand: existing.Part?.Brand?.name || "",
+      application: existing.Part?.Application?.name || "",
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+      renamedCount,
+      nameChanged,
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Model already exists on this part" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete("/models/:id", async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Model id is required" });
+    }
+
+    const existing = await prisma.model.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ error: "Model not found" });
+    }
+
+    await prisma.model.delete({ where: { id } });
+    res.json({ success: true, id });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -2242,7 +2637,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       cost: part.cost,
       price_a: part.priceA || (part as any).pricea || null,
       price_b: part.priceB || (part as any).priceb || null,
-      price_m: part.priceM || (part as any).pricem || null,
+      price_n: (part as any).priceN ?? (part as any).pricen ?? null,
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
@@ -2283,7 +2678,7 @@ router.post("/", async (req: Request, res: Response) => {
       cost,
       price_a,
       price_b,
-      price_m,
+      price_n,
       smc,
       size,
       origin,
@@ -2303,7 +2698,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     // Handle master part
-    let masterPartId = null;
+    let masterPartId: string | null = null;
     if (master_part_no && String(master_part_no).trim()) {
       const masterPartNoValue = String(master_part_no).trim();
       try {
@@ -2325,7 +2720,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     // Handle brand
-    let brandId = null;
+    let brandId: string | null = null;
     if (brand_name) {
       const brand = await prisma.brand.upsert({
         where: { name: brand_name },
@@ -2356,11 +2751,11 @@ router.post("/", async (req: Request, res: Response) => {
     };
 
     // Validate and handle category (auto-create if not found)
-    let validatedCategoryId = null;
+    let validatedCategoryId: string | null = null;
     if (category_id && String(category_id).trim() !== "") {
       try {
         const categoryIdStr = String(category_id).trim();
-        let category = null;
+        let category: any = null;
 
         if (isUUID(categoryIdStr)) {
           category = await prisma.category.findUnique({
@@ -2404,11 +2799,11 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     // Validate and handle subcategory
-    let validatedSubcategoryId = null;
+    let validatedSubcategoryId: string | null = null;
     if (subcategory_id && String(subcategory_id).trim() !== "") {
       try {
         const subcategoryIdStr = String(subcategory_id).trim();
-        let subcategory = null;
+        let subcategory: any = null;
 
         if (isUUID(subcategoryIdStr)) {
           subcategory = await prisma.subcategory.findUnique({
@@ -2466,11 +2861,11 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     // Validate and handle application (with auto-creation if name provided and subcategory exists)
-    let validatedApplicationId = null;
+    let validatedApplicationId: string | null = null;
     if (application_id && String(application_id).trim() !== "") {
       try {
         const applicationIdStr = String(application_id).trim();
-        let application = null;
+        let application: any = null;
 
         if (isUUID(applicationIdStr)) {
           // Try to find by ID
@@ -2587,9 +2982,9 @@ router.post("/", async (req: Request, res: Response) => {
         price_b !== null && price_b !== undefined
           ? parseFloat(String(price_b))
           : null,
-      priceM:
-        price_m !== null && price_m !== undefined
-          ? parseFloat(String(price_m))
+      priceN:
+        price_n !== null && price_n !== undefined
+          ? parseFloat(String(price_n))
           : null,
       smc: smc ? String(smc).trim() : null,
       size: size ? String(size).trim() : null,
@@ -2698,7 +3093,7 @@ router.post("/", async (req: Request, res: Response) => {
       avgCost: (partWithRelations as any)?.avgCost,
       price_a: partWithRelations?.priceA,
       price_b: partWithRelations?.priceB,
-      price_m: partWithRelations?.priceM,
+      price_n: (partWithRelations as any)?.priceN,
       smc: partWithRelations?.smc,
       size: partWithRelations?.size,
       origin: partWithRelations?.origin || null,
@@ -3385,7 +3780,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       cost,
       price_a,
       price_b,
-      price_m,
+      price_n,
       smc,
       size,
       origin,
@@ -3399,7 +3794,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     } = req.body;
 
     // Handle master part
-    let masterPartId = null;
+    let masterPartId: string | null = null;
     if (master_part_no && String(master_part_no).trim()) {
       const masterPartNoValue = String(master_part_no).trim();
       try {
@@ -3414,7 +3809,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
 
     // Handle brand
-    let brandId = null;
+    let brandId: string | null = null;
     if (brand_name) {
       const brand = await prisma.brand.upsert({
         where: { name: brand_name },
@@ -3432,11 +3827,11 @@ router.put("/:id", async (req: Request, res: Response) => {
     };
 
     // Validate category exists if provided (auto-create if not found)
-    let validatedCategoryId = null;
+    let validatedCategoryId: string | null = null;
     if (category_id && String(category_id).trim() !== "") {
       try {
         const categoryIdStr = String(category_id).trim();
-        let category = null;
+        let category: any = null;
 
         if (isUUID(categoryIdStr)) {
           // Try to find by ID
@@ -3478,11 +3873,11 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
 
     // Validate subcategory exists
-    let validatedSubcategoryId = null;
+    let validatedSubcategoryId: string | null = null;
     if (subcategory_id && String(subcategory_id).trim() !== "") {
       try {
         const subcategoryIdStr = String(subcategory_id).trim();
-        let subcategory = null;
+        let subcategory: any = null;
 
         if (isUUID(subcategoryIdStr)) {
           // Try to find by ID
@@ -3554,11 +3949,11 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
 
     // Validate application exists
-    let validatedApplicationId = null;
+    let validatedApplicationId: string | null = null;
     if (application_id && String(application_id).trim() !== "") {
       try {
         const applicationIdStr = String(application_id).trim();
-        let application = null;
+        let application: any = null;
 
         if (isUUID(applicationIdStr)) {
           // Try to find by ID
@@ -3741,8 +4136,8 @@ router.put("/:id", async (req: Request, res: Response) => {
       updateData.priceA = price_a ? parseFloat(price_a) : null;
     if ("price_b" in req.body)
       updateData.priceB = price_b ? parseFloat(price_b) : null;
-    if ("price_m" in req.body)
-      updateData.priceM = price_m ? parseFloat(price_m) : null;
+    if ("price_n" in req.body)
+      (updateData as any).priceN = price_n ? parseFloat(price_n) : null;
     if ("smc" in req.body) updateData.smc = smc || null;
     if ("size" in req.body) updateData.size = size || null;
     if ("origin" in req.body) updateData.origin = origin || null;
@@ -3882,7 +4277,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       avgCost: (part as any).avgCost || null,
       price_a: part.priceA || null,
       price_b: part.priceB || null,
-      price_m: part.priceM || null,
+      price_n: (part as any).priceN || null,
       smc: part.smc || null,
       size: part.size || null,
       origin: part.origin || null,
@@ -4008,7 +4403,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 router.put("/:id/prices", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { cost, priceA, priceB, priceM, reason, updated_by } = req.body;
+    const { cost, priceA, priceB, priceN, reason, updated_by } = req.body;
 
     const part = await prisma.part.findUnique({
       where: { id },
@@ -4085,19 +4480,19 @@ router.put("/:id/prices", async (req: Request, res: Response) => {
       }
     }
 
-    if (priceM !== undefined) {
-      const oldPriceM = part.priceM || 0;
-      const newPriceM = parseFloat(priceM);
-      if (!isNaN(newPriceM)) {
-        updates.priceM = newPriceM;
+    if (priceN !== undefined) {
+      const oldPriceN = (part as any).priceN || 0;
+      const newPriceN = parseFloat(priceN);
+      if (!isNaN(newPriceN)) {
+        (updates as any).priceN = newPriceN;
         historyRecords.push({
           partId: part.id,
           partNo: part.partNo,
           description: part.description,
-          priceField: "price_m",
+          priceField: "priceN",
           updateType: "individual",
-          oldValue: oldPriceM,
-          newValue: newPriceM,
+          oldValue: oldPriceN,
+          newValue: newPriceN,
           itemsUpdated: 1,
           reason: reason || "Individual price update",
           updatedBy: updated_by || "System",
@@ -4128,7 +4523,7 @@ router.put("/:id/prices", async (req: Request, res: Response) => {
       cost: updatedPart.cost,
       price_a: updatedPart.priceA,
       price_b: updatedPart.priceB,
-      price_m: updatedPart.priceM,
+      price_n: (updatedPart as any).priceN,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

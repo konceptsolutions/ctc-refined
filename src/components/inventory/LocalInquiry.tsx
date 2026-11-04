@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { usePageActions } from "@/permissions/pageActions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
@@ -249,18 +250,24 @@ export const LocalInquiry = () => {
           const partLabel = [masterPartNo, partNo]
             .filter(Boolean)
             .filter((v, i, arr) => arr.indexOf(v) === i)
-            .join(" | ");
+            .join(" / ");
           return {
             id: p.id,
             value: p.id,
             label: [partLabel || "—", description, brand]
               .filter(Boolean)
               .join(" — "),
+            description: [description, brand].filter(Boolean).join(" — ") || undefined,
             partNo,
             masterPartNo,
-            description,
             brand,
             cost: Number(p.cost || p.purchase_price || 0),
+            ...buildPartSearchableSelectFields({
+              part_no: partNo,
+              master_part_no: masterPartNo,
+              partNo,
+              masterPartNo,
+            }),
           };
         }),
       );

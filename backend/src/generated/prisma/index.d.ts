@@ -11886,7 +11886,7 @@ export namespace Prisma {
     cost: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type AdjustmentItemSumAggregateOutputType = {
@@ -11894,7 +11894,7 @@ export namespace Prisma {
     cost: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type AdjustmentItemMinAggregateOutputType = {
@@ -11909,7 +11909,7 @@ export namespace Prisma {
     createdAt: Date | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     updatedAt: Date | null
     deletedAt: Date | null
   }
@@ -11926,7 +11926,7 @@ export namespace Prisma {
     createdAt: Date | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     updatedAt: Date | null
     deletedAt: Date | null
   }
@@ -11943,7 +11943,7 @@ export namespace Prisma {
     createdAt: number
     priceA: number
     priceB: number
-    priceM: number
+    priceN: number
     updatedAt: number
     deletedAt: number
     _all: number
@@ -11955,7 +11955,7 @@ export namespace Prisma {
     cost?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type AdjustmentItemSumAggregateInputType = {
@@ -11963,7 +11963,7 @@ export namespace Prisma {
     cost?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type AdjustmentItemMinAggregateInputType = {
@@ -11978,7 +11978,7 @@ export namespace Prisma {
     createdAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     updatedAt?: true
     deletedAt?: true
   }
@@ -11995,7 +11995,7 @@ export namespace Prisma {
     createdAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     updatedAt?: true
     deletedAt?: true
   }
@@ -12012,7 +12012,7 @@ export namespace Prisma {
     createdAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     updatedAt?: true
     deletedAt?: true
     _all?: true
@@ -12116,7 +12116,7 @@ export namespace Prisma {
     createdAt: Date
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     updatedAt: Date
     deletedAt: Date | null
     _count: AdjustmentItemCountAggregateOutputType | null
@@ -12152,7 +12152,7 @@ export namespace Prisma {
     createdAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
     Adjustment?: boolean | AdjustmentDefaultArgs<ExtArgs>
@@ -12173,7 +12173,7 @@ export namespace Prisma {
     createdAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
     Adjustment?: boolean | AdjustmentDefaultArgs<ExtArgs>
@@ -12194,7 +12194,7 @@ export namespace Prisma {
     createdAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
   }
@@ -12232,7 +12232,7 @@ export namespace Prisma {
       createdAt: Date
       priceA: number | null
       priceB: number | null
-      priceM: number | null
+      priceN: number | null
       updatedAt: Date
       deletedAt: Date | null
     }, ExtArgs["result"]["adjustmentItem"]>
@@ -12643,7 +12643,7 @@ export namespace Prisma {
     readonly createdAt: FieldRef<"AdjustmentItem", 'DateTime'>
     readonly priceA: FieldRef<"AdjustmentItem", 'Float'>
     readonly priceB: FieldRef<"AdjustmentItem", 'Float'>
-    readonly priceM: FieldRef<"AdjustmentItem", 'Float'>
+    readonly priceN: FieldRef<"AdjustmentItem", 'Float'>
     readonly updatedAt: FieldRef<"AdjustmentItem", 'DateTime'>
     readonly deletedAt: FieldRef<"AdjustmentItem", 'DateTime'>
   }
@@ -28468,7 +28468,7 @@ export namespace Prisma {
     amount: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type DirectPurchaseOrderItemSumAggregateOutputType = {
@@ -28478,7 +28478,7 @@ export namespace Prisma {
     amount: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type DirectPurchaseOrderItemMinAggregateOutputType = {
@@ -28491,7 +28491,7 @@ export namespace Prisma {
     amount: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     rackId: string | null
     shelfId: string | null
     createdAt: Date | null
@@ -28507,7 +28507,7 @@ export namespace Prisma {
     amount: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     rackId: string | null
     shelfId: string | null
     createdAt: Date | null
@@ -28523,7 +28523,7 @@ export namespace Prisma {
     amount: number
     priceA: number
     priceB: number
-    priceM: number
+    priceN: number
     rackId: number
     shelfId: number
     createdAt: number
@@ -28538,7 +28538,7 @@ export namespace Prisma {
     amount?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type DirectPurchaseOrderItemSumAggregateInputType = {
@@ -28548,7 +28548,7 @@ export namespace Prisma {
     amount?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type DirectPurchaseOrderItemMinAggregateInputType = {
@@ -28561,7 +28561,7 @@ export namespace Prisma {
     amount?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     rackId?: true
     shelfId?: true
     createdAt?: true
@@ -28577,7 +28577,7 @@ export namespace Prisma {
     amount?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     rackId?: true
     shelfId?: true
     createdAt?: true
@@ -28593,7 +28593,7 @@ export namespace Prisma {
     amount?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     rackId?: true
     shelfId?: true
     createdAt?: true
@@ -28696,7 +28696,7 @@ export namespace Prisma {
     amount: number
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     rackId: string | null
     shelfId: string | null
     createdAt: Date
@@ -28731,7 +28731,7 @@ export namespace Prisma {
     amount?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     rackId?: boolean
     shelfId?: boolean
     createdAt?: boolean
@@ -28751,7 +28751,7 @@ export namespace Prisma {
     amount?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     rackId?: boolean
     shelfId?: boolean
     createdAt?: boolean
@@ -28771,7 +28771,7 @@ export namespace Prisma {
     amount?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     rackId?: boolean
     shelfId?: boolean
     createdAt?: boolean
@@ -28808,7 +28808,7 @@ export namespace Prisma {
       amount: number
       priceA: number | null
       priceB: number | null
-      priceM: number | null
+      priceN: number | null
       rackId: string | null
       shelfId: string | null
       createdAt: Date
@@ -29218,7 +29218,7 @@ export namespace Prisma {
     readonly amount: FieldRef<"DirectPurchaseOrderItem", 'Float'>
     readonly priceA: FieldRef<"DirectPurchaseOrderItem", 'Float'>
     readonly priceB: FieldRef<"DirectPurchaseOrderItem", 'Float'>
-    readonly priceM: FieldRef<"DirectPurchaseOrderItem", 'Float'>
+    readonly priceN: FieldRef<"DirectPurchaseOrderItem", 'Float'>
     readonly rackId: FieldRef<"DirectPurchaseOrderItem", 'String'>
     readonly shelfId: FieldRef<"DirectPurchaseOrderItem", 'String'>
     readonly createdAt: FieldRef<"DirectPurchaseOrderItem", 'DateTime'>
@@ -37568,7 +37568,7 @@ export namespace Prisma {
     avgCost: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type PartSumAggregateOutputType = {
@@ -37579,7 +37579,7 @@ export namespace Prisma {
     avgCost: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
   }
 
   export type PartMinAggregateOutputType = {
@@ -37603,7 +37603,7 @@ export namespace Prisma {
     costUpdatedAt: Date | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     smc: string | null
     size: string | null
     origin: string | null
@@ -37636,7 +37636,7 @@ export namespace Prisma {
     costUpdatedAt: Date | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     smc: string | null
     size: string | null
     origin: string | null
@@ -37669,7 +37669,7 @@ export namespace Prisma {
     costUpdatedAt: number
     priceA: number
     priceB: number
-    priceM: number
+    priceN: number
     smc: number
     size: number
     origin: number
@@ -37691,7 +37691,7 @@ export namespace Prisma {
     avgCost?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type PartSumAggregateInputType = {
@@ -37702,7 +37702,7 @@ export namespace Prisma {
     avgCost?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
   }
 
   export type PartMinAggregateInputType = {
@@ -37726,7 +37726,7 @@ export namespace Prisma {
     costUpdatedAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     smc?: true
     size?: true
     origin?: true
@@ -37759,7 +37759,7 @@ export namespace Prisma {
     costUpdatedAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     smc?: true
     size?: true
     origin?: true
@@ -37792,7 +37792,7 @@ export namespace Prisma {
     costUpdatedAt?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     smc?: true
     size?: true
     origin?: true
@@ -37912,7 +37912,7 @@ export namespace Prisma {
     costUpdatedAt: Date | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     smc: string | null
     size: string | null
     origin: string | null
@@ -37964,7 +37964,7 @@ export namespace Prisma {
     costUpdatedAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     smc?: boolean
     size?: boolean
     origin?: boolean
@@ -38023,7 +38023,7 @@ export namespace Prisma {
     costUpdatedAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     smc?: boolean
     size?: boolean
     origin?: boolean
@@ -38061,7 +38061,7 @@ export namespace Prisma {
     costUpdatedAt?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     smc?: boolean
     size?: boolean
     origin?: boolean
@@ -38159,7 +38159,7 @@ export namespace Prisma {
       costUpdatedAt: Date | null
       priceA: number | null
       priceB: number | null
-      priceM: number | null
+      priceN: number | null
       smc: string | null
       size: string | null
       origin: string | null
@@ -38607,7 +38607,7 @@ export namespace Prisma {
     readonly costUpdatedAt: FieldRef<"Part", 'DateTime'>
     readonly priceA: FieldRef<"Part", 'Float'>
     readonly priceB: FieldRef<"Part", 'Float'>
-    readonly priceM: FieldRef<"Part", 'Float'>
+    readonly priceN: FieldRef<"Part", 'Float'>
     readonly smc: FieldRef<"Part", 'String'>
     readonly size: FieldRef<"Part", 'String'>
     readonly origin: FieldRef<"Part", 'String'>
@@ -54028,7 +54028,7 @@ export namespace Prisma {
     purchasePrice: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     stock: number | null
     reservedQty: number | null
   }
@@ -54038,7 +54038,7 @@ export namespace Prisma {
     purchasePrice: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     stock: number | null
     reservedQty: number | null
   }
@@ -54051,7 +54051,7 @@ export namespace Prisma {
     purchasePrice: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     location: string | null
     stock: number | null
     reservedQty: number | null
@@ -54066,7 +54066,7 @@ export namespace Prisma {
     purchasePrice: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     location: string | null
     stock: number | null
     reservedQty: number | null
@@ -54081,7 +54081,7 @@ export namespace Prisma {
     purchasePrice: number
     priceA: number
     priceB: number
-    priceM: number
+    priceN: number
     location: number
     stock: number
     reservedQty: number
@@ -54095,7 +54095,7 @@ export namespace Prisma {
     purchasePrice?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     stock?: true
     reservedQty?: true
   }
@@ -54105,7 +54105,7 @@ export namespace Prisma {
     purchasePrice?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     stock?: true
     reservedQty?: true
   }
@@ -54118,7 +54118,7 @@ export namespace Prisma {
     purchasePrice?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     location?: true
     stock?: true
     reservedQty?: true
@@ -54133,7 +54133,7 @@ export namespace Prisma {
     purchasePrice?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     location?: true
     stock?: true
     reservedQty?: true
@@ -54148,7 +54148,7 @@ export namespace Prisma {
     purchasePrice?: true
     priceA?: true
     priceB?: true
-    priceM?: true
+    priceN?: true
     location?: true
     stock?: true
     reservedQty?: true
@@ -54250,7 +54250,7 @@ export namespace Prisma {
     purchasePrice: number | null
     priceA: number | null
     priceB: number | null
-    priceM: number | null
+    priceN: number | null
     location: string | null
     stock: number
     reservedQty: number
@@ -54284,7 +54284,7 @@ export namespace Prisma {
     purchasePrice?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     location?: boolean
     stock?: boolean
     reservedQty?: boolean
@@ -54301,7 +54301,7 @@ export namespace Prisma {
     purchasePrice?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     location?: boolean
     stock?: boolean
     reservedQty?: boolean
@@ -54318,7 +54318,7 @@ export namespace Prisma {
     purchasePrice?: boolean
     priceA?: boolean
     priceB?: boolean
-    priceM?: boolean
+    priceN?: boolean
     location?: boolean
     stock?: boolean
     reservedQty?: boolean
@@ -54348,7 +54348,7 @@ export namespace Prisma {
       purchasePrice: number | null
       priceA: number | null
       priceB: number | null
-      priceM: number | null
+      priceN: number | null
       location: string | null
       stock: number
       reservedQty: number
@@ -54755,7 +54755,7 @@ export namespace Prisma {
     readonly purchasePrice: FieldRef<"SalesInquiryItem", 'Float'>
     readonly priceA: FieldRef<"SalesInquiryItem", 'Float'>
     readonly priceB: FieldRef<"SalesInquiryItem", 'Float'>
-    readonly priceM: FieldRef<"SalesInquiryItem", 'Float'>
+    readonly priceN: FieldRef<"SalesInquiryItem", 'Float'>
     readonly location: FieldRef<"SalesInquiryItem", 'String'>
     readonly stock: FieldRef<"SalesInquiryItem", 'Int'>
     readonly reservedQty: FieldRef<"SalesInquiryItem", 'Int'>
@@ -83698,7 +83698,7 @@ export namespace Prisma {
     createdAt: 'createdAt',
     priceA: 'priceA',
     priceB: 'priceB',
-    priceM: 'priceM',
+    priceN: 'priceN',
     updatedAt: 'updatedAt',
     deletedAt: 'deletedAt'
   };
@@ -83962,7 +83962,7 @@ export namespace Prisma {
     amount: 'amount',
     priceA: 'priceA',
     priceB: 'priceB',
-    priceM: 'priceM',
+    priceN: 'priceN',
     rackId: 'rackId',
     shelfId: 'shelfId',
     createdAt: 'createdAt'
@@ -84102,7 +84102,7 @@ export namespace Prisma {
     costUpdatedAt: 'costUpdatedAt',
     priceA: 'priceA',
     priceB: 'priceB',
-    priceM: 'priceM',
+    priceN: 'priceN',
     smc: 'smc',
     size: 'size',
     origin: 'origin',
@@ -84385,7 +84385,7 @@ export namespace Prisma {
     purchasePrice: 'purchasePrice',
     priceA: 'priceA',
     priceB: 'priceB',
-    priceM: 'priceM',
+    priceN: 'priceN',
     location: 'location',
     stock: 'stock',
     reservedQty: 'reservedQty',
@@ -85357,7 +85357,7 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     priceA?: FloatNullableFilter<"AdjustmentItem"> | number | null
     priceB?: FloatNullableFilter<"AdjustmentItem"> | number | null
-    priceM?: FloatNullableFilter<"AdjustmentItem"> | number | null
+    priceN?: FloatNullableFilter<"AdjustmentItem"> | number | null
     updatedAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     deletedAt?: DateTimeNullableFilter<"AdjustmentItem"> | Date | string | null
     Adjustment?: XOR<AdjustmentRelationFilter, AdjustmentWhereInput>
@@ -85378,7 +85378,7 @@ export namespace Prisma {
     createdAt?: SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrderInput | SortOrder
     Adjustment?: AdjustmentOrderByWithRelationInput
@@ -85402,7 +85402,7 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     priceA?: FloatNullableFilter<"AdjustmentItem"> | number | null
     priceB?: FloatNullableFilter<"AdjustmentItem"> | number | null
-    priceM?: FloatNullableFilter<"AdjustmentItem"> | number | null
+    priceN?: FloatNullableFilter<"AdjustmentItem"> | number | null
     updatedAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     deletedAt?: DateTimeNullableFilter<"AdjustmentItem"> | Date | string | null
     Adjustment?: XOR<AdjustmentRelationFilter, AdjustmentWhereInput>
@@ -85423,7 +85423,7 @@ export namespace Prisma {
     createdAt?: SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrderInput | SortOrder
     _count?: AdjustmentItemCountOrderByAggregateInput
@@ -85448,7 +85448,7 @@ export namespace Prisma {
     createdAt?: DateTimeWithAggregatesFilter<"AdjustmentItem"> | Date | string
     priceA?: FloatNullableWithAggregatesFilter<"AdjustmentItem"> | number | null
     priceB?: FloatNullableWithAggregatesFilter<"AdjustmentItem"> | number | null
-    priceM?: FloatNullableWithAggregatesFilter<"AdjustmentItem"> | number | null
+    priceN?: FloatNullableWithAggregatesFilter<"AdjustmentItem"> | number | null
     updatedAt?: DateTimeWithAggregatesFilter<"AdjustmentItem"> | Date | string
     deletedAt?: DateTimeNullableWithAggregatesFilter<"AdjustmentItem"> | Date | string | null
   }
@@ -86748,7 +86748,7 @@ export namespace Prisma {
     amount?: FloatFilter<"DirectPurchaseOrderItem"> | number
     priceA?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     priceB?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
-    priceM?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
+    priceN?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     rackId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     shelfId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     createdAt?: DateTimeFilter<"DirectPurchaseOrderItem"> | Date | string
@@ -86768,7 +86768,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     rackId?: SortOrderInput | SortOrder
     shelfId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -86791,7 +86791,7 @@ export namespace Prisma {
     amount?: FloatFilter<"DirectPurchaseOrderItem"> | number
     priceA?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     priceB?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
-    priceM?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
+    priceN?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     rackId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     shelfId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     createdAt?: DateTimeFilter<"DirectPurchaseOrderItem"> | Date | string
@@ -86811,7 +86811,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     rackId?: SortOrderInput | SortOrder
     shelfId?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -86835,7 +86835,7 @@ export namespace Prisma {
     amount?: FloatWithAggregatesFilter<"DirectPurchaseOrderItem"> | number
     priceA?: FloatNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | number | null
     priceB?: FloatNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | number | null
-    priceM?: FloatNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | number | null
+    priceN?: FloatNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | number | null
     rackId?: StringNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | string | null
     shelfId?: StringNullableWithAggregatesFilter<"DirectPurchaseOrderItem"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"DirectPurchaseOrderItem"> | Date | string
@@ -87434,7 +87434,7 @@ export namespace Prisma {
     costUpdatedAt?: DateTimeNullableFilter<"Part"> | Date | string | null
     priceA?: FloatNullableFilter<"Part"> | number | null
     priceB?: FloatNullableFilter<"Part"> | number | null
-    priceM?: FloatNullableFilter<"Part"> | number | null
+    priceN?: FloatNullableFilter<"Part"> | number | null
     smc?: StringNullableFilter<"Part"> | string | null
     size?: StringNullableFilter<"Part"> | string | null
     origin?: StringNullableFilter<"Part"> | string | null
@@ -87492,7 +87492,7 @@ export namespace Prisma {
     costUpdatedAt?: SortOrderInput | SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     smc?: SortOrderInput | SortOrder
     size?: SortOrderInput | SortOrder
     origin?: SortOrderInput | SortOrder
@@ -87553,7 +87553,7 @@ export namespace Prisma {
     costUpdatedAt?: DateTimeNullableFilter<"Part"> | Date | string | null
     priceA?: FloatNullableFilter<"Part"> | number | null
     priceB?: FloatNullableFilter<"Part"> | number | null
-    priceM?: FloatNullableFilter<"Part"> | number | null
+    priceN?: FloatNullableFilter<"Part"> | number | null
     smc?: StringNullableFilter<"Part"> | string | null
     size?: StringNullableFilter<"Part"> | string | null
     origin?: StringNullableFilter<"Part"> | string | null
@@ -87611,7 +87611,7 @@ export namespace Prisma {
     costUpdatedAt?: SortOrderInput | SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     smc?: SortOrderInput | SortOrder
     size?: SortOrderInput | SortOrder
     origin?: SortOrderInput | SortOrder
@@ -87652,7 +87652,7 @@ export namespace Prisma {
     costUpdatedAt?: DateTimeNullableWithAggregatesFilter<"Part"> | Date | string | null
     priceA?: FloatNullableWithAggregatesFilter<"Part"> | number | null
     priceB?: FloatNullableWithAggregatesFilter<"Part"> | number | null
-    priceM?: FloatNullableWithAggregatesFilter<"Part"> | number | null
+    priceN?: FloatNullableWithAggregatesFilter<"Part"> | number | null
     smc?: StringNullableWithAggregatesFilter<"Part"> | string | null
     size?: StringNullableWithAggregatesFilter<"Part"> | string | null
     origin?: StringNullableWithAggregatesFilter<"Part"> | string | null
@@ -89058,7 +89058,7 @@ export namespace Prisma {
     purchasePrice?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceA?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceB?: FloatNullableFilter<"SalesInquiryItem"> | number | null
-    priceM?: FloatNullableFilter<"SalesInquiryItem"> | number | null
+    priceN?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     location?: StringNullableFilter<"SalesInquiryItem"> | string | null
     stock?: IntFilter<"SalesInquiryItem"> | number
     reservedQty?: IntFilter<"SalesInquiryItem"> | number
@@ -89075,7 +89075,7 @@ export namespace Prisma {
     purchasePrice?: SortOrderInput | SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     location?: SortOrderInput | SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
@@ -89095,7 +89095,7 @@ export namespace Prisma {
     purchasePrice?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceA?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceB?: FloatNullableFilter<"SalesInquiryItem"> | number | null
-    priceM?: FloatNullableFilter<"SalesInquiryItem"> | number | null
+    priceN?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     location?: StringNullableFilter<"SalesInquiryItem"> | string | null
     stock?: IntFilter<"SalesInquiryItem"> | number
     reservedQty?: IntFilter<"SalesInquiryItem"> | number
@@ -89112,7 +89112,7 @@ export namespace Prisma {
     purchasePrice?: SortOrderInput | SortOrder
     priceA?: SortOrderInput | SortOrder
     priceB?: SortOrderInput | SortOrder
-    priceM?: SortOrderInput | SortOrder
+    priceN?: SortOrderInput | SortOrder
     location?: SortOrderInput | SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
@@ -89135,7 +89135,7 @@ export namespace Prisma {
     purchasePrice?: FloatNullableWithAggregatesFilter<"SalesInquiryItem"> | number | null
     priceA?: FloatNullableWithAggregatesFilter<"SalesInquiryItem"> | number | null
     priceB?: FloatNullableWithAggregatesFilter<"SalesInquiryItem"> | number | null
-    priceM?: FloatNullableWithAggregatesFilter<"SalesInquiryItem"> | number | null
+    priceN?: FloatNullableWithAggregatesFilter<"SalesInquiryItem"> | number | null
     location?: StringNullableWithAggregatesFilter<"SalesInquiryItem"> | string | null
     stock?: IntWithAggregatesFilter<"SalesInquiryItem"> | number
     reservedQty?: IntWithAggregatesFilter<"SalesInquiryItem"> | number
@@ -92237,7 +92237,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
     Adjustment: AdjustmentCreateNestedOneWithoutAdjustmentItemInput
@@ -92258,7 +92258,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -92271,7 +92271,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     Adjustment?: AdjustmentUpdateOneRequiredWithoutAdjustmentItemNestedInput
@@ -92292,7 +92292,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -92309,7 +92309,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -92322,7 +92322,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -92339,7 +92339,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -93816,7 +93816,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     createdAt?: Date | string
     DirectPurchaseOrder: DirectPurchaseOrderCreateNestedOneWithoutDirectPurchaseOrderItemInput
     Part: PartCreateNestedOneWithoutDirectPurchaseOrderItemInput
@@ -93834,7 +93834,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -93848,7 +93848,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     DirectPurchaseOrder?: DirectPurchaseOrderUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
     Part?: PartUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
@@ -93866,7 +93866,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -93882,7 +93882,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -93896,7 +93896,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -93910,7 +93910,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -94549,7 +94549,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -94607,7 +94607,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -94655,7 +94655,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -94713,7 +94713,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -94766,7 +94766,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -94794,7 +94794,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -94827,7 +94827,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -96438,7 +96438,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -96455,7 +96455,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -96468,7 +96468,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -96485,7 +96485,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -96500,7 +96500,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -96513,7 +96513,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -96528,7 +96528,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -99971,7 +99971,7 @@ export namespace Prisma {
     createdAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrder
   }
@@ -99981,7 +99981,7 @@ export namespace Prisma {
     cost?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type AdjustmentItemMaxOrderByAggregateInput = {
@@ -99996,7 +99996,7 @@ export namespace Prisma {
     createdAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrder
   }
@@ -100013,7 +100013,7 @@ export namespace Prisma {
     createdAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrder
   }
@@ -100023,7 +100023,7 @@ export namespace Prisma {
     cost?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type FloatNullableWithAggregatesFilter<$PrismaModel = never> = {
@@ -100917,7 +100917,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     rackId?: SortOrder
     shelfId?: SortOrder
     createdAt?: SortOrder
@@ -100930,7 +100930,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type DirectPurchaseOrderItemMaxOrderByAggregateInput = {
@@ -100943,7 +100943,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     rackId?: SortOrder
     shelfId?: SortOrder
     createdAt?: SortOrder
@@ -100959,7 +100959,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     rackId?: SortOrder
     shelfId?: SortOrder
     createdAt?: SortOrder
@@ -100972,7 +100972,7 @@ export namespace Prisma {
     amount?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type DirectPurchaseOrderReturnItemListRelationFilter = {
@@ -101564,7 +101564,7 @@ export namespace Prisma {
     costUpdatedAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     smc?: SortOrder
     size?: SortOrder
     origin?: SortOrder
@@ -101584,7 +101584,7 @@ export namespace Prisma {
     avgCost?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type PartMaxOrderByAggregateInput = {
@@ -101608,7 +101608,7 @@ export namespace Prisma {
     costUpdatedAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     smc?: SortOrder
     size?: SortOrder
     origin?: SortOrder
@@ -101641,7 +101641,7 @@ export namespace Prisma {
     costUpdatedAt?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     smc?: SortOrder
     size?: SortOrder
     origin?: SortOrder
@@ -101661,7 +101661,7 @@ export namespace Prisma {
     avgCost?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
   }
 
   export type PartNullableRelationFilter = {
@@ -102613,7 +102613,7 @@ export namespace Prisma {
     purchasePrice?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     location?: SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
@@ -102625,7 +102625,7 @@ export namespace Prisma {
     purchasePrice?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
   }
@@ -102638,7 +102638,7 @@ export namespace Prisma {
     purchasePrice?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     location?: SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
@@ -102653,7 +102653,7 @@ export namespace Prisma {
     purchasePrice?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     location?: SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
@@ -102665,7 +102665,7 @@ export namespace Prisma {
     purchasePrice?: SortOrder
     priceA?: SortOrder
     priceB?: SortOrder
-    priceM?: SortOrder
+    priceN?: SortOrder
     stock?: SortOrder
     reservedQty?: SortOrder
   }
@@ -112651,7 +112651,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
     Part: PartCreateNestedOneWithoutAdjustmentItemInput
@@ -112670,7 +112670,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -112960,7 +112960,7 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     priceA?: FloatNullableFilter<"AdjustmentItem"> | number | null
     priceB?: FloatNullableFilter<"AdjustmentItem"> | number | null
-    priceM?: FloatNullableFilter<"AdjustmentItem"> | number | null
+    priceN?: FloatNullableFilter<"AdjustmentItem"> | number | null
     updatedAt?: DateTimeFilter<"AdjustmentItem"> | Date | string
     deletedAt?: DateTimeNullableFilter<"AdjustmentItem"> | Date | string | null
   }
@@ -113085,7 +113085,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113142,7 +113142,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113335,7 +113335,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -113392,7 +113392,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -113581,7 +113581,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113637,7 +113637,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113777,7 +113777,7 @@ export namespace Prisma {
     costUpdatedAt?: DateTimeNullableFilter<"Part"> | Date | string | null
     priceA?: FloatNullableFilter<"Part"> | number | null
     priceB?: FloatNullableFilter<"Part"> | number | null
-    priceM?: FloatNullableFilter<"Part"> | number | null
+    priceN?: FloatNullableFilter<"Part"> | number | null
     smc?: StringNullableFilter<"Part"> | string | null
     size?: StringNullableFilter<"Part"> | string | null
     origin?: StringNullableFilter<"Part"> | string | null
@@ -113805,7 +113805,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113861,7 +113861,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113935,7 +113935,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -113991,7 +113991,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -115688,7 +115688,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     createdAt?: Date | string
     Part: PartCreateNestedOneWithoutDirectPurchaseOrderItemInput
     Rack?: RackCreateNestedOneWithoutDirectPurchaseOrderItemInput
@@ -115704,7 +115704,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -116033,7 +116033,7 @@ export namespace Prisma {
     amount?: FloatFilter<"DirectPurchaseOrderItem"> | number
     priceA?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     priceB?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
-    priceM?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
+    priceN?: FloatNullableFilter<"DirectPurchaseOrderItem"> | number | null
     rackId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     shelfId?: StringNullableFilter<"DirectPurchaseOrderItem"> | string | null
     createdAt?: DateTimeFilter<"DirectPurchaseOrderItem"> | Date | string
@@ -116236,7 +116236,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -116293,7 +116293,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -116493,7 +116493,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116550,7 +116550,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117073,7 +117073,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117130,7 +117130,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117234,7 +117234,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117291,7 +117291,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117493,7 +117493,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117549,7 +117549,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117652,7 +117652,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117709,7 +117709,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -117772,7 +117772,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117829,7 +117829,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117868,7 +117868,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
     Adjustment: AdjustmentCreateNestedOneWithoutAdjustmentItemInput
@@ -117887,7 +117887,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -117910,7 +117910,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     createdAt?: Date | string
     DirectPurchaseOrder: DirectPurchaseOrderCreateNestedOneWithoutDirectPurchaseOrderItemInput
     Rack?: RackCreateNestedOneWithoutDirectPurchaseOrderItemInput
@@ -117926,7 +117926,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -118391,7 +118391,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -118406,7 +118406,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -119193,7 +119193,7 @@ export namespace Prisma {
     purchasePrice?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceA?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     priceB?: FloatNullableFilter<"SalesInquiryItem"> | number | null
-    priceM?: FloatNullableFilter<"SalesInquiryItem"> | number | null
+    priceN?: FloatNullableFilter<"SalesInquiryItem"> | number | null
     location?: StringNullableFilter<"SalesInquiryItem"> | string | null
     stock?: IntFilter<"SalesInquiryItem"> | number
     reservedQty?: IntFilter<"SalesInquiryItem"> | number
@@ -119481,7 +119481,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -119538,7 +119538,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -119590,7 +119590,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -119647,7 +119647,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -119710,7 +119710,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119767,7 +119767,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119825,7 +119825,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119882,7 +119882,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -120267,7 +120267,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -120324,7 +120324,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -120420,7 +120420,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -120477,7 +120477,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121095,7 +121095,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -121152,7 +121152,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -121270,7 +121270,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121327,7 +121327,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121442,7 +121442,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -121499,7 +121499,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -121562,7 +121562,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121619,7 +121619,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -122020,7 +122020,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -122077,7 +122077,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -122229,7 +122229,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -122286,7 +122286,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -122420,7 +122420,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
     Adjustment: AdjustmentCreateNestedOneWithoutAdjustmentItemInput
@@ -122439,7 +122439,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -122462,7 +122462,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     createdAt?: Date | string
     DirectPurchaseOrder: DirectPurchaseOrderCreateNestedOneWithoutDirectPurchaseOrderItemInput
     Part: PartCreateNestedOneWithoutDirectPurchaseOrderItemInput
@@ -122479,7 +122479,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     shelfId?: string | null
     createdAt?: Date | string
   }
@@ -123422,7 +123422,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -123437,7 +123437,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -123519,7 +123519,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -123576,7 +123576,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -123678,7 +123678,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -123735,7 +123735,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -124043,7 +124043,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -124100,7 +124100,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -124196,7 +124196,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -124253,7 +124253,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -125509,7 +125509,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -125566,7 +125566,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -125750,7 +125750,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -125807,7 +125807,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -126622,7 +126622,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -126679,7 +126679,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -126795,7 +126795,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -126852,7 +126852,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -127534,7 +127534,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -127591,7 +127591,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -127713,7 +127713,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -127770,7 +127770,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -127874,7 +127874,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
     Adjustment: AdjustmentCreateNestedOneWithoutAdjustmentItemInput
@@ -127893,7 +127893,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -127916,7 +127916,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     createdAt?: Date | string
     DirectPurchaseOrder: DirectPurchaseOrderCreateNestedOneWithoutDirectPurchaseOrderItemInput
     Part: PartCreateNestedOneWithoutDirectPurchaseOrderItemInput
@@ -127933,7 +127933,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     createdAt?: Date | string
   }
@@ -128446,7 +128446,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -128503,7 +128503,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -128794,7 +128794,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -128851,7 +128851,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -129233,7 +129233,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -129290,7 +129290,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -129579,7 +129579,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -129636,7 +129636,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -129894,7 +129894,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -129951,7 +129951,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -130178,7 +130178,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -130235,7 +130235,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -131290,7 +131290,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -131346,7 +131346,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -132655,7 +132655,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -132712,7 +132712,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -133098,7 +133098,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -133155,7 +133155,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -135044,7 +135044,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -135101,7 +135101,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -135301,7 +135301,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -135358,7 +135358,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136225,7 +136225,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -136282,7 +136282,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     Part?: PartUpdateOneRequiredWithoutAdjustmentItemNestedInput
@@ -136301,7 +136301,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -136317,7 +136317,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -136480,7 +136480,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -136508,7 +136508,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136564,7 +136564,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136616,7 +136616,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136648,7 +136648,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -136676,7 +136676,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136732,7 +136732,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136784,7 +136784,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136816,7 +136816,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -136852,7 +136852,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136908,7 +136908,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -136960,7 +136960,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -137808,7 +137808,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -137863,7 +137863,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     Part?: PartUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
     Rack?: RackUpdateOneWithoutDirectPurchaseOrderItemNestedInput
@@ -137879,7 +137879,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -137894,7 +137894,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -138095,7 +138095,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -138152,7 +138152,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -138208,7 +138208,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -138260,7 +138260,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -138283,7 +138283,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -138297,7 +138297,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     shelfId?: string | null
     createdAt?: Date | string
@@ -138428,7 +138428,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -138548,7 +138548,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     Adjustment?: AdjustmentUpdateOneRequiredWithoutAdjustmentItemNestedInput
@@ -138567,7 +138567,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -138583,7 +138583,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -138596,7 +138596,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     DirectPurchaseOrder?: DirectPurchaseOrderUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
     Rack?: RackUpdateOneWithoutDirectPurchaseOrderItemNestedInput
@@ -138612,7 +138612,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -138627,7 +138627,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -138993,7 +138993,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -139008,7 +139008,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -139022,7 +139022,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -139825,7 +139825,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -139840,7 +139840,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     shelfId?: string | null
     createdAt?: Date | string
   }
@@ -139950,7 +139950,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     Adjustment?: AdjustmentUpdateOneRequiredWithoutAdjustmentItemNestedInput
@@ -139969,7 +139969,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -139985,7 +139985,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -139998,7 +139998,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     DirectPurchaseOrder?: DirectPurchaseOrderUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
     Part?: PartUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
@@ -140015,7 +140015,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -140030,7 +140030,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     shelfId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -140351,7 +140351,7 @@ export namespace Prisma {
     purchasePrice?: number | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     location?: string | null
     stock?: number
     reservedQty?: number
@@ -140364,7 +140364,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -140379,7 +140379,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -140393,7 +140393,7 @@ export namespace Prisma {
     purchasePrice?: NullableFloatFieldUpdateOperationsInput | number | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     location?: NullableStringFieldUpdateOperationsInput | string | null
     stock?: IntFieldUpdateOperationsInput | number
     reservedQty?: IntFieldUpdateOperationsInput | number
@@ -141165,7 +141165,7 @@ export namespace Prisma {
     createdAt?: Date | string
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     updatedAt?: Date | string
     deletedAt?: Date | string | null
   }
@@ -141180,7 +141180,7 @@ export namespace Prisma {
     amount: number
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     rackId?: string | null
     createdAt?: Date | string
   }
@@ -141281,7 +141281,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     Adjustment?: AdjustmentUpdateOneRequiredWithoutAdjustmentItemNestedInput
@@ -141300,7 +141300,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -141316,7 +141316,7 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   }
@@ -141329,7 +141329,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     DirectPurchaseOrder?: DirectPurchaseOrderUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
     Part?: PartUpdateOneRequiredWithoutDirectPurchaseOrderItemNestedInput
@@ -141346,7 +141346,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -141361,7 +141361,7 @@ export namespace Prisma {
     amount?: FloatFieldUpdateOperationsInput | number
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     rackId?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -142484,7 +142484,7 @@ export namespace Prisma {
     costUpdatedAt?: Date | string | null
     priceA?: number | null
     priceB?: number | null
-    priceM?: number | null
+    priceN?: number | null
     smc?: string | null
     size?: string | null
     origin?: string | null
@@ -142541,7 +142541,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -142597,7 +142597,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null
@@ -142649,7 +142649,7 @@ export namespace Prisma {
     costUpdatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     priceA?: NullableFloatFieldUpdateOperationsInput | number | null
     priceB?: NullableFloatFieldUpdateOperationsInput | number | null
-    priceM?: NullableFloatFieldUpdateOperationsInput | number | null
+    priceN?: NullableFloatFieldUpdateOperationsInput | number | null
     smc?: NullableStringFieldUpdateOperationsInput | string | null
     size?: NullableStringFieldUpdateOperationsInput | string | null
     origin?: NullableStringFieldUpdateOperationsInput | string | null

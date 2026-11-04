@@ -79,7 +79,7 @@ interface PartOption {
   brand: string;
   priceA: number;
   priceB: number;
-  priceM: number;
+  priceN: number;
   stockQty: number;
   availableQty: number;
 }
@@ -264,7 +264,7 @@ export const StoreEditSalesInvoice = ({ invoice, open, onOpenChange, onSuccess }
               brand: p.brand_name || "N/A",
               priceA: p.price_a || 0,
               priceB: p.price_b || 0,
-              priceM: p.price_m || 0,
+              priceN: p.price_n || 0,
               stockQty: p.stockQty || 0,
               availableQty: (p.stockQty || 0) - (p.reservedQty || 0),
             };

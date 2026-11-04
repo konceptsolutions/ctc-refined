@@ -96,7 +96,7 @@ model AdjustmentItem {
   createdAt    DateTime   @default(now())
   priceA       Float?
   priceB       Float?
-  priceM       Float?
+  priceN       Float?
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
   Adjustment   Adjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
@@ -354,7 +354,7 @@ model DirectPurchaseOrderItem {
   amount                Float
   priceA                Float?
   priceB                Float?
-  priceM                Float?
+  priceN                Float?
   rackId                String?
   shelfId               String?
   createdAt             DateTime            @default(now())
@@ -489,7 +489,7 @@ model Part {
   costUpdatedAt                 DateTime?
   priceA                        Float?
   priceB                        Float?
-  priceM                        Float?
+  priceN                        Float?
   smc                           String?
   size                          String?
   origin                        String?
@@ -819,7 +819,7 @@ model SalesInquiryItem {
   purchasePrice Float?
   priceA        Float?
   priceB        Float?
-  priceM        Float?
+  priceN        Float?
   location      String?
   stock         Int          @default(0)
   reservedQty   Int          @default(0)

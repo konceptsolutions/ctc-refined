@@ -10,15 +10,17 @@ export const extractLatestPriceDatesFromHistory = (
 ) => {
   let priceA: string | null = null;
   let priceB: string | null = null;
+  let priceN: string | null = null;
   for (const row of rows) {
     const field = normalizePriceHistoryField(row.priceField || "");
     const date = row.date ? String(row.date) : "";
     if (!date) continue;
     if (!priceA && field === "pricea") priceA = date;
     if (!priceB && field === "priceb") priceB = date;
-    if (priceA && priceB) break;
+    if (!priceN && field === "pricen") priceN = date;
+    if (priceA && priceB && priceN) break;
   }
-  return { priceA, priceB };
+  return { priceA, priceB, priceN };
 };
 
 export const formatPriceLastUpdatedLabel = (iso?: string | null) => {

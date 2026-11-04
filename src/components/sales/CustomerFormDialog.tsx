@@ -43,7 +43,7 @@ interface CustomerFormData {
     openingBalance: number;
     date: string;
     creditLimit: number;
-    priceType: "A" | "B" | "M" | "";
+    priceType: "A" | "B" | "N" | "";
     remarks: string;
 }
 
@@ -124,7 +124,7 @@ const mapCustomerToForm = (customer: any): CustomerFormData => ({
     priceType:
         customer.priceType === "A" ||
         customer.priceType === "B" ||
-        customer.priceType === "M"
+        customer.priceType === "N"
             ? customer.priceType
             : "",
     remarks: customer.remarks || "",
@@ -607,7 +607,7 @@ export const CustomerFormDialog = ({
                                     <SelectItem value="none">None</SelectItem>
                                     <SelectItem value="A">Price A</SelectItem>
                                     <SelectItem value="B">Price B</SelectItem>
-                                    <SelectItem value="M">Price M</SelectItem>
+                                    <SelectItem value="N">Price N</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>

@@ -35,6 +35,8 @@ interface PriceItem {
   newPriceA: number;
   priceB: number;
   newPriceB: number;
+  priceN: number;
+  newPriceN: number;
   isModified: boolean;
 }
 
@@ -119,6 +121,8 @@ export const StockPriceManagement = () => {
           newPriceA: item.priceA,
           priceB: item.priceB,
           newPriceB: item.priceB,
+          priceN: item.priceN ?? item.price_n ?? 0,
+          newPriceN: item.priceN ?? item.price_n ?? 0,
           isModified: false,
         }));
         setItems(priceItems);
@@ -223,7 +227,11 @@ export const StockPriceManagement = () => {
   };
 
   // Handle individual price change
-  const handlePriceChange = (id: string, field: "newCost" | "newPriceA" | "newPriceB", value: string) => {
+  const handlePriceChange = (
+    id: string,
+    field: "newCost" | "newPriceA" | "newPriceB" | "newPriceN",
+    value: string,
+  ) => {
     const numValue = parseFloat(value) || 0;
     setItems((prev) =>
       prev.map((item) => {
@@ -232,7 +240,8 @@ export const StockPriceManagement = () => {
           updated.isModified =
             updated.newCost !== updated.cost ||
             updated.newPriceA !== updated.priceA ||
-            updated.newPriceB !== updated.priceB;
+            updated.newPriceB !== updated.priceB ||
+            updated.newPriceN !== updated.priceN;
           return updated;
         }
         return item;
@@ -283,11 +292,15 @@ export const StockPriceManagement = () => {
         if (priceField === "priceB" || priceField === "all") {
           updated.newPriceB = Math.round(applyUpdate(updated.priceB) * 100) / 100;
         }
+        if (priceField === "priceN" || priceField === "all") {
+          updated.newPriceN = Math.round(applyUpdate(updated.priceN) * 100) / 100;
+        }
 
         updated.isModified =
           updated.newCost !== updated.cost ||
           updated.newPriceA !== updated.priceA ||
-          updated.newPriceB !== updated.priceB;
+          updated.newPriceB !== updated.priceB ||
+          updated.newPriceN !== updated.priceN;
 
         return updated;
       })
@@ -304,6 +317,7 @@ export const StockPriceManagement = () => {
         newCost: item.cost,
         newPriceA: item.priceA,
         newPriceB: item.priceB,
+        newPriceN: item.priceN,
         isModified: false,
       }))
     );
@@ -328,6 +342,7 @@ export const StockPriceManagement = () => {
         if (item.newCost !== item.cost) updates.cost = item.newCost;
         if (item.newPriceA !== item.priceA) updates.priceA = item.newPriceA;
         if (item.newPriceB !== item.priceB) updates.priceB = item.newPriceB;
+        if (item.newPriceN !== item.priceN) updates.priceN = item.newPriceN;
 
         if (Object.keys(updates).length > 0) {
           return apiClient.updatePartPrices(item.id, {
@@ -353,7 +368,7 @@ export const StockPriceManagement = () => {
 
   // Export function
   const handleExport = () => {
-    const headers = ["Part No", "Description", "Category", "Qty", "Cost", "New Cost", "Price A", "New A", "Price B", "New B", "Change %"];
+    const headers = ["Part No", "Description", "Category", "Qty", "Cost", "New Cost", "Price A", "New A", "Price B", "New B", "Price N", "New N", "Change %"];
     const csvContent = [
       headers.join(","),
       ...filteredItems.map((item) => {
@@ -369,6 +384,8 @@ export const StockPriceManagement = () => {
           item.newPriceA.toFixed(2),
           item.priceB.toFixed(2),
           item.newPriceB.toFixed(2),
+          item.priceN.toFixed(2),
+          item.newPriceN.toFixed(2),
           changePercent,
         ].join(",");
       }),
@@ -481,6 +498,7 @@ export const StockPriceManagement = () => {
                     <SelectItem value="cost">Cost</SelectItem>
                     <SelectItem value="priceA">Price A</SelectItem>
                     <SelectItem value="priceB">Price B</SelectItem>
+                    <SelectItem value="priceN">Price N</SelectItem>
                     <SelectItem value="all">All Prices</SelectItem>
                   </SelectContent>
                 </Select>
@@ -602,19 +620,21 @@ export const StockPriceManagement = () => {
                     <TableHead className="text-xs font-medium text-center w-28">NEW A</TableHead>
                     <TableHead className="text-xs font-medium text-right w-24">PRICE B</TableHead>
                     <TableHead className="text-xs font-medium text-center w-28">NEW B</TableHead>
+                    <TableHead className="text-xs font-medium text-right w-24">PRICE N</TableHead>
+                    <TableHead className="text-xs font-medium text-center w-28">NEW N</TableHead>
                     <TableHead className="text-xs font-medium text-center w-20">CHANGE %</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {partsLoading ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
                         Loading parts...
                       </TableCell>
                     </TableRow>
                   ) : paginatedItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={14} className="text-center text-muted-foreground py-8">
                         No items found matching your criteria
                       </TableCell>
                     </TableRow>
@@ -662,6 +682,15 @@ export const StockPriceManagement = () => {
                           value={item.newPriceB}
                           onChange={(e) => handlePriceChange(item.id, "newPriceB", e.target.value)}
                           className={cn("h-8 w-24 text-center mx-auto", item.newPriceB !== item.priceB && "border-green-400 bg-green-50")}
+                        />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground text-right">{formatCurrency(item.priceN)}</TableCell>
+                      <TableCell className="text-center">
+                        <Input
+                          type="number"
+                          value={item.newPriceN}
+                          onChange={(e) => handlePriceChange(item.id, "newPriceN", e.target.value)}
+                          className={cn("h-8 w-24 text-center mx-auto", item.newPriceN !== item.priceN && "border-green-400 bg-green-50")}
                         />
                       </TableCell>
                       <TableCell className="text-sm text-center text-muted-foreground">

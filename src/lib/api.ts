@@ -432,11 +432,71 @@ class ApiClient {
     return this.request(`/parts/by-part-no?${params.toString()}`);
   }
 
+  async getHsCodes(params?: {
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.search?.trim()) queryParams.set("search", params.search.trim());
+    if (params?.page) queryParams.set("page", String(params.page));
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    const query = queryParams.toString();
+    return this.request(`/parts/hs-codes${query ? `?${query}` : ""}`);
+  }
+
+  async updateHsCode(data: { from: string; to: string }) {
+    return this.request("/parts/hs-codes", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
   async getModelNames(search?: string) {
     const params = new URLSearchParams();
     if (search?.trim()) params.append("search", search.trim());
     const query = params.toString() ? `?${params.toString()}` : "";
     return this.request(`/parts/model-names${query}`);
+  }
+
+  async getModels(params?: {
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.search?.trim()) queryParams.set("search", params.search.trim());
+    if (params?.page) queryParams.set("page", String(params.page));
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    const query = queryParams.toString();
+    return this.request(`/parts/models${query ? `?${query}` : ""}`);
+  }
+
+  async createModel(data: {
+    partId: string;
+    name: string;
+    qtyUsed?: number;
+  }) {
+    return this.request("/parts/models", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateModel(
+    id: string,
+    data: { name?: string; qtyUsed?: number },
+  ) {
+    return this.request(`/parts/models/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteModel(id: string) {
+    return this.request(`/parts/models/${id}`, {
+      method: "DELETE",
+    });
   }
 
   async getPartsByModelAssociation(modelName: string, application?: string) {
@@ -542,7 +602,7 @@ class ApiClient {
 
   async bulkUpdatePrices(data: {
     part_ids: string[];
-    price_field: "cost" | "priceA" | "priceB" | "all";
+    price_field: "cost" | "priceA" | "priceB" | "priceN" | "all";
     update_type: "percentage" | "fixed";
     update_value: number;
     reason: string;
@@ -560,7 +620,7 @@ class ApiClient {
       cost?: number;
       priceA?: number;
       priceB?: number;
-      priceM?: number;
+      priceN?: number;
       reason?: string;
       updated_by?: string;
     },
@@ -1325,7 +1385,7 @@ class ApiClient {
       cost?: number;
       priceA?: number;
       priceB?: number;
-      priceM?: number;
+      priceN?: number;
       notes?: string;
     }>;
   }) {
@@ -1849,7 +1909,7 @@ class ApiClient {
       purchase_price: number;
       price_a?: number;
       price_b?: number;
-      price_m?: number;
+      price_n?: number;
       amount?: number;
       rack_id?: string;
       shelf_id?: string;
@@ -1892,7 +1952,7 @@ class ApiClient {
         purchase_price: number;
         price_a?: number;
         price_b?: number;
-        price_m?: number;
+        price_n?: number;
         amount?: number;
         rack_id?: string;
         shelf_id?: string;
@@ -2390,7 +2450,7 @@ class ApiClient {
     date?: string;
     creditLimit?: number;
     status?: string;
-    priceType?: "A" | "B" | "M";
+    priceType?: "A" | "B" | "N";
     code?: string;
     accountHead?: string;
     shortTitle?: string;
@@ -2424,7 +2484,7 @@ class ApiClient {
       date?: string;
       creditLimit?: number;
       status?: string;
-      priceType?: "A" | "B" | "M";
+      priceType?: "A" | "B" | "N";
       accountId?: string; // Account ID for voucher creation
       code?: string;
       accountHead?: string;
@@ -3192,6 +3252,7 @@ class ApiClient {
         weight?: number;
         priceA?: number;
         priceB?: number;
+        priceN?: number;
       }>;
       conversionRate: number;
       invoiceNo?: string;
@@ -3248,6 +3309,7 @@ class ApiClient {
           weight: item.weight,
           priceA: item.priceA,
           priceB: item.priceB,
+          priceN: item.priceN,
         })),
       }),
     });
@@ -4400,7 +4462,7 @@ class ApiClient {
       purchasePrice?: number;
       priceA?: number;
       priceB?: number;
-      priceM?: number;
+      priceN?: number;
       location?: string;
     }>;
   }) {
@@ -4426,7 +4488,7 @@ class ApiClient {
         purchasePrice?: number;
         priceA?: number;
         priceB?: number;
-        priceM?: number;
+        priceN?: number;
         location?: string;
       }>;
     },

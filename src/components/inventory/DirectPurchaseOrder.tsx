@@ -139,7 +139,7 @@ interface OrderItemForm {
   purchasePrice: number | "";
   priceA: number | "";
   priceB: number | "";
-  priceM: number | "";
+  priceN: number | "";
   weight: number; // Weight in kg for expense distribution
 }
 
@@ -162,7 +162,7 @@ type InquiryConversionDraft = {
     purchasePrice?: number;
     priceA?: number;
     priceB?: number;
-    priceM?: number;
+    priceN?: number;
     partNo?: string;
     description?: string;
   }>;
@@ -419,7 +419,7 @@ export const DirectPurchaseOrder = ({
       price: number;
       priceA?: number | null;
       priceB?: number | null;
-      priceM?: number | null;
+      priceN?: number | null;
       purchasePrice?: number | null;
       weight: number;
     }[]
@@ -460,7 +460,7 @@ export const DirectPurchaseOrder = ({
   const [partHistory, setPartHistory] = useState<{
     priceA: number | null;
     priceB: number | null;
-    priceM: number | null;
+    priceN: number | null;
     lastPurchasePrice: number | null;
     lastPurchaseDate: string | null;
     lastPurchaseDpoNo: string | null;
@@ -566,7 +566,7 @@ export const DirectPurchaseOrder = ({
           price: p.price_a || p.priceA || p.cost || 0,
           priceA: p.price_a ?? p.priceA ?? null,
           priceB: p.price_b ?? p.priceB ?? null,
-          priceM: p.price_m ?? p.priceM ?? null,
+          priceN: p.price_n ?? p.priceN ?? null,
           purchasePrice: p.purchasePrice ?? p.purchase_price ?? p.cost ?? null,
           weight: parseFloat(p.weight) || 0,
         })));
@@ -741,7 +741,7 @@ export const DirectPurchaseOrder = ({
         purchasePrice: "",
         priceA: "",
         priceB: "",
-        priceM: "",
+        priceN: "",
         weight: 0,
       },
     ]);
@@ -869,7 +869,7 @@ export const DirectPurchaseOrder = ({
           purchasePrice: Number(item.purchasePrice || 0),
           priceA: Number(item.priceA || 0),
           priceB: Number(item.priceB || 0),
-          priceM: Number(item.priceM || 0),
+          priceN: Number(item.priceN || 0),
           weight: 0,
         }));
       if (mappedItems.length === 0) return;
@@ -886,7 +886,7 @@ export const DirectPurchaseOrder = ({
           price:
             Number(item.priceA || 0) ||
             Number(item.priceB || 0) ||
-            Number(item.priceM || 0) ||
+            Number(item.priceN || 0) ||
             Number(item.purchasePrice || 0) ||
             0,
           weight: 0,
@@ -989,17 +989,17 @@ export const DirectPurchaseOrder = ({
           // Use prices from DPO item first (they may have been customized)
           let priceA = item.price_a !== undefined && item.price_a !== null ? item.price_a : null;
           let priceB = item.price_b !== undefined && item.price_b !== null ? item.price_b : null;
-          let priceM = item.price_m !== undefined && item.price_m !== null ? item.price_m : null;
+          let priceN = item.price_n !== undefined && item.price_n !== null ? item.price_n : null;
           let weight = typeof item.weight === "number" ? item.weight : parseFloat(item.weight) || 0;
 
           // If DPO item doesn't have prices, fetch from part as fallback
-          if ((priceA === null || priceB === null || priceM === null) && item.part_id) {
+          if ((priceA === null || priceB === null || priceN === null) && item.part_id) {
             try {
               const partResponse = await apiClient.getPart(item.part_id) as any;
               if (!partResponse.error && partResponse) {
                 if (priceA === null) priceA = partResponse.price_a || null;
                 if (priceB === null) priceB = partResponse.price_b || null;
-                if (priceM === null) priceM = partResponse.price_m || null;
+                if (priceN === null) priceN = partResponse.price_n || null;
                 if (!weight || weight <= 0) weight = parseFloat(partResponse.weight) || 0;
               }
             } catch (error) {
@@ -1022,7 +1022,7 @@ export const DirectPurchaseOrder = ({
             purchasePrice: item.purchase_price || "",
             priceA: priceA !== null && priceA !== undefined ? priceA : "",
             priceB: priceB !== null && priceB !== undefined ? priceB : "",
-            priceM: priceM !== null && priceM !== undefined ? priceM : "",
+            priceN: priceN !== null && priceN !== undefined ? priceN : "",
             weight,
           };
         })
@@ -1274,8 +1274,8 @@ export const DirectPurchaseOrder = ({
       cachedPart?.priceA != null ? Number(cachedPart.priceA) : null;
     const cachedPriceB =
       cachedPart?.priceB != null ? Number(cachedPart.priceB) : null;
-    const cachedPriceM =
-      cachedPart?.priceM != null ? Number(cachedPart.priceM) : null;
+    const cachedPriceN =
+      cachedPart?.priceN != null ? Number(cachedPart.priceN) : null;
 
     try {
       setLoadingHistory(true);
@@ -1299,7 +1299,7 @@ export const DirectPurchaseOrder = ({
         setPartHistory({
           priceA: cachedPriceA,
           priceB: cachedPriceB,
-          priceM: cachedPriceM,
+          priceN: cachedPriceN,
           lastPurchasePrice: null,
           lastPurchaseDate: null,
           lastPurchaseDpoNo: null,
@@ -1320,8 +1320,8 @@ export const DirectPurchaseOrder = ({
         response?.price_a != null ? Number(response.price_a) : cachedPriceA;
       const priceB =
         response?.price_b != null ? Number(response.price_b) : cachedPriceB;
-      const priceM =
-        response?.price_m != null ? Number(response.price_m) : cachedPriceM;
+      const priceN =
+        response?.price_n != null ? Number(response.price_n) : cachedPriceN;
       const lastPurchasePrice =
         response?.last_purchase_price != null
           ? roundPurchasePrice(Number(response.last_purchase_price))
@@ -1352,7 +1352,7 @@ export const DirectPurchaseOrder = ({
       setPartHistory({
         priceA: priceA !== null && priceA !== undefined ? Number(priceA) : null,
         priceB: priceB !== null && priceB !== undefined ? Number(priceB) : null,
-        priceM: priceM !== null && priceM !== undefined ? Number(priceM) : null,
+        priceN: priceN !== null && priceN !== undefined ? Number(priceN) : null,
         lastPurchasePrice: lastPurchasePrice !== null && lastPurchasePrice !== undefined ? Number(lastPurchasePrice) : null,
         lastPurchaseDate,
         lastPurchaseDpoNo,
@@ -1419,7 +1419,7 @@ export const DirectPurchaseOrder = ({
       setPartHistory({
         priceA: cachedPriceA,
         priceB: cachedPriceB,
-        priceM: cachedPriceM,
+        priceN: cachedPriceN,
         lastPurchasePrice: null,
         lastPurchaseDate: null,
         lastPurchaseDpoNo: null,
@@ -1729,14 +1729,14 @@ export const DirectPurchaseOrder = ({
     () =>
       parts.map((p) => ({
         value: p.id,
-        label: [p.masterPartNo, p.partNo].filter(Boolean).join(" | "),
+        label: [p.masterPartNo, p.partNo].filter(Boolean).join(" / "),
         description: [
           p.description || null,
           p.brand ? `Brand: ${p.brand}` : null,
           p.partNo ? `Master: ${p.partNo}` : null,
         ]
           .filter(Boolean)
-          .join(" | "),
+          .join(" / "),
         ...buildPartSearchableSelectFields(p),
       })),
     [parts],
@@ -1874,7 +1874,7 @@ export const DirectPurchaseOrder = ({
             typeof item.purchasePrice === "number" ? item.purchasePrice : 0,
           );
 
-          // Price A / Price B / Price M are persisted to the Part record by
+          // Price A / Price B / Price N are persisted to the Part record by
           // the inline blur handler (`handleSaveRowPrice`), so they are
           // intentionally NOT included here to avoid a second write/snapshot
           // on the DPO line item every time the form is saved.
@@ -2759,12 +2759,12 @@ export const DirectPurchaseOrder = ({
                   />
                 </div>
 
-                {/* Price M */}
+                {/* Price N */}
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Price M</Label>
+                  <Label className="text-xs text-muted-foreground">Price N</Label>
                   <p className="text-sm font-medium">
-                    {(partHistory.priceM !== null && partHistory.priceM !== undefined && !isNaN(Number(partHistory.priceM)))
-                      ? Number(partHistory.priceM).toLocaleString("en-PK", { style: "currency", currency: "PKR" })
+                    {(partHistory.priceN !== null && partHistory.priceN !== undefined && !isNaN(Number(partHistory.priceN)))
+                      ? Number(partHistory.priceN).toLocaleString("en-PK", { style: "currency", currency: "PKR" })
                       : "N/A"}
                   </p>
                 </div>

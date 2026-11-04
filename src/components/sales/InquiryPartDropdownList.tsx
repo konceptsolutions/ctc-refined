@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { formatPartIdentityFromUi } from "@/lib/part-identity";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 
 export type InquiryDropdownPart = {
   id?: string;
@@ -84,10 +84,6 @@ export function InquiryPartDropdownList({
           const availablePcs = getAvailableQty(part);
           const brandLabel =
             part.brand && part.brand !== "N/A" ? part.brand : "";
-          const partIdentifiers = formatPartIdentityFromUi({
-            partNo: part.partNo,
-            masterPart: part.masterPart,
-          });
           return (
             <button
               key={String(vi.key)}
@@ -118,9 +114,11 @@ export function InquiryPartDropdownList({
               )}
             >
               <div className="flex items-center justify-between gap-2 min-w-0">
-                <div className="font-semibold text-sm truncate">
-                  {partIdentifiers}
-                </div>
+                <PartIdentityBadges
+                  partNo={part.partNo}
+                  masterPart={part.masterPart}
+                  mutedOnParent={idx === safeHighlight}
+                />
                 <span
                   className={cn(
                     "text-[11px] font-semibold px-2 py-0.5 rounded-full tabular-nums shrink-0",

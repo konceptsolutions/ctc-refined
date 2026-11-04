@@ -88,7 +88,7 @@ interface PartFormData {
   avgCost: string;
   priceA: string;
   priceB: string;
-  priceM: string;
+  priceN: string;
   rackNo: string;
   origin: string;
   grade: string;
@@ -132,7 +132,7 @@ const initialFormData: PartFormData = {
   avgCost: "0.00",
   priceA: "0.00",
   priceB: "0.00",
-  priceM: "0.00",
+  priceN: "0.00",
   rackNo: "",
   origin: "",
   grade: "B",
@@ -670,9 +670,9 @@ export const CompactPartForm = ({
               part.price_b !== null && part.price_b !== undefined
                 ? part.price_b.toString()
                 : "0.00";
-            const priceM =
-              part.price_m !== null && part.price_m !== undefined
-                ? part.price_m.toString()
+            const priceN =
+              part.price_n !== null && part.price_n !== undefined
+                ? part.price_n.toString()
                 : "0.00";
             const purchasePrice =
               part.purchasePrice !== null && part.purchasePrice !== undefined
@@ -740,7 +740,7 @@ export const CompactPartForm = ({
               avgCost: avgCost,
               priceA: priceA,
               priceB: priceB,
-              priceM: priceM,
+              priceN: priceN,
               // Step 9 - Other fields
               hsCode: hsCode,
               uom: uom,
@@ -855,8 +855,8 @@ export const CompactPartForm = ({
     if (priceANum > 0) return true;
     const priceBNum = data.priceB?.trim() ? parseFloat(data.priceB) : 0;
     if (priceBNum > 0) return true;
-    const priceMNum = data.priceM?.trim() ? parseFloat(data.priceM) : 0;
-    if (priceMNum > 0) return true;
+    const priceNNum = data.priceN?.trim() ? parseFloat(data.priceN) : 0;
+    if (priceNNum > 0) return true;
     // Only check origin if it's not empty (empty string is default)
     if (data.origin?.trim()) return true;
     if (data.smc?.trim()) return true;
@@ -1439,7 +1439,7 @@ export const CompactPartForm = ({
               avgCost: part.avgCost?.toString() || "0.00",
               priceA: part.price_a?.toString() || "0.00",
               priceB: part.price_b?.toString() || "0.00",
-              priceM: part.price_m?.toString() || "0.00",
+              priceN: part.price_n?.toString() || "0.00",
               rackNo: "",
               origin: part.origin ? String(part.origin).trim() : "",
               grade: part.grade || "B",
@@ -1503,7 +1503,7 @@ export const CompactPartForm = ({
         avgCost: "0.00",
         priceA: "0.00",
         priceB: "0.00",
-        priceM: "0.00",
+        priceN: "0.00",
         rackNo: "",
         origin: "",
         grade: "B",
@@ -2361,8 +2361,8 @@ export const CompactPartForm = ({
             <Input
               type="number"
               step="0.01"
-              value={formData.priceM}
-              onChange={(e) => handleInputChange("priceM", e.target.value)}
+              value={formData.priceN}
+              onChange={(e) => handleInputChange("priceN", e.target.value)}
               className="h-7 text-xs"
             />
           </div>

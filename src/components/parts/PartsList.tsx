@@ -30,6 +30,7 @@ export interface Part {
   price: number | null;
   priceA?: number | null;
   priceB?: number | null;
+  priceN?: number | null;
   stock: number;
   reservedStock?: number;
   masterPartNo?: string;
@@ -156,6 +157,9 @@ export const PartsList = ({
                 <TableHead className="font-bold text-foreground text-xs py-2 text-right">
                   Price B
                 </TableHead>
+                <TableHead className="font-bold text-foreground text-xs py-2 text-right">
+                  Price N
+                </TableHead>
                 <TableHead className="font-bold text-foreground text-xs py-2">
                   Weight
                 </TableHead>
@@ -210,6 +214,9 @@ export const PartsList = ({
                     <TableCell className="text-right text-foreground text-xs py-1.5">
                       {formatCurrency(part.priceB ?? null)}
                     </TableCell>
+                    <TableCell className="text-right text-foreground text-xs py-1.5">
+                      {formatCurrency(part.priceN ?? null)}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-xs py-1.5">
                       {part.weight}
                     </TableCell>
@@ -225,7 +232,7 @@ export const PartsList = ({
               {!loading && paginatedParts.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={11}
                     className="text-center text-xs text-muted-foreground py-8"
                   >
                     No parts found

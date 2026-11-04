@@ -449,8 +449,10 @@ type ImportPurchaseOrderReceiveLine = {
   totalWeight: number;
   priceA: number;
   priceB: number;
+  priceN: number;
   priceAText: string;
   priceBText: string;
+  priceNText: string;
   orderQty: number;
   receiveQty: string;
   additionalQty: number;
@@ -1732,8 +1734,10 @@ const createEmptyReceiveLine = (): ImportPurchaseOrderReceiveLine => ({
   totalWeight: 0,
   priceA: 0,
   priceB: 0,
+  priceN: 0,
   priceAText: "",
   priceBText: "",
+  priceNText: "",
   orderQty: 0,
   receiveQty: "",
   additionalQty: 0,
@@ -2055,7 +2059,7 @@ const buildSortedPartSelectOptions = (
         );
   return sortedParts.map((p) => ({
     value: p.id,
-    label: `${p.masterPartNo || "-"} | ${p.partNo}`,
+    label: `${p.masterPartNo || "-"} / ${p.partNo}`,
     description: String(p.description || "").trim() || "-",
     listOnlyDescription: String(p.brand || "").trim() || undefined,
     ...buildPartSearchableSelectFields(p),
@@ -2116,6 +2120,7 @@ const buildQuotationPartFieldsFromSelection = (
     weight: Number(part.weight ?? alternate.weight ?? fromOptions?.weight ?? 0),
     priceA: Number(part.priceA ?? part.price_a ?? 0),
     priceB: Number(part.priceB ?? part.price_b ?? 0),
+    priceN: Number(part.priceN ?? part.price_n ?? 0),
   };
 };
 
@@ -10285,7 +10290,7 @@ const PurchaseOrderTab = ({
   const [viewOrder, setViewOrder] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [viewItemPriceDrafts, setViewItemPriceDrafts] = useState<
-    Record<string, { priceA: string; priceB: string }>
+    Record<string, { priceA: string; priceB: string; priceN: string }>
   >({});
   const [updatingViewPrices, setUpdatingViewPrices] = useState(false);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
@@ -10658,13 +10663,17 @@ const PurchaseOrderTab = ({
       const response = await apiClient.getImportPurchaseOrder(orderId);
       const orderData = (response as any)?.data || response;
       setViewOrder(orderData);
-      const drafts: Record<string, { priceA: string; priceB: string }> = {};
+      const drafts: Record<
+        string,
+        { priceA: string; priceB: string; priceN: string }
+      > = {};
       for (const item of orderData?.items || []) {
         const key = String(item.id || item.partId || "");
         if (!key) continue;
         drafts[key] = {
           priceA: formatRateInput(Number(item.priceA ?? item.price_a ?? 0)),
           priceB: formatRateInput(Number(item.priceB ?? item.price_b ?? 0)),
+          priceN: formatRateInput(Number(item.priceN ?? item.price_n ?? 0)),
         };
       }
       setViewItemPriceDrafts(drafts);
@@ -10682,7 +10691,7 @@ const PurchaseOrderTab = ({
 
   const handleViewItemPriceChange = (
     itemKey: string,
-    field: "priceA" | "priceB",
+    field: "priceA" | "priceB" | "priceN",
     raw: string,
   ) => {
     if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
@@ -10691,6 +10700,7 @@ const PurchaseOrderTab = ({
       [itemKey]: {
         priceA: prev[itemKey]?.priceA ?? "",
         priceB: prev[itemKey]?.priceB ?? "",
+        priceN: prev[itemKey]?.priceN ?? "",
         [field]: raw,
       },
     }));
@@ -10707,6 +10717,7 @@ const PurchaseOrderTab = ({
       partId: string;
       priceA: number;
       priceB: number;
+      priceN: number;
       label: string;
     };
 
@@ -10721,15 +10732,18 @@ const PurchaseOrderTab = ({
 
       const priceA = parseRateInput(draft.priceA);
       const priceB = parseRateInput(draft.priceB);
+      const priceN = parseRateInput(draft.priceN);
       if (
         !Number.isFinite(priceA) ||
         priceA < 0 ||
         !Number.isFinite(priceB) ||
-        priceB < 0
+        priceB < 0 ||
+        !Number.isFinite(priceN) ||
+        priceN < 0
       ) {
         toast({
           title: "Invalid prices",
-          description: `Enter valid non-negative Price A / B for ${
+          description: `Enter valid non-negative Price A / B / N for ${
             item.masterPartNo || item.partNo || "item"
           }.`,
           variant: "destructive",
@@ -10739,9 +10753,11 @@ const PurchaseOrderTab = ({
 
       const originalA = Number(item.priceA ?? item.price_a ?? 0) || 0;
       const originalB = Number(item.priceB ?? item.price_b ?? 0) || 0;
+      const originalN = Number(item.priceN ?? item.price_n ?? 0) || 0;
       if (
         Math.abs(priceA - originalA) < 0.00005 &&
-        Math.abs(priceB - originalB) < 0.00005
+        Math.abs(priceB - originalB) < 0.00005 &&
+        Math.abs(priceN - originalN) < 0.00005
       ) {
         continue;
       }
@@ -10751,6 +10767,7 @@ const PurchaseOrderTab = ({
         partId,
         priceA,
         priceB,
+        priceN,
         label:
           [item.masterPartNo || item.master_part_no, item.partNo || item.part_no]
             .filter(Boolean)
@@ -10761,7 +10778,7 @@ const PurchaseOrderTab = ({
     if (changes.length === 0) {
       toast({
         title: "No price changes",
-        description: "Edit Price A or Price B on one or more items first.",
+        description: "Edit Price A, Price B or Price N on one or more items first.",
       });
       return;
     }
@@ -10773,6 +10790,7 @@ const PurchaseOrderTab = ({
           apiClient.updatePartPrices(change.partId, {
             priceA: change.priceA,
             priceB: change.priceB,
+            priceN: change.priceN,
             reason: `Updated from Purchase Invoice ${poLabel}`.trim(),
           }),
         ),
@@ -10801,6 +10819,7 @@ const PurchaseOrderTab = ({
                 ...row,
                 priceA: change.priceA,
                 priceB: change.priceB,
+                priceN: change.priceN,
               };
             }),
           };
@@ -10811,6 +10830,7 @@ const PurchaseOrderTab = ({
             next[change.itemKey] = {
               priceA: formatRateInput(change.priceA),
               priceB: formatRateInput(change.priceB),
+              priceN: formatRateInput(change.priceN),
             };
           }
           return next;
@@ -10836,13 +10856,13 @@ const PurchaseOrderTab = ({
       } else {
         toast({
           title: "Prices updated",
-          description: `Updated Price A / B for ${succeeded.length} item(s).`,
+          description: `Updated Price A / B / N for ${succeeded.length} item(s).`,
         });
       }
     } catch (error: any) {
       toast({
         title: "Failed to update prices",
-        description: error?.message || "Could not update Price A / B.",
+        description: error?.message || "Could not update Price A / B / N.",
         variant: "destructive",
       });
     } finally {
@@ -11247,6 +11267,7 @@ const PurchaseOrderTab = ({
         );
         const priceA = Number(item.priceA ?? item.price_a ?? 0);
         const priceB = Number(item.priceB ?? item.price_b ?? 0);
+        const priceN = Number(item.priceN ?? item.price_n ?? 0);
         return {
           id: item.id,
           partId: String(item.partId || item.part_id || "").trim(),
@@ -11270,8 +11291,10 @@ const PurchaseOrderTab = ({
           totalWeight: amounts.totalWeight,
           priceA,
           priceB,
+          priceN,
           priceAText: formatRateInput(priceA),
           priceBText: formatRateInput(priceB),
+          priceNText: formatRateInput(priceN),
           orderQty,
           receiveQty: String(existingReceive),
           additionalQty: variance.additionalQty,
@@ -11554,11 +11577,16 @@ const PurchaseOrderTab = ({
 
   const handleReceivePriceChange = (
     lineId: string,
-    field: "priceA" | "priceB",
+    field: "priceA" | "priceB" | "priceN",
     raw: string,
   ) => {
     if (raw !== "" && !RATE_INPUT_PATTERN.test(raw)) return;
-    const textField = field === "priceA" ? "priceAText" : "priceBText";
+    const textField =
+      field === "priceA"
+        ? "priceAText"
+        : field === "priceB"
+          ? "priceBText"
+          : "priceNText";
     setReceiveLines((prev) =>
       prev.map((line) =>
         line.id === lineId
@@ -11572,8 +11600,16 @@ const PurchaseOrderTab = ({
     );
   };
 
-  const handleReceivePriceBlur = (lineId: string, field: "priceA" | "priceB") => {
-    const textField = field === "priceA" ? "priceAText" : "priceBText";
+  const handleReceivePriceBlur = (
+    lineId: string,
+    field: "priceA" | "priceB" | "priceN",
+  ) => {
+    const textField =
+      field === "priceA"
+        ? "priceAText"
+        : field === "priceB"
+          ? "priceBText"
+          : "priceNText";
     setReceiveLines((prev) =>
       prev.map((line) =>
         line.id === lineId
@@ -11674,8 +11710,10 @@ const PurchaseOrderTab = ({
                 totalWeight: 0,
                 priceA: 0,
                 priceB: 0,
+                priceN: 0,
                 priceAText: "",
                 priceBText: "",
+                priceNText: "",
                 loadingPartDetails: false,
               }
             : line,
@@ -11723,6 +11761,7 @@ const PurchaseOrderTab = ({
           };
           const priceA = Number(fields.priceA ?? 0);
           const priceB = Number(fields.priceB ?? 0);
+          const priceN = Number(fields.priceN ?? 0);
           const amounts = computeImportReceiveLineAmounts(next, next.receiveQty);
           const updatedRates = recalcReceiveLineRates(
             { ...next, ...amounts },
@@ -11735,8 +11774,10 @@ const PurchaseOrderTab = ({
             fcRateText: formatFcRateInput(updatedRates.fcRate),
             priceA,
             priceB,
+            priceN,
             priceAText: formatRateInput(priceA),
             priceBText: formatRateInput(priceB),
+            priceNText: formatRateInput(priceN),
             loadingPartDetails: false,
           };
         }),
@@ -12060,6 +12101,7 @@ const PurchaseOrderTab = ({
             ? {
                 priceA: line.priceA,
                 priceB: line.priceB,
+                priceN: line.priceN,
               }
             : {}),
         })),
@@ -12574,7 +12616,7 @@ const PurchaseOrderTab = ({
               {isInvoiceMode ? (
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="text-xs text-muted-foreground">
-                    Edit Price A / B on items, then update all changed prices.
+                    Edit Price A / B / N on items, then update all changed prices.
                   </p>
                   <Button
                     type="button"
@@ -12671,6 +12713,7 @@ const PurchaseOrderTab = ({
                           <th className="text-right p-2">Exp</th>
                           <th className="text-right p-2">Price A</th>
                           <th className="text-right p-2">Price B</th>
+                          <th className="text-right p-2">Price N</th>
                           <th className="text-right p-2">Unit Cost</th>
                           <th className="text-right p-2">Cost</th>
                           <th className="text-center p-2 min-w-[72px]">Action</th>
@@ -12751,6 +12794,9 @@ const PurchaseOrderTab = ({
                         priceB: formatRateInput(
                           Number(item.priceB ?? item.price_b ?? 0),
                         ),
+                        priceN: formatRateInput(
+                          Number(item.priceN ?? item.price_n ?? 0),
+                        ),
                       };
                       return (
                       <tr key={item.id || itemKey} className="border-t">
@@ -12828,6 +12874,20 @@ const PurchaseOrderTab = ({
                                   handleViewItemPriceChange(
                                     itemKey,
                                     "priceB",
+                                    e.target.value,
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="p-2">
+                              <Input
+                                className="h-8 w-[6.5rem] ml-auto text-right tabular-nums"
+                                value={priceDraft.priceN}
+                                disabled={updatingViewPrices}
+                                onChange={(e) =>
+                                  handleViewItemPriceChange(
+                                    itemKey,
+                                    "priceN",
                                     e.target.value,
                                   )
                                 }
@@ -13071,6 +13131,7 @@ const PurchaseOrderTab = ({
                           <th className="text-right p-2">Exp</th>
                           <th className="text-right p-2">Price A</th>
                           <th className="text-right p-2">Price B</th>
+                          <th className="text-right p-2">Price N</th>
                           <th className="text-right p-2">Unit Cost</th>
                           <th className="text-right p-2">Cost</th>
                         </>
@@ -13249,6 +13310,22 @@ const PurchaseOrderTab = ({
                                   )
                                 }
                                 onBlur={() => handleReceivePriceBlur(line.id, "priceB")}
+                              />
+                            </td>
+                            <td className="p-2 text-right">
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                className="h-8 w-24 ml-auto text-right"
+                                value={line.priceNText}
+                                onChange={(event) =>
+                                  handleReceivePriceChange(
+                                    line.id,
+                                    "priceN",
+                                    event.target.value,
+                                  )
+                                }
+                                onBlur={() => handleReceivePriceBlur(line.id, "priceN")}
                               />
                             </td>
                             <td className="p-2 text-right tabular-nums font-medium">

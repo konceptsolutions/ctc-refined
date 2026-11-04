@@ -4196,7 +4196,7 @@ router.get("/adjustments", async (req: Request, res: Response) => {
           shelf_no: item.Shelf?.shelfNo,
           priceA: item.priceA,
           priceB: item.priceB,
-          priceM: item.priceM,
+          priceN: item.priceN,
         })),
       };
     });
@@ -4462,7 +4462,7 @@ router.post("/adjustments", async (req: Request, res: Response) => {
               shelfId: item.shelf_id || null,
               priceA: item.priceA ? parseFloat(item.priceA) : null,
               priceB: item.priceB ? parseFloat(item.priceB) : null,
-              priceM: item.priceM ? parseFloat(item.priceM) : null,
+              priceN: item.priceN ? parseFloat(item.priceN) : null,
             })),
           },
         } as any,
@@ -4540,15 +4540,15 @@ router.post("/adjustments", async (req: Request, res: Response) => {
           item.priceB !== undefined && item.priceB !== null
             ? parseFloat(item.priceB)
             : undefined;
-        const priceM =
-          item.priceM !== undefined && item.priceM !== null
-            ? parseFloat(item.priceM)
+        const priceN =
+          item.priceN !== undefined && item.priceN !== null
+            ? parseFloat(item.priceN)
             : undefined;
 
         if (
           priceA !== undefined ||
           priceB !== undefined ||
-          priceM !== undefined
+          priceN !== undefined
         ) {
           const part = await tx.part.findUnique({
             where: { id: item.part_id },
@@ -4602,22 +4602,22 @@ router.post("/adjustments", async (req: Request, res: Response) => {
             }
 
             if (
-              priceM !== undefined &&
-              !isNaN(priceM) &&
-              priceM !== part.priceM
+              priceN !== undefined &&
+              !isNaN(priceN) &&
+              priceN !== part.priceN
             ) {
-              updateData.priceM = priceM;
+              updateData.priceN = priceN;
               await tx.priceHistory.create({
                 data: {
                   id: crypto.randomUUID(),
                   partId: part.id,
                   partNo: part.partNo,
                   description: part.description,
-                  priceField: "priceM",
+                  priceField: "priceN",
                   updateType: "adjustment",
-                  oldValue: part.priceM || 0,
-                  newValue: priceM,
-                  reason: `Price M updated via Adjust Inventory (${subject || "No subject"})`,
+                  oldValue: part.priceN || 0,
+                  newValue: priceN,
+                  reason: `Price N updated via Adjust Inventory (${subject || "No subject"})`,
                   updatedBy: "System",
                 } as any,
               });
@@ -5028,7 +5028,7 @@ router.get("/adjustments/:id", async (req: Request, res: Response) => {
         cost: item.cost,
         priceA: item.priceA || 0,
         priceB: item.priceB || 0,
-        priceM: item.priceM || 0,
+        priceN: item.priceN || 0,
         notes: item.notes,
         rack_id: item.rackId,
         rack_code: item.Rack?.codeNo || null,
@@ -5189,9 +5189,9 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
                   item.priceB !== undefined && item.priceB !== null
                     ? parseFloat(item.priceB)
                     : null,
-                priceM:
-                  item.priceM !== undefined && item.priceM !== null
-                    ? parseFloat(item.priceM)
+                priceN:
+                  item.priceN !== undefined && item.priceN !== null
+                    ? parseFloat(item.priceN)
                     : null,
               })),
             },
@@ -5418,7 +5418,7 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
             part_id: item.part_id,
             priceA: item.priceA,
             priceB: item.priceB,
-            priceM: item.priceM,
+            priceN: item.priceN,
           });
 
           const priceA =
@@ -5429,21 +5429,21 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
             item.priceB !== undefined && item.priceB !== null
               ? parseFloat(item.priceB)
               : undefined;
-          const priceM =
-            item.priceM !== undefined && item.priceM !== null
-              ? parseFloat(item.priceM)
+          const priceN =
+            item.priceN !== undefined && item.priceN !== null
+              ? parseFloat(item.priceN)
               : undefined;
 
           console.log("[PRICE_HISTORY_DEBUG] Parsed prices:", {
             priceA,
             priceB,
-            priceM,
+            priceN,
           });
 
           if (
             priceA !== undefined ||
             priceB !== undefined ||
-            priceM !== undefined
+            priceN !== undefined
           ) {
             const part = await tx.part.findUnique({
               where: { id: item.part_id },
@@ -5454,7 +5454,7 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
                 partNo: part.partNo,
                 currentPriceA: part.priceA,
                 currentPriceB: part.priceB,
-                currentPriceM: part.priceM,
+                currentPriceN: part.priceN,
               });
 
               const updateData: any = {};
@@ -5504,22 +5504,22 @@ router.put("/adjustments/:id", async (req: Request, res: Response) => {
               }
 
               if (
-                priceM !== undefined &&
-                !isNaN(priceM) &&
-                priceM !== part.priceM
+                priceN !== undefined &&
+                !isNaN(priceN) &&
+                priceN !== part.priceN
               ) {
-                updateData.priceM = priceM;
+                updateData.priceN = priceN;
                 await tx.priceHistory.create({
                   data: {
                     id: crypto.randomUUID(),
                     partId: part.id,
                     partNo: part.partNo,
                     description: part.description,
-                    priceField: "priceM",
+                    priceField: "priceN",
                     updateType: "adjustment",
-                    oldValue: part.priceM || 0,
-                    newValue: priceM,
-                    reason: `Price M updated via Adjust Inventory (${subject || "No subject"})`,
+                    oldValue: part.priceN || 0,
+                    newValue: priceN,
+                    reason: `Price N updated via Adjust Inventory (${subject || "No subject"})`,
                     updatedBy: "System",
                   } as any,
                 });
@@ -9810,7 +9810,7 @@ router.get(
             id: true,
             priceA: true,
             priceB: true,
-            priceM: true,
+            priceN: true,
             purchasePrice: true,
             cost: true,
             Brand: { select: { name: true } },
@@ -9856,7 +9856,7 @@ router.get(
         brand_name: part.Brand?.name || null,
         price_a: part.priceA ?? null,
         price_b: part.priceB ?? null,
-        price_m: part.priceM ?? null,
+        price_n: part.priceN ?? null,
         catalog_purchase_price: catalogPurchase,
         last_purchase_price: lastItem ? Number(lastItem.purchasePrice) : null,
         last_purchase_date: lastItem?.DirectPurchaseOrder?.date || null,
@@ -9980,9 +9980,9 @@ router.get(
             item.priceB !== null && item.priceB !== undefined
               ? item.priceB
               : null,
-          price_m:
-            item.priceM !== null && item.priceM !== undefined
-              ? item.priceM
+          price_n:
+            item.priceN !== null && item.priceN !== undefined
+              ? item.priceN
               : null,
           rack_id: item.rackId,
           rack_name: item.Rack?.codeNo || null,
@@ -10153,7 +10153,7 @@ router.post("/direct-purchase-orders", async (req: Request, res: Response) => {
                   ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
-              priceM: item.price_m != null ? Number(item.price_m) : null,
+              priceN: item.price_n != null ? Number(item.price_n) : null,
               rackId: item.rack_id || null,
               shelfId: item.shelf_id || null,
             })),
@@ -10887,7 +10887,7 @@ router.put(
                   ),
               priceA: item.price_a != null ? Number(item.price_a) : null,
               priceB: item.price_b != null ? Number(item.price_b) : null,
-              priceM: item.price_m != null ? Number(item.price_m) : null,
+              priceN: item.price_n != null ? Number(item.price_n) : null,
               rackId: item.rack_id || null,
               shelfId: item.shelf_id || null,
             })),

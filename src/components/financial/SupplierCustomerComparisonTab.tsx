@@ -24,6 +24,7 @@ import {
   SearchableSelectOption,
 } from "@/components/ui/searchable-select";
 import { VoucherViewDialog } from "@/components/vouchers/VoucherViewDialog";
+import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import {
   balanceHeaderClass,
   balanceValueClass,
@@ -36,6 +37,8 @@ import {
   PartyLedgerHeader,
   type LedgerPartyDetails,
 } from "@/components/financial/PartyLedgerHeader";
+import { printSupplierCustomerComparison } from "@/utils/printSupplierCustomerComparisonPdf";
+import { usePageActions } from "@/permissions/pageActions";
 
 interface LedgerEntry {
   id: number | string;
@@ -74,6 +77,7 @@ const closingBalance = (entries: LedgerEntry[]) => {
 
 export const SupplierCustomerComparisonTab = () => {
   const { toast } = useToast();
+  const { canPrint } = usePageActions("financial.supplier-customer-comparison");
   const [supplierAccounts, setSupplierAccounts] = useState<PartyAccount[]>([]);
   const [customerAccounts, setCustomerAccounts] = useState<PartyAccount[]>([]);
   const [supplierAccountId, setSupplierAccountId] = useState("");
@@ -89,6 +93,7 @@ export const SupplierCustomerComparisonTab = () => {
   const [supplierParty, setSupplierParty] = useState<LedgerPartyDetails | null>(null);
   const [customerParty, setCustomerParty] = useState<LedgerPartyDetails | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hasCompared, setHasCompared] = useState(false);
   const [viewingVoucher, setViewingVoucher] = useState<{
     id?: string | null;
     number?: string | null;
@@ -180,6 +185,7 @@ export const SupplierCustomerComparisonTab = () => {
       setCustomerEntries(customerData.entries);
       setSupplierParty(supplierData.party);
       setCustomerParty(customerData.party);
+      setHasCompared(true);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -188,6 +194,37 @@ export const SupplierCustomerComparisonTab = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (!hasCompared) {
+      toast({
+        title: "Compare first",
+        description: "Load the ledgers with Compare before printing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const opened = printSupplierCustomerComparison({
+      fromDate,
+      toDate,
+      supplierAccountLabel: supplierLabel || undefined,
+      customerAccountLabel: customerLabel || undefined,
+      supplierName: supplierParty?.name || supplierLabel || null,
+      customerName: customerParty?.name || customerLabel || null,
+      supplierBalance,
+      customerBalance,
+      combinedBalance,
+      supplierEntries,
+      customerEntries,
+    });
+    if (!opened) {
+      toast({
+        title: "Error",
+        description: "Please allow popups to print the report",
+        variant: "destructive",
+      });
     }
   };
 
@@ -291,10 +328,19 @@ export const SupplierCustomerComparisonTab = () => {
   return (
     <Card>
       <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <ArrowLeftRight className="h-5 w-5 text-primary" />
-          Supplier Customer Comparison
-        </CardTitle>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <ArrowLeftRight className="h-5 w-5 text-primary" />
+            Supplier Customer Comparison
+          </CardTitle>
+          {canPrint && (
+            <PrintPdfButton
+              onPrint={handlePrint}
+              label="Print PDF"
+              disabled={loading || !hasCompared}
+            />
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

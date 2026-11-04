@@ -78,6 +78,7 @@ import {
   formatStockLocationsDisplay,
 } from "@/lib/stockLocationDisplay";
 import { InquiryPartDropdownList } from "./InquiryPartDropdownList";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 
 interface Inquiry {
   id: string;
@@ -99,7 +100,7 @@ interface InquiryItem {
   purchasePrice?: number;
   priceA?: number;
   priceB?: number;
-  priceM?: number;
+  priceN?: number;
   location?: string;
   stock?: number;
   reservedQty?: number;
@@ -138,7 +139,7 @@ interface PartDetail {
   cost: string;
   priceA: string;
   priceB: string;
-  priceM: string;
+  priceN: string;
   origin: string;
   grade: string;
   status: string;
@@ -237,7 +238,7 @@ const transformPart = (
   cost: formatPartNumber(p.cost),
   priceA: formatPartNumber(p.price_a || p.priceA),
   priceB: formatPartNumber(p.price_b || p.priceB),
-  priceM: formatPartNumber(p.price_m || p.priceM),
+  priceN: formatPartNumber(p.price_n || p.priceN),
   origin: String(p.origin || "").trim() || "N/A",
   grade: String(p.grade || "A").trim(),
   status: (p.status || "active").toUpperCase() === "ACTIVE" ? "A" : "I",
@@ -354,8 +355,8 @@ export const SalesInquiry = ({
     unitPrice?: number;
     priceA?: number;
     priceB?: number;
-    priceM?: number;
-    selectedPriceType?: "A" | "B" | "M";
+    priceN?: number;
+    selectedPriceType?: "A" | "B" | "N";
   };
   const makeLookupRow = useCallback((): LookupRow => ({
     id:
@@ -438,9 +439,16 @@ export const SalesInquiry = ({
   const [partImageModalIndex, setPartImageModalIndex] = useState(0);
   const [partImageModalTitle, setPartImageModalTitle] = useState("");
   const [partPriceLastUpdatedByPartId, setPartPriceLastUpdatedByPartId] =
-    useState<Record<string, { priceA: string | null; priceB: string | null }>>(
-      {},
-    );
+    useState<
+      Record<
+        string,
+        {
+          priceA: string | null;
+          priceB: string | null;
+          priceN?: string | null;
+        }
+      >
+    >({});
   const loadedPartPriceDatesRef = useRef<Set<string>>(new Set());
   const [loadingPartDetails, setLoadingPartDetails] = useState(false);
   const [purchaseOrderHistory, setPurchaseOrderHistory] = useState<any[]>([]);
@@ -465,17 +473,23 @@ export const SalesInquiry = ({
   const [alternateItems, setAlternateItems] = useState<PartDetail[]>([]);
   const [loadingAlternateItems, setLoadingAlternateItems] = useState(false);
   const [altPriceEdits, setAltPriceEdits] = useState<
-    Record<string, { priceA: string; priceB: string }>
+    Record<string, { priceA: string; priceB: string; priceN: string }>
   >({});
   const [altPriceBaselines, setAltPriceBaselines] = useState<
-    Record<string, { priceA: number | null; priceB: number | null }>
+    Record<
+      string,
+      { priceA: number | null; priceB: number | null; priceN: number | null }
+    >
   >({});
   const [savingAltPriceById, setSavingAltPriceById] = useState<
     Record<string, boolean>
   >({});
   const [savingAltPrices, setSavingAltPrices] = useState(false);
   const [lookupRowPriceBaselines, setLookupRowPriceBaselines] = useState<
-    Record<string, { priceA: number | null; priceB: number | null }>
+    Record<
+      string,
+      { priceA: number | null; priceB: number | null; priceN: number | null }
+    >
   >({});
   const [savingLookupRowPrice, setSavingLookupRowPrice] = useState<
     Record<string, boolean>
@@ -585,7 +599,7 @@ export const SalesInquiry = ({
     } catch {
       setPartPriceLastUpdatedByPartId((prev) => ({
         ...prev,
-        [partId]: { priceA: null, priceB: null },
+        [partId]: { priceA: null, priceB: null, priceN: null },
       }));
     }
   }, []);
@@ -1535,22 +1549,28 @@ export const SalesInquiry = ({
   );
 
   useEffect(() => {
-    const nextEdits: Record<string, { priceA: string; priceB: string }> = {};
+    const nextEdits: Record<
+      string,
+      { priceA: string; priceB: string; priceN: string }
+    > = {};
     const nextBaselines: Record<
       string,
-      { priceA: number | null; priceB: number | null }
+      { priceA: number | null; priceB: number | null; priceN: number | null }
     > = {};
     for (const item of alternateItems) {
       if (!item.id) continue;
       const a = Number.parseFloat(item.priceA || "");
       const b = Number.parseFloat(item.priceB || "");
+      const n = Number.parseFloat(item.priceN || "");
       const priceA = Number.isFinite(a) ? a : null;
       const priceB = Number.isFinite(b) ? b : null;
+      const priceN = Number.isFinite(n) ? n : null;
       nextEdits[item.id] = {
         priceA: priceA !== null ? String(priceA) : "",
         priceB: priceB !== null ? String(priceB) : "",
+        priceN: priceN !== null ? String(priceN) : "",
       };
-      nextBaselines[item.id] = { priceA, priceB };
+      nextBaselines[item.id] = { priceA, priceB, priceN };
     }
     setAltPriceEdits(nextEdits);
     setAltPriceBaselines(nextBaselines);
@@ -1573,21 +1593,28 @@ export const SalesInquiry = ({
         draft.priceB.trim() === ""
           ? null
           : Number.parseFloat(draft.priceB);
+      const nextN =
+        (draft.priceN ?? "").trim() === ""
+          ? null
+          : Number.parseFloat(draft.priceN);
       const aOk =
         nextA === null || (Number.isFinite(nextA) && (nextA as number) >= 0);
       const bOk =
         nextB === null || (Number.isFinite(nextB) && (nextB as number) >= 0);
-      if (!aOk || !bOk) return false;
+      const nOk =
+        nextN === null || (Number.isFinite(nextN) && (nextN as number) >= 0);
+      if (!aOk || !bOk || !nOk) return false;
       return (
         (nextA ?? null) !== (base.priceA ?? null) ||
-        (nextB ?? null) !== (base.priceB ?? null)
+        (nextB ?? null) !== (base.priceB ?? null) ||
+        (nextN ?? null) !== (base.priceN ?? null)
       );
     });
   }, [alternateItems, altPriceEdits, altPriceBaselines, hidePrices]);
 
   const handleAltPriceChange = (
     partId: string,
-    field: "priceA" | "priceB",
+    field: "priceA" | "priceB" | "priceN",
     value: string,
   ) => {
     setAltPriceEdits((prev) => ({
@@ -1595,6 +1622,7 @@ export const SalesInquiry = ({
       [partId]: {
         priceA: prev[partId]?.priceA ?? "",
         priceB: prev[partId]?.priceB ?? "",
+        priceN: prev[partId]?.priceN ?? "",
         [field]: value,
       },
     }));
@@ -1885,7 +1913,7 @@ export const SalesInquiry = ({
           cost: formatNumber((p as any).cost),
           priceA: formatNumber((p as any).price_a || (p as any).priceA),
           priceB: formatNumber((p as any).price_b || (p as any).priceB),
-          priceM: formatNumber((p as any).price_m || (p as any).priceM),
+          priceN: formatNumber((p as any).price_n || (p as any).priceN),
           origin: String((p as any).origin || '').trim() || 'N/A',
           grade: String((p as any).grade || 'A').trim(),
           status: ((p as any).status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
@@ -2164,21 +2192,21 @@ export const SalesInquiry = ({
   ) => {
     const priceA = parseFloat(part.priceA || "") || 0;
     const priceB = parseFloat(part.priceB || "") || 0;
-    const priceM = parseFloat(part.priceM || "") || 0;
-    const initialPriceType: "A" | "B" | "M" | undefined = priceA
+    const priceN = parseFloat(part.priceN || "") || 0;
+    const initialPriceType: "A" | "B" | "N" | undefined = priceA
       ? "A"
       : priceB
         ? "B"
-        : priceM
-          ? "M"
+        : priceN
+          ? "N"
           : undefined;
     const initialUnit =
       initialPriceType === "A"
         ? priceA
         : initialPriceType === "B"
           ? priceB
-          : initialPriceType === "M"
-            ? priceM
+          : initialPriceType === "N"
+            ? priceN
             : 0;
 
     setLookupRows((prev) =>
@@ -2190,7 +2218,7 @@ export const SalesInquiry = ({
               search: getItemLabel(part),
               priceA,
               priceB,
-              priceM,
+              priceN,
               selectedPriceType: initialPriceType,
               unitPrice: initialUnit,
             }
@@ -2212,7 +2240,11 @@ export const SalesInquiry = ({
     }
     setLookupRowPriceBaselines((prev) => ({
       ...prev,
-      [rowId]: { priceA: priceA || null, priceB: priceB || null },
+      [rowId]: {
+        priceA: priceA || null,
+        priceB: priceB || null,
+        priceN: priceN || null,
+      },
     }));
     await handleSelectPart(part);
   };
@@ -2238,21 +2270,21 @@ export const SalesInquiry = ({
         const row = makeLookupRow();
         const priceA = parseFloat(part.priceA || "") || 0;
         const priceB = parseFloat(part.priceB || "") || 0;
-        const priceM = parseFloat(part.priceM || "") || 0;
-        const initialPriceType: "A" | "B" | "M" | undefined = priceA
+        const priceN = parseFloat(part.priceN || "") || 0;
+        const initialPriceType: "A" | "B" | "N" | undefined = priceA
           ? "A"
           : priceB
             ? "B"
-            : priceM
-              ? "M"
+            : priceN
+              ? "N"
               : undefined;
         const initialUnit =
           initialPriceType === "A"
             ? priceA
             : initialPriceType === "B"
               ? priceB
-              : initialPriceType === "M"
-                ? priceM
+              : initialPriceType === "N"
+                ? priceN
                 : 0;
 
         setLookupRows([
@@ -2262,7 +2294,7 @@ export const SalesInquiry = ({
             search: getItemLabel(part),
             priceA,
             priceB,
-            priceM,
+            priceN,
             selectedPriceType: initialPriceType,
             unitPrice: initialUnit,
           },
@@ -2270,7 +2302,11 @@ export const SalesInquiry = ({
         setActiveLookupRowId(row.id);
         setLookupRowPriceBaselines((prev) => ({
           ...prev,
-          [row.id]: { priceA: priceA || null, priceB: priceB || null },
+          [row.id]: {
+            priceA: priceA || null,
+            priceB: priceB || null,
+            priceN: priceN || null,
+          },
         }));
         await handleSelectPart(part);
         fetchPartStockForRow(part.id);
@@ -2294,13 +2330,19 @@ export const SalesInquiry = ({
   }, [initialPartId]);
 
   const applyPartPricesToCaches = useCallback(
-    (partId: string, priceA: number | null, priceB: number | null) => {
+    (
+      partId: string,
+      priceA: number | null,
+      priceB: number | null,
+      priceN: number | null,
+    ) => {
       const patchPart = (part: PartDetail): PartDetail =>
         part.id === partId
           ? {
               ...part,
               priceA: priceA === null ? "" : formatPartNumber(priceA),
               priceB: priceB === null ? "" : formatPartNumber(priceB),
+              priceN: priceN === null ? "" : formatPartNumber(priceN),
             }
           : part;
 
@@ -2319,11 +2361,14 @@ export const SalesInquiry = ({
             ...r,
             priceA: priceA ?? undefined,
             priceB: priceB ?? undefined,
+            priceN: priceN ?? undefined,
           };
           if (r.selectedPriceType === "A") {
             next.unitPrice = priceA ?? undefined;
           } else if (r.selectedPriceType === "B") {
             next.unitPrice = priceB ?? undefined;
+          } else if (r.selectedPriceType === "N") {
+            next.unitPrice = priceN ?? undefined;
           }
           return next;
         }),
@@ -2361,6 +2406,7 @@ export const SalesInquiry = ({
         partId: string;
         priceA: number | null;
         priceB: number | null;
+        priceN: number | null;
       }>,
     ) => {
       if (updates.length === 0) return;
@@ -2373,13 +2419,18 @@ export const SalesInquiry = ({
             ...p,
             priceA: u.priceA === null ? "" : formatPartNumber(u.priceA),
             priceB: u.priceB === null ? "" : formatPartNumber(u.priceB),
+            priceN: u.priceN === null ? "" : formatPartNumber(u.priceN),
           };
         }),
       );
       setAltPriceBaselines((prev) => {
         const next = { ...prev };
         for (const u of updates) {
-          next[u.partId] = { priceA: u.priceA, priceB: u.priceB };
+          next[u.partId] = {
+            priceA: u.priceA,
+            priceB: u.priceB,
+            priceN: u.priceN,
+          };
         }
         return next;
       });
@@ -2389,12 +2440,13 @@ export const SalesInquiry = ({
           next[u.partId] = {
             priceA: u.priceA === null ? "" : String(u.priceA),
             priceB: u.priceB === null ? "" : String(u.priceB),
+            priceN: u.priceN === null ? "" : String(u.priceN),
           };
         }
         return next;
       });
       for (const u of updates) {
-        applyPartPricesToCaches(u.partId, u.priceA, u.priceB);
+        applyPartPricesToCaches(u.partId, u.priceA, u.priceB, u.priceN);
       }
     },
     [applyPartPricesToCaches],
@@ -2405,6 +2457,7 @@ export const SalesInquiry = ({
     const baseline = altPriceBaselines[partId] || {
       priceA: null,
       priceB: null,
+      priceN: null,
     };
     if (!draft) return;
 
@@ -2412,13 +2465,18 @@ export const SalesInquiry = ({
       draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
     const currentB =
       draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+    const currentN =
+      (draft.priceN ?? "").trim() === ""
+        ? null
+        : Number.parseFloat(draft.priceN);
     if (
       (currentA !== null && (!Number.isFinite(currentA) || currentA < 0)) ||
-      (currentB !== null && (!Number.isFinite(currentB) || currentB < 0))
+      (currentB !== null && (!Number.isFinite(currentB) || currentB < 0)) ||
+      (currentN !== null && (!Number.isFinite(currentN) || currentN < 0))
     ) {
       toast({
         title: "Invalid prices",
-        description: "Enter valid non-negative Price A / B.",
+        description: "Enter valid non-negative Price A / B / N.",
         variant: "destructive",
       });
       return;
@@ -2426,13 +2484,16 @@ export const SalesInquiry = ({
 
     const aChanged = (currentA ?? null) !== (baseline.priceA ?? null);
     const bChanged = (currentB ?? null) !== (baseline.priceB ?? null);
-    if (!aChanged && !bChanged) return;
+    const nChanged = (currentN ?? null) !== (baseline.priceN ?? null);
+    if (!aChanged && !bChanged && !nChanged) return;
 
     setSavingAltPriceById((prev) => ({ ...prev, [partId]: true }));
     try {
-      const payload: { priceA?: number; priceB?: number } = {};
+      const payload: { priceA?: number; priceB?: number; priceN?: number } =
+        {};
       if (aChanged && currentA !== null) payload.priceA = currentA;
       if (bChanged && currentB !== null) payload.priceB = currentB;
+      if (nChanged && currentN !== null) payload.priceN = currentN;
       if (Object.keys(payload).length === 0) return;
 
       const response = (await apiClient.updatePartPrices(partId, payload)) as {
@@ -2449,13 +2510,17 @@ export const SalesInquiry = ({
 
       const nextA = aChanged ? currentA : baseline.priceA;
       const nextB = bChanged ? currentB : baseline.priceB;
-      applyAlternatePriceUpdates([{ partId, priceA: nextA, priceB: nextB }]);
+      const nextN = nChanged ? currentN : baseline.priceN;
+      applyAlternatePriceUpdates([
+        { partId, priceA: nextA, priceB: nextB, priceN: nextN },
+      ]);
       const now = new Date().toISOString();
       setPartPriceLastUpdatedByPartId((prev) => ({
         ...prev,
         [partId]: {
           priceA: aChanged ? now : (prev[partId]?.priceA ?? null),
           priceB: bChanged ? now : (prev[partId]?.priceB ?? null),
+          priceN: nChanged ? now : (prev[partId]?.priceN ?? null),
         },
       }));
       toast({ title: "Price updated" });
@@ -2484,15 +2549,21 @@ export const SalesInquiry = ({
         draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
       const nextB =
         draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+      const nextN =
+        (draft.priceN ?? "").trim() === ""
+          ? null
+          : Number.parseFloat(draft.priceN);
       return (
         (nextA ?? null) !== (base.priceA ?? null) ||
-        (nextB ?? null) !== (base.priceB ?? null)
+        (nextB ?? null) !== (base.priceB ?? null) ||
+        (nextN ?? null) !== (base.priceN ?? null)
       );
     });
     if (dirty.length === 0) {
       toast({
         title: "No price changes",
-        description: "Edit Price A or Price B on one or more alternate items first.",
+        description:
+          "Edit Price A, Price B or Price N on one or more alternate items first.",
       });
       return;
     }
@@ -2503,13 +2574,18 @@ export const SalesInquiry = ({
         draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
       const nextB =
         draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+      const nextN =
+        (draft.priceN ?? "").trim() === ""
+          ? null
+          : Number.parseFloat(draft.priceN);
       if (
         (nextA !== null && (!Number.isFinite(nextA) || nextA < 0)) ||
-        (nextB !== null && (!Number.isFinite(nextB) || nextB < 0))
+        (nextB !== null && (!Number.isFinite(nextB) || nextB < 0)) ||
+        (nextN !== null && (!Number.isFinite(nextN) || nextN < 0))
       ) {
         toast({
           title: "Invalid prices",
-          description: `Enter valid non-negative Price A / B for ${
+          description: `Enter valid non-negative Price A / B / N for ${
             item.partNo || "alternate"
           }.`,
           variant: "destructive",
@@ -2523,6 +2599,7 @@ export const SalesInquiry = ({
       partId: string;
       priceA: number | null;
       priceB: number | null;
+      priceN: number | null;
     }> = [];
     try {
       for (const item of dirty) {
@@ -2531,16 +2608,24 @@ export const SalesInquiry = ({
         const base = altPriceBaselines[partId] || {
           priceA: null,
           priceB: null,
+          priceN: null,
         };
         const currentA =
           draft.priceA.trim() === "" ? null : Number.parseFloat(draft.priceA);
         const currentB =
           draft.priceB.trim() === "" ? null : Number.parseFloat(draft.priceB);
+        const currentN =
+          (draft.priceN ?? "").trim() === ""
+            ? null
+            : Number.parseFloat(draft.priceN);
         const aChanged = (currentA ?? null) !== (base.priceA ?? null);
         const bChanged = (currentB ?? null) !== (base.priceB ?? null);
-        const payload: { priceA?: number; priceB?: number } = {};
+        const nChanged = (currentN ?? null) !== (base.priceN ?? null);
+        const payload: { priceA?: number; priceB?: number; priceN?: number } =
+          {};
         if (aChanged && currentA !== null) payload.priceA = currentA;
         if (bChanged && currentB !== null) payload.priceB = currentB;
+        if (nChanged && currentN !== null) payload.priceN = currentN;
         if (Object.keys(payload).length === 0) continue;
 
         const response = (await apiClient.updatePartPrices(partId, payload)) as {
@@ -2559,6 +2644,7 @@ export const SalesInquiry = ({
           partId,
           priceA: aChanged ? currentA : base.priceA,
           priceB: bChanged ? currentB : base.priceB,
+          priceN: nChanged ? currentN : base.priceN,
         });
         const now = new Date().toISOString();
         setPartPriceLastUpdatedByPartId((prev) => ({
@@ -2566,6 +2652,7 @@ export const SalesInquiry = ({
           [partId]: {
             priceA: aChanged ? now : (prev[partId]?.priceA ?? null),
             priceB: bChanged ? now : (prev[partId]?.priceB ?? null),
+            priceN: nChanged ? now : (prev[partId]?.priceN ?? null),
           },
         }));
       }
@@ -2574,7 +2661,7 @@ export const SalesInquiry = ({
         title: "Updated",
         description:
           saved.length === 1
-            ? "Alternate Price A / B saved."
+            ? "Alternate Price A / B / N saved."
             : `${saved.length} alternate parts updated.`,
       });
     } catch (error: any) {
@@ -2591,7 +2678,7 @@ export const SalesInquiry = ({
 
   const handleLookupRowPriceChange = (
     rowId: string,
-    field: "priceA" | "priceB",
+    field: "priceA" | "priceB" | "priceN",
     raw: string,
   ) => {
     const parsed = raw === "" ? undefined : Number.parseFloat(raw);
@@ -2609,6 +2696,9 @@ export const SalesInquiry = ({
         if (field === "priceB" && r.selectedPriceType === "B") {
           next.unitPrice = value;
         }
+        if (field === "priceN" && r.selectedPriceType === "N") {
+          next.unitPrice = value;
+        }
         return next;
       }),
     );
@@ -2621,18 +2711,23 @@ export const SalesInquiry = ({
     const baseline = lookupRowPriceBaselines[rowId] || {
       priceA: null,
       priceB: null,
+      priceN: null,
     };
     const currentA = row.priceA ?? null;
     const currentB = row.priceB ?? null;
+    const currentN = row.priceN ?? null;
     const aChanged = currentA !== (baseline.priceA ?? null);
     const bChanged = currentB !== (baseline.priceB ?? null);
-    if (!aChanged && !bChanged) return;
+    const nChanged = currentN !== (baseline.priceN ?? null);
+    if (!aChanged && !bChanged && !nChanged) return;
 
     setSavingLookupRowPrice((prev) => ({ ...prev, [rowId]: true }));
     try {
-      const payload: { priceA?: number; priceB?: number } = {};
+      const payload: { priceA?: number; priceB?: number; priceN?: number } =
+        {};
       if (aChanged && currentA !== null) payload.priceA = currentA;
       if (bChanged && currentB !== null) payload.priceB = currentB;
+      if (nChanged && currentN !== null) payload.priceN = currentN;
       if (Object.keys(payload).length === 0) return;
 
       const response = (await apiClient.updatePartPrices(
@@ -2650,17 +2745,19 @@ export const SalesInquiry = ({
 
       const nextA = aChanged ? currentA : baseline.priceA;
       const nextB = bChanged ? currentB : baseline.priceB;
+      const nextN = nChanged ? currentN : baseline.priceN;
       setLookupRowPriceBaselines((prev) => ({
         ...prev,
-        [rowId]: { priceA: nextA, priceB: nextB },
+        [rowId]: { priceA: nextA, priceB: nextB, priceN: nextN },
       }));
-      applyPartPricesToCaches(row.partId, nextA, nextB);
+      applyPartPricesToCaches(row.partId, nextA, nextB, nextN);
       const now = new Date().toISOString();
       setPartPriceLastUpdatedByPartId((prev) => ({
         ...prev,
         [row.partId]: {
           priceA: aChanged ? now : (prev[row.partId]?.priceA ?? null),
           priceB: bChanged ? now : (prev[row.partId]?.priceB ?? null),
+          priceN: nChanged ? now : (prev[row.partId]?.priceN ?? null),
         },
       }));
       toast({ title: "Price updated" });
@@ -2781,7 +2878,7 @@ export const SalesInquiry = ({
         cost: formatNumber(p.cost),
         priceA: formatNumber(p.price_a || p.priceA),
         priceB: formatNumber(p.price_b || p.priceB),
-        priceM: formatNumber(p.price_m || p.priceM),
+        priceN: formatNumber(p.price_n || p.priceN),
         origin: String(p.origin || "").trim() || "N/A",
         grade: String(p.grade || "A").trim(),
         status: ((p.status || "active") as string).toUpperCase() === "ACTIVE"
@@ -2901,7 +2998,7 @@ export const SalesInquiry = ({
             cost: formatNumber(p.cost),
             priceA: formatNumber(p.price_a || p.priceA),
             priceB: formatNumber(p.price_b || p.priceB),
-            priceM: formatNumber(p.price_m || p.priceM),
+            priceN: formatNumber(p.price_n || p.priceN),
             origin: String(p.origin || '').trim() || 'N/A',
             grade: String(p.grade || 'A').trim(),
             status: (p.status || 'active').toUpperCase() === 'ACTIVE' ? 'A' : 'I',
@@ -3214,7 +3311,7 @@ export const SalesInquiry = ({
       purchasePrice: parseFloat(partToAdd.cost) || 0,
       priceA: parseFloat(partToAdd.priceA) || 0,
       priceB: parseFloat(partToAdd.priceB) || 0,
-      priceM: parseFloat(partToAdd.priceM) || 0,
+      priceN: parseFloat(partToAdd.priceN) || 0,
       location: partToAdd.rackNo || '',
       stock: stock,
       reservedQty: reservedQty,
@@ -3270,7 +3367,7 @@ export const SalesInquiry = ({
           purchasePrice: item.purchasePrice,
           priceA: item.priceA,
           priceB: item.priceB,
-          priceM: item.priceM,
+          priceN: item.priceN,
           location: item.location,
         })),
       });
@@ -3350,7 +3447,7 @@ export const SalesInquiry = ({
     purchasePrice?: number;
     priceA?: number;
     priceB?: number;
-    priceM?: number;
+    priceN?: number;
     partNo?: string;
     description?: string;
     location?: string;
@@ -3378,7 +3475,7 @@ export const SalesInquiry = ({
           unitPrice: row.unitPrice,
           priceA: row.priceA,
           priceB: row.priceB,
-          priceM: row.priceM,
+          priceN: row.priceN,
           selectedPriceType: row.selectedPriceType,
         }));
         setLookupRows(restoredRows);
@@ -3402,7 +3499,7 @@ export const SalesInquiry = ({
             purchasePrice: Number(item.purchasePrice || 0),
             priceA: Number(item.priceA || 0),
             priceB: Number(item.priceB || 0),
-            priceM: Number(item.priceM || 0),
+            priceN: Number(item.priceN || 0),
             partNo: part?.partNo,
             description: part?.description,
             location: item.location,
@@ -3420,7 +3517,7 @@ export const SalesInquiry = ({
           purchasePrice: Number(row.unitPrice || 0),
           priceA: Number(row.priceA || 0),
           priceB: Number(row.priceB || 0),
-          priceM: Number(row.priceM || 0),
+          priceN: Number(row.priceN || 0),
           partNo: part?.partNo,
           description: part?.description,
           location: part?.rackNo,
@@ -3557,7 +3654,7 @@ export const SalesInquiry = ({
                           <TableHead className="font-semibold text-right">Purchase Price</TableHead>
                           <TableHead className="font-semibold text-right">Price A</TableHead>
                           <TableHead className="font-semibold text-right">Price B</TableHead>
-                          <TableHead className="font-semibold text-right">Price M</TableHead>
+                          <TableHead className="font-semibold text-right">Price N</TableHead>
                           <TableHead className="font-semibold">Location</TableHead>
                           <TableHead className="font-semibold text-center">Available Qty</TableHead>
                           <TableHead className="font-semibold text-center w-[70px]">
@@ -3597,7 +3694,7 @@ export const SalesInquiry = ({
                               <TableCell className="text-right">Rs {formatPurchasePrice(item.purchasePrice)}</TableCell>
                               <TableCell className="text-right text-green-600">Rs {item.priceA?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
                               <TableCell className="text-right text-green-600">Rs {item.priceB?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
-                              <TableCell className="text-right text-green-600">Rs {item.priceM?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
+                              <TableCell className="text-right text-green-600">Rs {item.priceN?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</TableCell>
                               <TableCell>{item.location || 'N/A'}</TableCell>
                               <TableCell className={cn(
                                 "text-center font-semibold",
@@ -3808,7 +3905,7 @@ export const SalesInquiry = ({
                         <TableHead>Purchase Price</TableHead>
                         <TableHead>Price A</TableHead>
                         <TableHead>Price B</TableHead>
-                        <TableHead>Price M</TableHead>
+                        <TableHead>Price N</TableHead>
                         <TableHead>Location</TableHead>
                         <TableHead className="text-center w-[70px]">Image</TableHead>
                         <TableHead></TableHead>
@@ -3844,7 +3941,7 @@ export const SalesInquiry = ({
                             <TableCell>Rs {formatPurchasePrice(item.purchasePrice)}</TableCell>
                             <TableCell>Rs {item.priceA?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>Rs {item.priceB?.toFixed(2) || '0.00'}</TableCell>
-                            <TableCell>Rs {item.priceM?.toFixed(2) || '0.00'}</TableCell>
+                            <TableCell>Rs {item.priceN?.toFixed(2) || '0.00'}</TableCell>
                             <TableCell>{item.location || 'N/A'}</TableCell>
                             <TableCell className="text-center align-top">
                               {renderPartImageThumbnail(item.partId, part, "w-9 h-9")}
@@ -4045,6 +4142,9 @@ export const SalesInquiry = ({
                         <TableHead className="w-[90px] text-center font-bold text-foreground">
                           Price B
                         </TableHead>
+                        <TableHead className="w-[90px] text-center font-bold text-foreground">
+                          Price N
+                        </TableHead>
                       </>
                     )}
                     <TableHead className="w-[100px] text-center font-bold text-foreground">
@@ -4144,12 +4244,18 @@ export const SalesInquiry = ({
                               className="relative space-y-2"
                             >
                               <div className="relative">
+                                {(() => {
+                                  const showSelectedBadges = Boolean(
+                                    rowPart && !rowDropdownOpen,
+                                  );
+                                  return (
+                                    <>
                                 <Input
                                   ref={(el) => {
                                     lookupRowInputRefs.current[row.id] = el;
                                   }}
                                   placeholder="Select part..."
-                                  value={row.search}
+                                  value={showSelectedBadges ? "" : row.search}
                                   onChange={(e) =>
                                     handleLookupRowSearchChange(
                                       row.id,
@@ -4269,8 +4375,29 @@ export const SalesInquiry = ({
                                     "w-full h-10 text-sm",
                                     rowDropdownOpen &&
                                       "ring-2 ring-primary border-primary",
+                                    showSelectedBadges &&
+                                      "text-transparent caret-transparent",
                                   )}
                                 />
+                                {showSelectedBadges && rowPart ? (
+                                  <div
+                                    className="pointer-events-none absolute inset-0 z-[1] flex items-center gap-1.5 overflow-hidden bg-background px-3 rounded-md"
+                                    aria-hidden
+                                  >
+                                    <PartIdentityBadges
+                                      partNo={rowPart.partNo}
+                                      masterPart={rowPart.masterPart}
+                                    />
+                                    {rowPart.description ? (
+                                      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                                        - {rowPart.description}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                    </>
+                                  );
+                                })()}
                               </div>
                               {rowPart ? (
                                 <div className="text-xs text-muted-foreground flex flex-col gap-0.5">
@@ -4565,6 +4692,51 @@ export const SalesInquiry = ({
                             )}
                           </TableCell>
                           )}
+                          {!hidePrices && (
+                          <TableCell className="text-center align-top p-1">
+                            {!row.partId ? (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            ) : (
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={row.priceN ?? ""}
+                                  onChange={(e) =>
+                                    handleLookupRowPriceChange(
+                                      row.id,
+                                      "priceN",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    void handleSaveLookupRowPrice(row.id);
+                                  }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateLookupRow(row.id, {
+                                      selectedPriceType: "N",
+                                      unitPrice: row.priceN,
+                                    });
+                                  }}
+                                  disabled={!!savingLookupRowPrice[row.id]}
+                                  className={cn(
+                                    "h-8 w-full min-w-[76px] px-1.5 text-xs text-center tabular-nums",
+                                    row.selectedPriceType === "N" &&
+                                      "border-primary ring-1 ring-primary/30",
+                                  )}
+                                  placeholder="N"
+                                />
+                                <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                  {formatPriceLastUpdatedLabel(priceDates?.priceN)}
+                                </span>
+                              </div>
+                            )}
+                          </TableCell>
+                          )}
                           <TableCell className="text-center align-top">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
@@ -4618,7 +4790,7 @@ export const SalesInquiry = ({
                             className="border-b bg-muted/20"
                           >
                             <TableCell
-                              colSpan={hidePrices ? 10 : 13}
+                              colSpan={hidePrices ? 10 : 14}
                               className="px-4 pt-0 pb-2"
                             >
                               <div className="flex items-center gap-3">
@@ -4704,7 +4876,7 @@ export const SalesInquiry = ({
                 <div>
                   <div className="text-sm font-semibold">Alternate Items</div>
                   <div className="text-xs text-muted-foreground">
-                    Same details as the selected item — edit Price A / B, then Update
+                    Same details as the selected item — edit Price A / B / N, then Update
                   </div>
                 </div>
                 {!hidePrices && canEdit && (
@@ -4759,6 +4931,9 @@ export const SalesInquiry = ({
                           <TableHead className="text-xs text-center w-[90px] px-2">
                             Price B
                           </TableHead>
+                          <TableHead className="text-xs text-center w-[90px] px-2">
+                            Price N
+                          </TableHead>
                         </>
                       )}
                       <TableHead className="text-xs text-center w-[100px] px-2">Location</TableHead>
@@ -4770,7 +4945,7 @@ export const SalesInquiry = ({
                     {!selectedPart ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 13}
+                          colSpan={hidePrices ? 10 : 14}
                           className="text-center py-8 text-sm text-muted-foreground italic"
                         >
                           Select a part to view alternate items.
@@ -4779,7 +4954,7 @@ export const SalesInquiry = ({
                     ) : loadingAlternateItems ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 13}
+                          colSpan={hidePrices ? 10 : 14}
                           className="text-center py-8 text-sm text-muted-foreground"
                         >
                           <div className="flex items-center justify-center gap-2">
@@ -4791,7 +4966,7 @@ export const SalesInquiry = ({
                     ) : alternateItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 13}
+                          colSpan={hidePrices ? 10 : 14}
                           className="text-center py-8 text-sm text-muted-foreground italic"
                         >
                           No alternate items found.
@@ -4833,8 +5008,9 @@ export const SalesInquiry = ({
                           ? altPriceEdits[partId] || {
                               priceA: item.priceA || "",
                               priceB: item.priceB || "",
+                              priceN: item.priceN || "",
                             }
-                          : { priceA: "", priceB: "" };
+                          : { priceA: "", priceB: "", priceN: "" };
                         const savingRow = partId
                           ? !!savingAltPriceById[partId]
                           : false;
@@ -4849,10 +5025,20 @@ export const SalesInquiry = ({
                               className="text-xs px-2 py-1.5 whitespace-nowrap"
                             />
                             <TableCell
-                              className="text-xs font-medium px-2 py-1.5 max-w-[360px] truncate"
+                              className="text-xs font-medium px-2 py-1.5 max-w-[360px]"
                               title={getItemLabel(item)}
                             >
-                              {getItemLabel(item)}
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <PartIdentityBadges
+                                  partNo={item.partNo}
+                                  masterPart={item.masterPart}
+                                />
+                                {item.description ? (
+                                  <span className="truncate text-[11px] text-muted-foreground">
+                                    {item.description}
+                                  </span>
+                                ) : null}
+                              </div>
                             </TableCell>
                             <TableCell className="text-xs px-2 py-1.5 whitespace-nowrap truncate">
                               <BrandOriginCell
@@ -5030,6 +5216,46 @@ export const SalesInquiry = ({
                                       <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
                                         {formatPriceLastUpdatedLabel(
                                           priceDates?.priceB,
+                                        )}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-center px-1 py-1">
+                                  {partId ? (
+                                    <div className="space-y-0.5">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={draft.priceN}
+                                        disabled={
+                                          !canEdit ||
+                                          savingRow ||
+                                          savingAltPrices
+                                        }
+                                        onChange={(e) =>
+                                          handleAltPriceChange(
+                                            partId,
+                                            "priceN",
+                                            e.target.value,
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          if (canEdit) {
+                                            void handleSaveAlternatePartPrice(
+                                              partId,
+                                            );
+                                          }
+                                        }}
+                                        className="h-8 w-full min-w-[72px] px-1.5 text-xs text-center tabular-nums"
+                                        placeholder="N"
+                                      />
+                                      <span className="block text-[9px] leading-tight text-muted-foreground font-bold">
+                                        {formatPriceLastUpdatedLabel(
+                                          priceDates?.priceN,
                                         )}
                                       </span>
                                     </div>
@@ -5356,10 +5582,13 @@ export const SalesInquiry = ({
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
                           <ListNumberCell index={index} total={filteredModelAssociations.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
-                            className="text-xs font-medium px-2 py-1.5 max-w-0 truncate"
-                            title={`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                            className="text-xs font-medium px-2 py-1.5 max-w-0"
+                            title={`${item.partNo || "N/A"} / ${item.masterPart || "N/A"}`}
                           >
-                            {`${item.masterPart || "N/A"} | ${item.partNo || "N/A"}`}
+                            <PartIdentityBadges
+                              partNo={item.partNo}
+                              masterPart={item.masterPart}
+                            />
                           </TableCell>
                           <TableCell
                             className="text-xs px-2 py-1.5 max-w-0 truncate"

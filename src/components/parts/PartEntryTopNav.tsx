@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Plus, Package, Settings, Layers } from "lucide-react";
+import { Plus, Package, Settings, Layers, Hash } from "lucide-react";
 import { can } from "@/permissions/can";
 import { usePermissions } from "@/permissions/PermissionsProvider";
 
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { path: "/partentry/itemslist", label: "Items List", icon: Package, permission: "page.partentry.itemslist" },
   { path: "/partentry/attributes", label: "Attributes", icon: Settings, permission: "page.partentry.attributes" },
   { path: "/partentry/models", label: "Models", icon: Layers, permission: "page.partentry.models" },
+  { path: "/partentry/hs-codes", label: "HS Code", icon: Hash, permission: "page.partentry.hs-codes" },
 ] as const;
 
 export const PartEntryTopNav = () => {

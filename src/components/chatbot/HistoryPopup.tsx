@@ -22,7 +22,7 @@ interface PriceHistoryEntry {
   date: string; 
   priceA?: number;
   priceB?: number;
-  priceM?: number;
+  priceN?: number;
   cost?: number;
   updatedBy?: string;
 }
@@ -65,7 +65,7 @@ export const HistoryPopup: React.FC<HistoryPopupProps> = ({ open, onOpenChange, 
             date: entry.date || entry.createdAt || entry.updatedAt,
             priceA: entry.priceA,
             priceB: entry.priceB,
-            priceM: entry.priceM,
+            priceN: entry.priceN,
             cost: entry.cost,
             updatedBy: entry.updatedBy,
           })));
@@ -82,7 +82,7 @@ export const HistoryPopup: React.FC<HistoryPopupProps> = ({ open, onOpenChange, 
             date: entry.date || entry.createdAt || entry.updatedAt,
             priceA: entry.priceA,
             priceB: entry.priceB,
-            priceM: entry.priceM,
+            priceN: entry.priceN,
             cost: entry.cost,
             updatedBy: entry.updatedBy,
           })));
@@ -196,7 +196,7 @@ export const HistoryPopup: React.FC<HistoryPopupProps> = ({ open, onOpenChange, 
                       <th className="text-right p-2">Cost</th>
                       <th className="text-right p-2">Price A</th>
                       <th className="text-right p-2">Price B</th>
-                      <th className="text-right p-2">Price M</th>
+                      <th className="text-right p-2">Price N</th>
                       <th className="text-left p-2">Updated By</th>
                     </tr>
                   </thead>
@@ -207,7 +207,7 @@ export const HistoryPopup: React.FC<HistoryPopupProps> = ({ open, onOpenChange, 
                         <td className="p-2 text-right">{entry.cost?.toFixed(2) || '-'}</td>
                         <td className="p-2 text-right">{entry.priceA?.toFixed(2) || '-'}</td>
                         <td className="p-2 text-right">{entry.priceB?.toFixed(2) || '-'}</td>
-                        <td className="p-2 text-right">{entry.priceM?.toFixed(2) || '-'}</td>
+                        <td className="p-2 text-right">{entry.priceN?.toFixed(2) || '-'}</td>
                         <td className="p-2">{entry.updatedBy || '-'}</td>
                       </tr>
                     ))}

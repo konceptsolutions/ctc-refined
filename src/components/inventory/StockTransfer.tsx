@@ -30,6 +30,7 @@ import {
 import { apiClient } from "@/lib/api";
 import { formatUiDate } from "@/utils/dateUtils";
 import { formatPartIdentityFromDb } from "@/lib/part-identity";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { toast } from "sonner";
 import { ActionButtonTooltip } from "@/components/ui/action-button-tooltip";
 import {
@@ -209,7 +210,9 @@ export const StockTransfer = () => {
         setParts(partsData.map((p: any) => ({
           value: p.id,
           label: [formatPartIdentityFromDb(p), p.description].filter(Boolean).join(" - "),
+          description: p.description || undefined,
           availableQty: balanceMap[p.id] || 0,
+          ...buildPartSearchableSelectFields(p),
         })));
       }
     } catch (error: any) {

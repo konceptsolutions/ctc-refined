@@ -21,12 +21,12 @@ export function getUiMasterPartFromDb(part: PartIdentityFields): string {
 export function formatPartIdentityLabel(
   uiPartNo: string,
   uiMasterPart: string,
-  separator = " | ",
+  separator = " / ",
   fallback = "-",
 ): string {
   const partNo = clean(uiPartNo);
   const masterPart = clean(uiMasterPart);
-  // Always show both slots when present (even if equal) so Part No | Master Part is consistent
+  // Always show both slots when present (even if equal) so Part No / Master is consistent
   if (partNo && masterPart) {
     return `${partNo}${separator}${masterPart}`;
   }
@@ -36,7 +36,7 @@ export function formatPartIdentityLabel(
 /** Use for raw API/DB rows (unswapped field names). */
 export function formatPartIdentityFromDb(
   part: PartIdentityFields,
-  separator = " | ",
+  separator = " / ",
   fallback = "-",
 ): string {
   return formatPartIdentityLabel(
@@ -57,7 +57,7 @@ export function formatPartIdentityFromUi(
     masterPartNo?: string | null;
     masterPart?: string | null;
   },
-  separator = " | ",
+  separator = " / ",
   fallback = "-",
 ): string {
   return formatPartIdentityLabel(

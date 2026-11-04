@@ -419,12 +419,12 @@ export const QuantityInput: React.FC<QuantityInputProps> = ({
 interface PriceInputsProps {
   priceA: number;
   priceB: number;
-  priceM: number;
-  onPriceChange: (field: 'priceA' | 'priceB' | 'priceM', value: number) => void;
+  priceN: number;
+  onPriceChange: (field: 'priceA' | 'priceB' | 'priceN', value: number) => void;
   disabled?: boolean;
 }
 
-export const PriceInputs: React.FC<PriceInputsProps> = ({ priceA, priceB, priceM, onPriceChange, disabled }) => {
+export const PriceInputs: React.FC<PriceInputsProps> = ({ priceA, priceB, priceN, onPriceChange, disabled }) => {
   return (
     <div className="space-y-3">
       <Label className="text-xs">Purchase Prices</Label>
@@ -454,11 +454,11 @@ export const PriceInputs: React.FC<PriceInputsProps> = ({ priceA, priceB, priceM
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] text-muted-foreground">Price M</Label>
+          <Label className="text-[10px] text-muted-foreground">Price N</Label>
           <Input
             type="number"
-            value={priceM || ''}
-            onChange={(e) => onPriceChange('priceM', parseFloat(e.target.value) || 0)}
+            value={priceN || ''}
+            onChange={(e) => onPriceChange('priceN', parseFloat(e.target.value) || 0)}
             placeholder="0.00"
             disabled={disabled}
             step="0.01"

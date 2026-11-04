@@ -72,7 +72,7 @@ interface AdjustmentItem {
   rate: number;
   priceA?: number;
   priceB?: number;
-  priceM?: number;
+  priceN?: number;
   total: number;
   rackId?: string;
   shelfId?: string;
@@ -160,7 +160,7 @@ export const AdjustItem = () => {
       avgCost: number;
       priceA: number;
       priceB: number;
-      priceM: number;
+      priceN: number;
     }[]
   >([]);
   const [stockBalances, setStockBalances] = useState<
@@ -509,7 +509,7 @@ export const AdjustItem = () => {
             avgCost: 0,
             priceA: 0,
             priceB: 0,
-            priceM: 0,
+            priceN: 0,
           };
         }),
       );
@@ -563,7 +563,7 @@ export const AdjustItem = () => {
       const master = (p.masterPartNo || "").trim();
       const partNo = (p.partNo || "").trim();
       const both =
-        master && partNo ? `${master} | ${partNo}` : master || partNo;
+        master && partNo ? `${master} / ${partNo}` : master || partNo;
       const brand = p.brand ? ` (${p.brand})` : "";
       if (!includeDescription) return `${both}${brand}`;
       const desc = (p.description || "")
@@ -680,7 +680,7 @@ export const AdjustItem = () => {
               rate: newRate,
               priceA: part.priceA || 0,
               priceB: part.priceB || 0,
-              priceM: part.priceM || 0,
+              priceN: part.priceN || 0,
               quantity: newQty,
               total: newQty * newRate,
             };
@@ -788,7 +788,7 @@ export const AdjustItem = () => {
       rate: 0,
       priceA: 0,
       priceB: 0,
-      priceM: 0,
+      priceN: 0,
       total: 0,
       rackId: "",
       shelfId: "",
@@ -983,7 +983,7 @@ export const AdjustItem = () => {
           cost: item.rate,
           priceA: item.priceA,
           priceB: item.priceB,
-          priceM: item.priceM,
+          priceN: item.priceN,
           rack_id: item.rackId || undefined,
           shelf_id: item.shelfId || undefined,
         })),
@@ -1053,7 +1053,7 @@ export const AdjustItem = () => {
             rate: item.cost || 0,
             priceA: item.priceA || 0,
             priceB: item.priceB || 0,
-            priceM: item.priceM || 0,
+            priceN: item.priceN || 0,
             rackId: item.rack_id,
             rack_code: item.rack_code,
             shelfId: item.shelf_id,
@@ -1108,7 +1108,7 @@ export const AdjustItem = () => {
             rate: item.cost || 0,
             priceA: item.priceA || 0,
             priceB: item.priceB || 0,
-            priceM: item.priceM || 0,
+            priceN: item.priceN || 0,
             rackId: item.rack_id,
             shelfId: item.shelf_id,
             total: item.quantity * (item.cost || 0),
@@ -2041,7 +2041,7 @@ export const AdjustItem = () => {
                       Price B
                     </TableHead>
                     <TableHead className="min-w-[100px] text-xs">
-                      Price M
+                      Price N
                     </TableHead>
                     <TableHead className="min-w-[150px] text-xs">
                       Rack
@@ -2175,12 +2175,12 @@ export const AdjustItem = () => {
                       <TableCell>
                         <Input
                           type="number"
-                          placeholder="Price M"
-                          value={item.priceM || ""}
+                          placeholder="Price N"
+                          value={item.priceN || ""}
                           onChange={(e) =>
                             handleItemChange(
                               item.id,
-                              "priceM",
+                              "priceN",
                               parseFloat(e.target.value) || 0,
                             )
                           }

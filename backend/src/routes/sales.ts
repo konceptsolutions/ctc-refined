@@ -897,7 +897,7 @@ router.post("/inquiries", async (req: Request, res: Response) => {
           purchasePrice: item.purchasePrice || part?.cost || 0,
           priceA: item.priceA || part?.priceA || 0,
           priceB: item.priceB || part?.priceB || 0,
-          priceM: item.priceM || part?.priceM || 0,
+          priceN: item.priceN || (part as any)?.priceN || 0,
           location: item.location || "",
           stock,
           reservedQty,
@@ -993,7 +993,7 @@ router.put("/inquiries/:id", async (req: Request, res: Response) => {
             purchasePrice: item.purchasePrice || part?.cost || 0,
             priceA: item.priceA || part?.priceA || 0,
             priceB: item.priceB || part?.priceB || 0,
-            priceM: item.priceM || part?.priceM || 0,
+            priceN: item.priceN || (part as any)?.priceN || 0,
             location: item.location || "",
             stock,
             reservedQty,
@@ -2296,6 +2296,8 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
 
     // Compute invoice-time receivable balances from ledger entries instead of
     // relying on Account.currentBalance (which can drift from historical view).
+    // Unapproved invoices have no AR voucher yet — previousBalance must equal the
+    // live customer balance (do not pretend this invoice is already posted).
     let previousBalance: number | undefined;
     let customerBalance: number | undefined;
     const receivableEntry = await prisma.voucherEntry.findFirst({
@@ -2322,9 +2324,18 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
       orderBy: [{ Voucher: { date: "asc" } }, { sortOrder: "asc" }],
     });
 
-    if (receivableEntry?.accountId && receivableEntry.Account) {
+    const receivableAccount =
+      receivableEntry?.Account ||
+      (invoice.customerId
+        ? await findCustomerReceivableAccount(
+            invoice.customerId,
+            invoice.customerName,
+          )
+        : null);
+
+    if (receivableAccount?.id) {
       const accountType =
-        (receivableEntry.Account as any).Subgroup?.MainGroup?.type || "asset";
+        (receivableAccount as any).Subgroup?.MainGroup?.type || "asset";
       const calcChange = (debit: number, credit: number) =>
         ["asset", "expense", "cost"].includes(String(accountType).toLowerCase())
           ? debit - credit
@@ -2332,7 +2343,7 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
 
       const ledgerEntries = await prisma.voucherEntry.findMany({
         where: {
-          accountId: receivableEntry.accountId,
+          accountId: receivableAccount.id,
           Voucher: {
             status: "posted",
             OR: [{ isCleared: null }, { isCleared: 1 }],
@@ -2343,26 +2354,6 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
         },
       });
 
-      const thisInvoiceId = id;
-      const thisVoucherId = receivableEntry.voucherId;
-      const thisVoucherDate = new Date(
-        receivableEntry.Voucher.date,
-      ).getTime();
-      const thisVoucherCreated = new Date(
-        receivableEntry.Voucher.createdAt,
-      ).getTime();
-      const belongsToThisInvoice = (entry: (typeof ledgerEntries)[number]) =>
-        entry.salesInvoiceId === thisInvoiceId ||
-        entry.voucherId === thisVoucherId;
-      const isPriorToThisInvoice = (entry: (typeof ledgerEntries)[number]) => {
-        if (belongsToThisInvoice(entry)) return false;
-        const entryDate = new Date(entry.Voucher.date).getTime();
-        if (entryDate < thisVoucherDate) return true;
-        if (entryDate > thisVoucherDate) return false;
-        return (
-          new Date(entry.Voucher.createdAt).getTime() < thisVoucherCreated
-        );
-      };
       const sumChange = (entries: typeof ledgerEntries) =>
         entries.reduce(
           (sum, entry) =>
@@ -2370,9 +2361,36 @@ router.get("/invoices/:id", async (req: Request, res: Response) => {
           0,
         );
 
-      const opening = Number(receivableEntry.Account.openingBalance || 0);
-      previousBalance = opening + sumChange(ledgerEntries.filter(isPriorToThisInvoice));
+      const opening = Number(receivableAccount.openingBalance || 0);
       customerBalance = opening + sumChange(ledgerEntries);
+
+      if (receivableEntry?.accountId && receivableEntry.Voucher) {
+        const thisInvoiceId = id;
+        const thisVoucherId = receivableEntry.voucherId;
+        const thisVoucherDate = new Date(
+          receivableEntry.Voucher.date,
+        ).getTime();
+        const thisVoucherCreated = new Date(
+          receivableEntry.Voucher.createdAt,
+        ).getTime();
+        const belongsToThisInvoice = (entry: (typeof ledgerEntries)[number]) =>
+          entry.salesInvoiceId === thisInvoiceId ||
+          entry.voucherId === thisVoucherId;
+        const isPriorToThisInvoice = (entry: (typeof ledgerEntries)[number]) => {
+          if (belongsToThisInvoice(entry)) return false;
+          const entryDate = new Date(entry.Voucher.date).getTime();
+          if (entryDate < thisVoucherDate) return true;
+          if (entryDate > thisVoucherDate) return false;
+          return (
+            new Date(entry.Voucher.createdAt).getTime() < thisVoucherCreated
+          );
+        };
+        previousBalance =
+          opening + sumChange(ledgerEntries.filter(isPriorToThisInvoice));
+      } else {
+        // No posted AR voucher for this invoice (pending / unapproved).
+        previousBalance = customerBalance;
+      }
     }
 
     const stockMovements = await prisma.stockMovement.findMany({

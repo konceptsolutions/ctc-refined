@@ -80,7 +80,7 @@ interface PriceStructure {
 const priceCategories = [
   { value: "Price A (Retail)", label: "Price A (Retail)" },
   { value: "Price B (Wholesale)", label: "Price B (Wholesale)" },
-  { value: "Price M (Market)", label: "Price M (Market)" },
+  { value: "Price N", label: "Price N" },
   { value: "Price D (Distributor)", label: "Price D (Distributor)" },
 ];
 

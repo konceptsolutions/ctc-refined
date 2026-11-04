@@ -17,14 +17,11 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import { PackagePlus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -53,14 +50,9 @@ export interface SalesReturnReceiveOrder {
   items: SalesReturnReceiveItem[];
 }
 
-interface Rack {
+interface LocationOption {
   id: string;
-  codeNo?: string;
-  storeId?: string;
-  shelves: Array<{ id: string; shelfNo?: string; rackId?: string }>;
-}
-
-interface ItemLocation {
+  label: string;
   storeId: string;
   rackId: string;
   shelfId: string;
@@ -75,10 +67,19 @@ interface StoreSalesReturnReceiptProps {
   onReceived?: () => void;
 }
 
+const locationKey = (storeId: string, rackId: string, shelfId: string) =>
+  `${storeId || ""}:${rackId}:${shelfId}`;
+
+const formatLocationLabel = (
+  store: string,
+  rack: string,
+  shelf: string,
+) => `${store || "—"} · ${rack || "—"} / ${shelf || "—"}`;
+
 function pickBestPartLocation(
   locations: any[],
   preferredStoreId?: string,
-): ItemLocation | null {
+): LocationOption | null {
   const allocated = (locations || []).filter(
     (l: any) => !l.isUnlocated && (l.rackId || l.shelfId),
   );
@@ -95,10 +96,21 @@ function pickBestPartLocation(
   )[0];
   if (!best) return null;
 
+  const storeId = best.storeId != null ? String(best.storeId) : "";
+  const rackId = best.rackId != null ? String(best.rackId) : "";
+  const shelfId = best.shelfId != null ? String(best.shelfId) : "";
+  if (!rackId || !shelfId) return null;
+
   return {
-    storeId: best.storeId != null ? String(best.storeId) : "",
-    rackId: best.rackId != null ? String(best.rackId) : "",
-    shelfId: best.shelfId != null ? String(best.shelfId) : "",
+    id: locationKey(storeId, rackId, shelfId),
+    label: formatLocationLabel(
+      String(best.store || ""),
+      String(best.rack || best.rack_code || ""),
+      String(best.shelf || best.shelf_no || ""),
+    ),
+    storeId,
+    rackId,
+    shelfId,
   };
 }
 
@@ -112,72 +124,108 @@ export const StoreSalesReturnReceipt = ({
 }: StoreSalesReturnReceiptProps) => {
   const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
   const [isConfirming, setIsConfirming] = useState(false);
-  const [racks, setRacks] = useState<Rack[]>([]);
-  const [loadingRacks, setLoadingRacks] = useState(false);
-  const [loadingLocations, setLoadingLocations] = useState(false);
-  const [itemLocations, setItemLocations] = useState<
-    Record<string, ItemLocation>
+  const [storeLocationOptions, setStoreLocationOptions] = useState<
+    LocationOption[]
+  >([]);
+  const [partLocationOptionsByPartId, setPartLocationOptionsByPartId] =
+    useState<Record<string, LocationOption[]>>({});
+  const [selectedLocationByItemId, setSelectedLocationByItemId] = useState<
+    Record<string, string>
   >({});
+  const [loadingLocations, setLoadingLocations] = useState(false);
 
   const effectiveStoreId =
     storeId && storeId !== "all" ? storeId : "";
 
   useEffect(() => {
     if (!open || !salesReturn) return;
-    const initial: Record<string, ItemLocation> = {};
+    const initial: Record<string, string> = {};
     salesReturn.items.forEach((item) => {
-      initial[item.id] = { storeId: effectiveStoreId, rackId: "", shelfId: "" };
+      initial[item.id] = "";
     });
-    setItemLocations(initial);
-  }, [open, salesReturn?.id, effectiveStoreId]);
+    setSelectedLocationByItemId(initial);
+  }, [open, salesReturn?.id]);
 
+  // Build store rack/shelf location list (same label style as sale stock out)
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     (async () => {
       try {
-        setLoadingRacks(true);
-        // Load all racks so associated locations from any store can auto-select
-        const response = await apiClient.getRacks(undefined);
-        const rows = (response as any)?.data || response;
+        setLoadingLocations(true);
+        const [racksRes, storesRes] = await Promise.all([
+          apiClient.getRacks(undefined),
+          apiClient.getStores().catch(() => ({ data: [] })),
+        ]);
         if (cancelled) return;
-        if (Array.isArray(rows)) {
-          setRacks(
-            rows.map((r: any) => ({
-              id: String(r.id),
-              codeNo: r.codeNo || r.code_no,
-              storeId: r.storeId || r.store_id,
-              shelves: (r.shelves || r.Shelf || []).map((s: any) => ({
-                id: String(s.id),
-                shelfNo: s.shelfNo || s.shelf_no,
-                rackId: String(s.rackId || s.rack_id || r.id),
-              })),
-            })),
-          );
-        } else {
-          setRacks([]);
+
+        const racksRaw = (racksRes as any)?.data || racksRes;
+        const storesRaw = (storesRes as any)?.data || storesRes || [];
+        const storeNameById = new Map<string, string>();
+        if (Array.isArray(storesRaw)) {
+          for (const s of storesRaw) {
+            storeNameById.set(String(s.id), String(s.name || s.code || ""));
+          }
         }
+        if (effectiveStoreId && storeName) {
+          storeNameById.set(effectiveStoreId, storeName);
+        }
+
+        const options: LocationOption[] = [];
+        if (Array.isArray(racksRaw)) {
+          for (const r of racksRaw) {
+            const rackId = String(r.id);
+            const rackStoreId = String(r.storeId || r.store_id || "");
+            if (
+              effectiveStoreId &&
+              rackStoreId &&
+              rackStoreId !== effectiveStoreId
+            ) {
+              continue;
+            }
+            const rackCode = String(r.codeNo || r.code_no || rackId.slice(0, 8));
+            const storeLabel =
+              storeNameById.get(rackStoreId) ||
+              (rackStoreId === effectiveStoreId ? storeName : "") ||
+              "—";
+            const shelves = r.shelves || r.Shelf || [];
+            for (const s of shelves) {
+              const shelfId = String(s.id);
+              const shelfNo = String(
+                s.shelfNo || s.shelf_no || shelfId.slice(0, 8),
+              );
+              const sid = rackStoreId || effectiveStoreId || "";
+              options.push({
+                id: locationKey(sid, rackId, shelfId),
+                label: formatLocationLabel(storeLabel, rackCode, shelfNo),
+                storeId: sid,
+                rackId,
+                shelfId,
+              });
+            }
+          }
+        }
+        setStoreLocationOptions(options);
       } catch {
         if (!cancelled) {
-          setRacks([]);
-          toast.error("Failed to load racks/shelves");
+          setStoreLocationOptions([]);
+          toast.error("Failed to load locations");
         }
       } finally {
-        if (!cancelled) setLoadingRacks(false);
+        if (!cancelled) setLoadingLocations(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, effectiveStoreId, storeName]);
 
-  // Auto-select each part's associated rack/shelf (prefer selected store, else highest qty)
+  // Part-associated locations (auto-select + ensure options appear)
   useEffect(() => {
     if (!open || !salesReturn?.items?.length) return;
     let cancelled = false;
     (async () => {
       try {
-        setLoadingLocations(true);
         const partIds = Array.from(
           new Set(
             salesReturn.items
@@ -192,7 +240,9 @@ export const StoreSalesReturnReceipt = ({
         );
         if (cancelled) return;
 
-        const bestByPart: Record<string, ItemLocation> = {};
+        const byPart: Record<string, LocationOption[]> = {};
+        const bestByPart: Record<string, LocationOption> = {};
+
         partIds.forEach((pid, idx) => {
           const resp = responses[idx] as any;
           const locations = Array.isArray(resp?.data)
@@ -200,30 +250,46 @@ export const StoreSalesReturnReceipt = ({
             : Array.isArray(resp)
               ? resp
               : [];
-          const best = pickBestPartLocation(locations, effectiveStoreId || undefined);
-          if (best?.rackId) bestByPart[pid] = best;
+          const opts: LocationOption[] = [];
+          for (const l of locations) {
+            if (l.isUnlocated || !(l.rackId || l.shelfId)) continue;
+            const sid = l.storeId != null ? String(l.storeId) : "";
+            const rackId = l.rackId != null ? String(l.rackId) : "";
+            const shelfId = l.shelfId != null ? String(l.shelfId) : "";
+            if (!rackId || !shelfId) continue;
+            opts.push({
+              id: locationKey(sid, rackId, shelfId),
+              label: formatLocationLabel(
+                String(l.store || ""),
+                String(l.rack || l.rack_code || ""),
+                String(l.shelf || l.shelf_no || ""),
+              ),
+              storeId: sid,
+              rackId,
+              shelfId,
+            });
+          }
+          byPart[pid] = opts;
+          const best = pickBestPartLocation(
+            locations,
+            effectiveStoreId || undefined,
+          );
+          if (best) bestByPart[pid] = best;
         });
 
-        setItemLocations((prev) => {
+        setPartLocationOptionsByPartId(byPart);
+
+        setSelectedLocationByItemId((prev) => {
           const next = { ...prev };
           for (const item of salesReturn.items) {
+            if (next[item.id]) continue;
             const best = bestByPart[String(item.partId)];
-            if (!best) continue;
-            const current = next[item.id];
-            // Only auto-fill empty selections so manual edits are kept
-            if (current?.rackId && current?.shelfId) continue;
-            next[item.id] = {
-              storeId: best.storeId || effectiveStoreId || current?.storeId || "",
-              rackId: best.rackId,
-              shelfId: best.shelfId,
-            };
+            if (best) next[item.id] = best.id;
           }
           return next;
         });
       } catch {
         // Non-blocking — user can still pick manually
-      } finally {
-        if (!cancelled) setLoadingLocations(false);
       }
     })();
     return () => {
@@ -231,35 +297,39 @@ export const StoreSalesReturnReceipt = ({
     };
   }, [open, salesReturn?.id, effectiveStoreId]);
 
-  const racksForStore = useMemo(() => {
-    if (!effectiveStoreId) return racks;
-    return racks.filter(
-      (r) => !r.storeId || String(r.storeId) === String(effectiveStoreId),
-    );
-  }, [racks, effectiveStoreId]);
+  const locationOptionsForPart = (partId: string): LocationOption[] => {
+    const map = new Map<string, LocationOption>();
+    for (const opt of storeLocationOptions) map.set(opt.id, opt);
+    for (const opt of partLocationOptionsByPartId[partId] || []) {
+      map.set(opt.id, opt);
+    }
+    return Array.from(map.values());
+  };
 
-  const getShelvesForRack = (rackId: string) => {
-    const rack =
-      racksForStore.find((r) => r.id === rackId) ||
-      racks.find((r) => r.id === rackId);
-    return rack?.shelves || [];
+  const resolveSelectedLocation = (
+    itemId: string,
+    partId: string,
+  ): LocationOption | undefined => {
+    const selectedId = selectedLocationByItemId[itemId];
+    if (!selectedId) return undefined;
+    return locationOptionsForPart(partId).find((o) => o.id === selectedId);
   };
 
   const handleConfirm = async () => {
     if (!salesReturn) return;
 
     for (const item of salesReturn.items) {
-      const loc = itemLocations[item.id];
+      const loc = resolveSelectedLocation(item.id, String(item.partId));
       if (!loc?.rackId || !loc?.shelfId) {
         toast.error(
-          `Select rack and shelf for ${formatPartIdentityFromUi(item) || "return item"}.`,
+          `Select location for ${formatPartIdentityFromUi(item) || "return item"}.`,
         );
         return;
       }
       const itemStore = loc.storeId || effectiveStoreId;
       if (!itemStore) {
         toast.error(
-          `Select a store (or associated location) for ${formatPartIdentityFromUi(item) || "return item"}.`,
+          `Select a store location for ${formatPartIdentityFromUi(item) || "return item"}.`,
         );
         return;
       }
@@ -274,19 +344,21 @@ export const StoreSalesReturnReceipt = ({
       const defaultStore =
         effectiveStoreId ||
         salesReturn.items
-          .map((i) => itemLocations[i.id]?.storeId)
+          .map((i) => resolveSelectedLocation(i.id, String(i.partId))?.storeId)
           .find(Boolean) ||
         "";
 
-      const locations = salesReturn.items.map((item) => ({
-        item_id: item.id,
-        part_id: item.partId,
-        store_id:
-          itemLocations[item.id]?.storeId || effectiveStoreId || defaultStore,
-        rack_id: itemLocations[item.id]?.rackId || null,
-        shelf_id: itemLocations[item.id]?.shelfId || null,
-        quantity: item.returnQuantity,
-      }));
+      const locations = salesReturn.items.map((item) => {
+        const loc = resolveSelectedLocation(item.id, String(item.partId));
+        return {
+          item_id: item.id,
+          part_id: item.partId,
+          store_id: loc?.storeId || effectiveStoreId || defaultStore,
+          rack_id: loc?.rackId || null,
+          shelf_id: loc?.shelfId || null,
+          quantity: item.returnQuantity,
+        };
+      });
 
       const response = await apiClient.receiveSalesReturn(salesReturn.id, {
         store_id: defaultStore || null,
@@ -315,11 +387,13 @@ export const StoreSalesReturnReceipt = ({
 
   if (!salesReturn) return null;
 
-  const busy = loadingRacks || loadingLocations;
+  const busy = loadingLocations;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PackagePlus className="w-5 h-5" />
@@ -331,7 +405,8 @@ export const StoreSalesReturnReceipt = ({
               {salesReturn.returnNumber}
             </span>
             {salesReturn.isDirectReturn ? " (Direct Sale Return)" : " (Sale Return)"}
-            {storeName ? ` → ${storeName}` : ""}.
+            {storeName ? ` → ${storeName}` : ""}. Choose a location (store ·
+            rack / shelf) for each line.
           </DialogDescription>
         </DialogHeader>
 
@@ -354,7 +429,7 @@ export const StoreSalesReturnReceipt = ({
           </div>
         </div>
 
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -362,29 +437,13 @@ export const StoreSalesReturnReceipt = ({
                 <TableHead>Part No | Master Part</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead>Rack</TableHead>
-                <TableHead>Shelf</TableHead>
+                <TableHead className="min-w-[240px]">Location</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {salesReturn.items.map((item, index) => {
-                const loc = itemLocations[item.id] || {
-                  storeId: "",
-                  rackId: "",
-                  shelfId: "",
-                };
-                const shelves = getShelvesForRack(loc.rackId);
-                // Ensure selected rack appears even if from another store when All Stores
-                const rackOptions = (() => {
-                  if (
-                    loc.rackId &&
-                    !racksForStore.some((r) => r.id === loc.rackId)
-                  ) {
-                    const extra = racks.find((r) => r.id === loc.rackId);
-                    return extra ? [...racksForStore, extra] : racksForStore;
-                  }
-                  return racksForStore;
-                })();
+                const locOptions = locationOptionsForPart(String(item.partId));
+                const selectedId = selectedLocationByItemId[item.id] || "";
                 return (
                   <TableRow key={item.id}>
                     <ListNumberCell
@@ -401,62 +460,35 @@ export const StoreSalesReturnReceipt = ({
                       {item.returnQuantity}
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={loc.rackId || undefined}
-                        disabled={busy || isConfirming}
-                        onValueChange={(rackId) => {
-                          const rack =
-                            racks.find((r) => r.id === rackId) ||
-                            racksForStore.find((r) => r.id === rackId);
-                          setItemLocations((prev) => ({
-                            ...prev,
-                            [item.id]: {
-                              storeId:
-                                (rack?.storeId
-                                  ? String(rack.storeId)
-                                  : "") ||
-                                prev[item.id]?.storeId ||
-                                effectiveStoreId,
-                              rackId,
-                              shelfId: "",
-                            },
-                          }));
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-[140px]">
-                          <SelectValue placeholder={busy ? "Loading…" : "Rack"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rackOptions.map((rack) => (
-                            <SelectItem key={rack.id} value={rack.id}>
-                              {rack.codeNo || rack.id.slice(0, 8)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={loc.shelfId || undefined}
-                        disabled={!loc.rackId || isConfirming}
-                        onValueChange={(shelfId) =>
-                          setItemLocations((prev) => ({
-                            ...prev,
-                            [item.id]: { ...prev[item.id], shelfId },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-[140px]">
-                          <SelectValue placeholder="Shelf" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {shelves.map((shelf) => (
-                            <SelectItem key={shelf.id} value={shelf.id}>
-                              {shelf.shelfNo || shelf.id.slice(0, 8)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {locOptions.length === 0 ? (
+                        <span className="text-xs text-amber-700">
+                          {busy
+                            ? "Loading locations…"
+                            : "No rack/shelf locations available. Add racks and shelves for this store first."}
+                        </span>
+                      ) : (
+                        <SearchableSelect
+                          options={locOptions.map(
+                            (opt): SearchableSelectOption => ({
+                              value: opt.id,
+                              label: opt.label,
+                            }),
+                          )}
+                          value={selectedId || undefined}
+                          disabled={busy || isConfirming}
+                          placeholder={busy ? "Loading…" : "Select location"}
+                          className="h-8 w-full max-w-[320px]"
+                          selectedDisplayLabelOnly
+                          requireSearchAbove={Number.MAX_SAFE_INTEGER}
+                          maxDisplayedOptions={300}
+                          onValueChange={(v) =>
+                            setSelectedLocationByItemId((prev) => ({
+                              ...prev,
+                              [item.id]: v,
+                            }))
+                          }
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 );

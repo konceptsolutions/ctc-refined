@@ -160,7 +160,7 @@ interface ConversationFlow {
     rackName?: string;
     shelfId?: string;
     shelfName?: string;
-    prices?: { priceA: number; priceB: number; priceM: number };
+    prices?: { priceA: number; priceB: number; priceN: number };
     expenses?: Array<{ type: string; amount: number; account: string }>;
     receivedQuantities?: Record<string, number>;
     currentItemIndex?: number;
@@ -984,7 +984,7 @@ const AIChatBot: React.FC = () => {
             ...flow.data,
             items,
             currentItemIndex: 0,
-            prices: { priceA: 0, priceB: 0, priceM: 0 },
+            prices: { priceA: 0, priceB: 0, priceN: 0 },
             expenses: [],
           },
         });
@@ -1211,7 +1211,7 @@ const AIChatBot: React.FC = () => {
                     items,
                     purchaseOrderId: poId,
                     currentItemIndex: 0,
-                    prices: { priceA: 0, priceB: 0, priceM: 0 },
+                    prices: { priceA: 0, priceB: 0, priceN: 0 },
                     expenses: [],
                   },
                 });
@@ -1326,7 +1326,7 @@ const AIChatBot: React.FC = () => {
     scrollToBottom();
   }, [conversationFlow, scrollToBottom]);
 
-  const handlePricesEntered = useCallback((prices: { priceA: number; priceB: number; priceM: number }) => {
+  const handlePricesEntered = useCallback((prices: { priceA: number; priceB: number; priceN: number }) => {
     const flow = conversationFlow;
     if (flow.type !== 'purchase_order_receiving') return;
 
@@ -1405,7 +1405,7 @@ const AIChatBot: React.FC = () => {
       setIsTyping(true);
       const items = flow.data.items || [];
       const receivedQuantities = flow.data.receivedQuantities || {};
-      const prices = flow.data.prices || { priceA: 0, priceB: 0, priceM: 0 };
+      const prices = flow.data.prices || { priceA: 0, priceB: 0, priceN: 0 };
 
       const updateData: any = {
         status: 'Received',
@@ -1451,14 +1451,14 @@ const AIChatBot: React.FC = () => {
       }
 
       // Update part prices if provided
-      if (prices.priceA > 0 || prices.priceB > 0 || prices.priceM > 0) {
+      if (prices.priceA > 0 || prices.priceB > 0 || prices.priceN > 0) {
         const firstItem = items[0];
         if (firstItem) {
           try {
             await apiClient.updatePartPrices(firstItem.partId, {
               priceA: prices.priceA,
               priceB: prices.priceB,
-              priceM: prices.priceM,
+              priceN: prices.priceN,
             });
           } catch (err) {
           }
@@ -3184,9 +3184,9 @@ const AIChatBot: React.FC = () => {
                             <PriceInputs
                               priceA={conversationFlow.data.prices?.priceA || 0}
                               priceB={conversationFlow.data.prices?.priceB || 0}
-                              priceM={conversationFlow.data.prices?.priceM || 0}
+                              priceN={conversationFlow.data.prices?.priceN || 0}
                               onPriceChange={(field, value) => {
-                                const prices = { ...(conversationFlow.data.prices || { priceA: 0, priceB: 0, priceM: 0 }), [field]: value };
+                                const prices = { ...(conversationFlow.data.prices || { priceA: 0, priceB: 0, priceN: 0 }), [field]: value };
                                 setConversationFlow({
                                   ...conversationFlow,
                                   data: { ...conversationFlow.data, prices },
@@ -3203,7 +3203,7 @@ const AIChatBot: React.FC = () => {
                               }}
                             />
                             <Button
-                              onClick={() => handlePricesEntered(conversationFlow.data.prices || { priceA: 0, priceB: 0, priceM: 0 })}
+                              onClick={() => handlePricesEntered(conversationFlow.data.prices || { priceA: 0, priceB: 0, priceN: 0 })}
                               size="sm"
                               className="h-7 text-xs w-full"
                             >

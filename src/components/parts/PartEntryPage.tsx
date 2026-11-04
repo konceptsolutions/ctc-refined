@@ -198,7 +198,7 @@ export const PartEntryPage = ({
         cost: partData.cost ? parseFloat(partData.cost) : null,
         price_a: partData.priceA ? parseFloat(partData.priceA) : null,
         price_b: partData.priceB ? parseFloat(partData.priceB) : null,
-        price_m: partData.priceM ? parseFloat(partData.priceM) : null,
+        price_n: partData.priceN ? parseFloat(partData.priceN) : null,
         smc: partData.smc || null,
         size: partData.size || null,
         origin:

@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { PartItem } from "@/types/invoice";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 
 export type InvoicePartDropdownListProps = {
   inlineRowId: string;
@@ -128,11 +129,11 @@ export function InvoicePartDropdownList({
               }}
             >
               <div className="flex items-center justify-between gap-2 min-w-0">
-                <div className="font-medium min-w-0 truncate">
-                  {p.masterPartNo && p.masterPartNo !== p.partNo
-                    ? `${p.partNo} | ${p.masterPartNo}`
-                    : p.partNo}
-                </div>
+                <PartIdentityBadges
+                  partNo={p.partNo}
+                  masterPart={p.masterPartNo}
+                  mutedOnParent={idx === safeHighlight}
+                />
                 <div className="flex items-center gap-1 shrink-0">
                   <span
                     className={cn(
@@ -197,7 +198,7 @@ export function InvoicePartDropdownList({
                     {p.brands.map((b) => b.name).join(", ")}
                   </div>
                 ) : null}
-                {(p.priceA !== null || p.priceB !== null) && (
+                {(p.priceA !== null || p.priceB !== null || p.priceN != null) && (
                   <div
                     className={cn(
                       "flex items-center gap-2 text-[10px] font-bold",
@@ -228,6 +229,18 @@ export function InvoicePartDropdownList({
                         )}
                       >
                         B: {Number(p.priceB).toLocaleString()}
+                      </span>
+                    )}
+                    {p.priceN != null && (
+                      <span
+                        className={cn(
+                          "px-1 rounded border italic",
+                          idx === safeHighlight
+                            ? "bg-primary-foreground/15 border-primary-foreground/30"
+                            : "bg-emerald-50 border-emerald-100",
+                        )}
+                      >
+                        N: {Number(p.priceN).toLocaleString()}
                       </span>
                     )}
                   </div>

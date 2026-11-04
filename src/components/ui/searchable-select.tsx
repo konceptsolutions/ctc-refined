@@ -7,6 +7,7 @@ import {
   filterSearchableSelectOptionsWithFamilyExpansion,
   type PartSearchableSelectOption,
 } from "@/lib/part-family-search";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 
 export interface SearchableSelectOption {
   value: string;
@@ -90,6 +91,8 @@ export const SearchableSelect = React.memo(function SearchableSelect({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const suppressFocusCloseRef = React.useRef(false);
+  /** True while the pointer is down on the list (incl. native scrollbar drag). */
+  const listPointerActiveRef = React.useRef(false);
 
   const [dropdownPosition, setDropdownPosition] = React.useState({
     top: 0,
@@ -104,13 +107,30 @@ export const SearchableSelect = React.memo(function SearchableSelect({
   const selectedOption = value
     ? options.find((opt) => opt.value === value)
     : undefined;
+  const selectedPartIdentity =
+    selectedOption?.uiPartNo || selectedOption?.uiMasterPart
+      ? [selectedOption.uiPartNo, selectedOption.uiMasterPart]
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .join(" / ")
+      : "";
   const displayValue = selectedOption
     ? selectedDisplayLabelOnly
-      ? selectedOption.label
-      : [selectedOption.label, selectedOption.description]
+      ? selectedPartIdentity || selectedOption.label
+      : [
+          selectedPartIdentity || selectedOption.label,
+          selectedOption.description,
+        ]
           .filter(Boolean)
           .join(" - ")
     : selectedLabel || (allowCustom ? value || "" : "");
+  const showSelectedPartBadges = Boolean(
+    value &&
+      selectedOption &&
+      (selectedOption.uiPartNo || selectedOption.uiMasterPart) &&
+      !isFocused &&
+      !isOpen,
+  );
 
   // While focused, always show what the user is typing (even when empty).
   const inputValue = isFocused || isOpen ? searchQuery : displayValue;
@@ -326,26 +346,69 @@ export const SearchableSelect = React.memo(function SearchableSelect({
     return () => cancelAnimationFrame(focusFrame);
   }, [autoOpen, disabled, onAutoOpenHandled, updateDropdownPosition]);
 
-  // Close dropdown when clicking outside
+  // Close only on true outside presses. Native scrollbar clicks often report
+  // document/html as event.target — hit-test the list's visual bounds instead.
+  // Do NOT close on input blur; scrollbar interaction always blurs the input.
   React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node) &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-        setSearchQuery("");
-        setIsFocused(false);
-      }
+    if (!isOpen) return;
+
+    const pointInRect = (x: number, y: number, el: HTMLElement | null) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return (
+        x >= r.left - 2 &&
+        x <= r.right + 2 &&
+        y >= r.top - 2 &&
+        y <= r.bottom + 2
+      );
     };
 
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () =>
-        document.removeEventListener("mousedown", handleClickOutside);
-    }
+    const isOnSelect = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (containerRef.current?.contains(target)) return true;
+      if (dropdownRef.current?.contains(target)) return true;
+      // Scrollbar / empty track: target is often not the list node.
+      if (pointInRect(event.clientX, event.clientY, dropdownRef.current)) {
+        return true;
+      }
+      if (pointInRect(event.clientX, event.clientY, containerRef.current)) {
+        return true;
+      }
+      return false;
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (isOnSelect(event)) {
+        if (pointInRect(event.clientX, event.clientY, dropdownRef.current)) {
+          listPointerActiveRef.current = true;
+        }
+        return;
+      }
+      listPointerActiveRef.current = false;
+      setIsOpen(false);
+      setSearchQuery("");
+      setIsFocused(false);
+    };
+
+    const onPointerUp = () => {
+      if (!listPointerActiveRef.current) return;
+      listPointerActiveRef.current = false;
+      // Restore typing focus after scrollbar drag without closing.
+      requestAnimationFrame(() => {
+        if (dropdownRef.current) {
+          inputRef.current?.focus({ preventScroll: true });
+        }
+      });
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerUp, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerUp, true);
+    };
   }, [isOpen]);
 
   const selectAllInputText = React.useCallback(() => {
@@ -419,12 +482,12 @@ export const SearchableSelect = React.memo(function SearchableSelect({
   };
 
   const handleInputBlur = () => {
+    // Never close from blur while the list is open — clicking the native
+    // scrollbar always blurs the input, and that must not dismiss the menu.
+    // Closing is handled by outside pointerdown / Escape / option select.
     window.setTimeout(() => {
-      const active = document.activeElement;
-      if (
-        containerRef.current?.contains(active) ||
-        dropdownRef.current?.contains(active)
-      ) {
+      if (listPointerActiveRef.current || dropdownRef.current) {
+        setIsFocused(Boolean(dropdownRef.current));
         return;
       }
 
@@ -432,7 +495,6 @@ export const SearchableSelect = React.memo(function SearchableSelect({
 
       const query = searchQueryRef.current.trim();
       if (!query) {
-        setIsOpen(false);
         setSearchQuery("");
         return;
       }
@@ -451,7 +513,6 @@ export const SearchableSelect = React.memo(function SearchableSelect({
         return;
       }
 
-      setIsOpen(false);
       setSearchQuery("");
     }, 150);
   };
@@ -532,7 +593,7 @@ export const SearchableSelect = React.memo(function SearchableSelect({
       <div className="relative">
         <Input
           ref={inputRef}
-          value={inputValue}
+          value={showSelectedPartBadges ? "" : inputValue}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
           onBlur={handleInputBlur}
@@ -557,15 +618,32 @@ export const SearchableSelect = React.memo(function SearchableSelect({
               setSearchQuery("");
             }
           }}
-          placeholder={placeholder}
+          placeholder={showSelectedPartBadges ? "" : placeholder}
           disabled={disabled}
           className={cn(
             "w-full h-8 text-xs",
             partCodeContext && "part-code-font font-mono",
             selectedDisplayLabelOnly && value && !isOpen && !isFocused && "truncate",
+            showSelectedPartBadges && "text-transparent caret-transparent",
           )}
           {...props}
         />
+        {showSelectedPartBadges && selectedOption ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[1] flex items-center gap-1.5 overflow-hidden bg-background px-3 rounded-md"
+            aria-hidden
+          >
+            <PartIdentityBadges
+              partNo={selectedOption.uiPartNo}
+              masterPart={selectedOption.uiMasterPart}
+            />
+            {!selectedDisplayLabelOnly && selectedOption.description ? (
+              <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                - {selectedOption.description}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {isOpen &&
@@ -573,12 +651,26 @@ export const SearchableSelect = React.memo(function SearchableSelect({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[9999] bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-x-hidden overflow-y-auto searchable-select-portal"
+            className="fixed z-[9999] bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-x-hidden overflow-y-auto overscroll-contain searchable-select-portal"
+            onPointerDown={() => {
+              listPointerActiveRef.current = true;
+            }}
+            onWheel={(e) => {
+              // Dialog scroll-lock often swallows wheel events on body portals.
+              e.stopPropagation();
+              e.preventDefault();
+              e.currentTarget.scrollTop += e.deltaY;
+            }}
+            onTouchMove={(e) => {
+              e.stopPropagation();
+            }}
             style={{
               top: `${dropdownPosition.top}px`,
               left: `${dropdownPosition.left}px`,
               width: `${dropdownPosition.width}px`,
               maxWidth: `${dropdownPosition.width}px`,
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
             }}
           >
             {filteredOptions.length === 0 && !exactMatch && (searchQuery && (allowCustom || onCreate)) && (
@@ -610,6 +702,8 @@ export const SearchableSelect = React.memo(function SearchableSelect({
                     data-ss-option-index={idx}
                     onMouseEnter={() => setHighlightIndex(idx)}
                     onMouseDown={(e) => {
+                      // Prevent input blur flicker; do not put preventDefault on
+                      // the scroll container or native scrollbar dragging breaks.
                       e.preventDefault();
                       e.stopPropagation();
                       handleSelect(option.value);
@@ -623,8 +717,25 @@ export const SearchableSelect = React.memo(function SearchableSelect({
                         "bg-primary/10 text-primary",
                     )}
                   >
-                    <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-                      <span className={cn("font-medium truncate", partCodeContext && "part-code-font font-mono")}>{option.label}</span>
+                    <div className="flex flex-col min-w-0 flex-1 overflow-hidden gap-0.5">
+                      {option.uiPartNo || option.uiMasterPart ? (
+                        <PartIdentityBadges
+                          partNo={option.uiPartNo}
+                          masterPart={option.uiMasterPart}
+                          mutedOnParent={
+                            idx === highlightIndex || value === option.value
+                          }
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            "font-medium truncate",
+                            partCodeContext && "part-code-font font-mono",
+                          )}
+                        >
+                          {option.label}
+                        </span>
+                      )}
                       {(option.description || option.listOnlyDescription) && (
                         <span className="text-[11px] text-muted-foreground truncate">
                           {[option.description, option.listOnlyDescription]

@@ -52,7 +52,7 @@ interface PartPriceItem {
     priceRevDate: string;
     priceA: number;
     priceB: number;
-    priceM: number;
+    priceN: number;
     selected: boolean;
 }
 
@@ -146,7 +146,7 @@ export const DetailsPartSearch = () => {
                         // Robust mapping for Prices
                         priceA: Number(p.price_a || p.priceA || 0),
                         priceB: Number(p.price_b || p.priceB || 0),
-                        priceM: Number(p.price_m || p.priceM || 0),
+                        priceN: Number(p.price_n || p.priceN || 0),
                         selected: false,
                     };
                 });
@@ -500,7 +500,7 @@ export const DetailsPartSearch = () => {
                                                     {item.priceB.toLocaleString()}
                                                 </TableCell>
                                                 <TableCell className="px-2 py-1 text-xs text-right border-r font-mono font-bold">
-                                                    {item.priceM.toLocaleString()}
+                                                    {item.priceN.toLocaleString()}
                                                 </TableCell>
                                                 <TableCell className="px-2 py-1 text-center">
                                                     {canEdit && (

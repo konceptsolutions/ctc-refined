@@ -50,7 +50,7 @@ export interface Customer {
   accountId?: string | null;
   creditLimit?: number;
   creditDays?: number;
-  priceType?: "A" | "B" | "M" | null;
+  priceType?: "A" | "B" | "N" | null;
   category?: "Reseller" | "EndUser" | string | null;
 }
 
@@ -79,7 +79,7 @@ export interface PartItem {
   price: number;
   priceA?: number;
   priceB?: number;
-  priceM?: number;
+  priceN?: number;
   stockQty: number;
   reservedQty: number;
   availableQty: number;

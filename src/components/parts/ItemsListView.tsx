@@ -341,7 +341,7 @@ export const ItemsListView = ({
               cost: partData.cost || 0,
               priceA: partData.price_a || partData.priceA || 0,
               priceB: partData.price_b || partData.priceB || 0,
-              priceM: partData.price_m || partData.priceM || 0,
+              priceN: partData.price_n || partData.priceN || 0,
             });
           }
         } catch (error) {
@@ -2942,7 +2942,7 @@ export const ItemsListView = ({
                   cost: currentItemPrices.cost,
                   priceA: currentItemPrices.priceA,
                   priceB: currentItemPrices.priceB,
-                  priceM: currentItemPrices.priceM,
+                  priceN: currentItemPrices.priceN,
                 };
               }
 
@@ -3044,14 +3044,14 @@ export const ItemsListView = ({
                                 </span>
                               </div>
                             )}
-                          {previousPrice.priceM !== undefined &&
-                            previousPrice.priceM !== null && (
+                          {previousPrice.priceN !== undefined &&
+                            previousPrice.priceN !== null && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">
-                                  Price M:
+                                  Price N:
                                 </span>
                                 <span className="font-medium">
-                                  {formatCurrency(previousPrice.priceM)}
+                                  {formatCurrency(previousPrice.priceN)}
                                 </span>
                               </div>
                             )}
@@ -3116,14 +3116,14 @@ export const ItemsListView = ({
                                 </span>
                               </div>
                             )}
-                          {amount.priceM !== undefined &&
-                            amount.priceM !== null && (
+                          {amount.priceN !== undefined &&
+                            amount.priceN !== null && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">
-                                  Price M:
+                                  Price N:
                                 </span>
                                 <span className="font-medium text-success">
-                                  {formatCurrency(amount.priceM)}
+                                  {formatCurrency(amount.priceN)}
                                 </span>
                               </div>
                             )}

@@ -68,6 +68,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getUserRole } from "@/utils/auth";
 import { usePageActions } from "@/permissions/pageActions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { buildPartSearchableSelectFields } from "@/lib/part-family-search";
 import { Badge } from "@/components/ui/badge";
 import { printSaleReturnPdf } from "@/utils/printSaleReturnPdf";
 
@@ -146,6 +147,7 @@ interface DirectPartItem {
   brand: string;
   priceA: number | null;
   priceB: number | null;
+  priceN: number | null;
   avgCost: number;
   cost: number;
 }
@@ -155,7 +157,7 @@ interface DirectReturnLine {
   partId: string;
   returnQty: string;
   unitPrice: string;
-  selectedPriceType?: "A" | "B" | "";
+  selectedPriceType?: "A" | "B" | "N" | "";
   /** Saved line COGS snapshot when editing an existing return */
   unitCostSnapshot?: number;
 }
@@ -179,29 +181,36 @@ const parseDirectMoneyDraft = (value: string): number => {
 
 const inferDirectPriceType = (
   unitPrice: number,
-  part?: Pick<DirectPartItem, "priceA" | "priceB">,
-): "A" | "B" | "" => {
+  part?: Pick<DirectPartItem, "priceA" | "priceB" | "priceN">,
+): "A" | "B" | "N" | "" => {
   if (!part) return "";
   if (part.priceA != null && Math.abs(unitPrice - part.priceA) < 0.01) return "A";
   if (part.priceB != null && Math.abs(unitPrice - part.priceB) < 0.01) return "B";
+  if (part.priceN != null && Math.abs(unitPrice - part.priceN) < 0.01) return "N";
   return "";
 };
 
 const pickDirectLinePrice = (
   part: DirectPartItem,
-  customerPriceType: "A" | "B" | null,
-): { selectedPriceType: "A" | "B" | ""; unitPrice: string } => {
+  customerPriceType: "A" | "B" | "N" | null,
+): { selectedPriceType: "A" | "B" | "N" | ""; unitPrice: string } => {
   if (customerPriceType === "A" && part.priceA != null) {
     return { selectedPriceType: "A", unitPrice: String(part.priceA) };
   }
   if (customerPriceType === "B" && part.priceB != null) {
     return { selectedPriceType: "B", unitPrice: String(part.priceB) };
   }
+  if (customerPriceType === "N" && part.priceN != null) {
+    return { selectedPriceType: "N", unitPrice: String(part.priceN) };
+  }
   if (part.priceA != null) {
     return { selectedPriceType: "A", unitPrice: String(part.priceA) };
   }
   if (part.priceB != null) {
     return { selectedPriceType: "B", unitPrice: String(part.priceB) };
+  }
+  if (part.priceN != null) {
+    return { selectedPriceType: "N", unitPrice: String(part.priceN) };
   }
   return { selectedPriceType: "", unitPrice: "" };
 };
@@ -395,10 +404,10 @@ export const SalesReturns = () => {
     { id: "1", partId: "", returnQty: "", unitPrice: "", selectedPriceType: "" },
   ]);
   const [directCustomerPriceType, setDirectCustomerPriceType] = useState<
-    "A" | "B" | null
+    "A" | "B" | "N" | null
   >(null);
   const [directCustomers, setDirectCustomers] = useState<
-    { id: string; name: string; priceType: "A" | "B" | "M" | null }[]
+    { id: string; name: string; priceType: "A" | "B" | "N" | null }[]
   >([]);
   const [customerOptions, setCustomerOptions] = useState<
     { value: string; label: string }[]
@@ -475,6 +484,7 @@ export const SalesReturns = () => {
           .map((p: any) => {
             const priceARaw = p.price_a ?? p.priceA;
             const priceBRaw = p.price_b ?? p.priceB;
+            const priceNRaw = p.price_n ?? p.priceN;
             const priceA =
               priceARaw != null && priceARaw !== ""
                 ? Number(priceARaw)
@@ -482,6 +492,10 @@ export const SalesReturns = () => {
             const priceB =
               priceBRaw != null && priceBRaw !== ""
                 ? Number(priceBRaw)
+                : null;
+            const priceN =
+              priceNRaw != null && priceNRaw !== ""
+                ? Number(priceNRaw)
                 : null;
             const avgCost = Number(p.avg_cost ?? p.avgCost) || 0;
             const cost = Number(p.cost) || 0;
@@ -495,6 +509,7 @@ export const SalesReturns = () => {
               brand: String(p.brand_name || p.brand || '').trim(),
               priceA: Number.isFinite(priceA) ? priceA : null,
               priceB: Number.isFinite(priceB) ? priceB : null,
+              priceN: Number.isFinite(priceN) ? priceN : null,
               avgCost,
               cost,
             };
@@ -525,7 +540,7 @@ export const SalesReturns = () => {
           .map((c) => {
             const pt = c.priceType || c.price_type || null;
             const priceType =
-              pt === "A" || pt === "B" || pt === "M" ? pt : null;
+              pt === "A" || pt === "B" || pt === "N" ? pt : null;
             return {
               id: String(c.id),
               name: String(c.name || c.companyName || "").trim(),
@@ -566,9 +581,15 @@ export const SalesReturns = () => {
     () =>
       availableItems.map((item) => ({
         value: item.id,
-        label: `${item.masterPartNo || "—"} | ${item.partNo}`,
+        label: `${item.masterPartNo || "—"} / ${item.partNo}`,
         description: item.name,
         listOnlyDescription: item.brand || undefined,
+        ...buildPartSearchableSelectFields({
+          master_part_no: item.masterPartNo,
+          part_no: item.partNo,
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+        }),
       })),
     [availableItems],
   );
@@ -612,7 +633,11 @@ export const SalesReturns = () => {
     if (!isDirectReturnOpen || !editingDirectReturnId) return;
     if (directCustomerType === "registered" && directCustomerId) {
       const customer = directCustomers.find((c) => c.id === directCustomerId);
-      if (customer?.priceType === "A" || customer?.priceType === "B") {
+      if (
+        customer?.priceType === "A" ||
+        customer?.priceType === "B" ||
+        customer?.priceType === "N"
+      ) {
         setDirectCustomerPriceType(customer.priceType);
       }
     }
@@ -638,7 +663,9 @@ export const SalesReturns = () => {
   const applyDirectCustomerPriceType = (customerId: string) => {
     const customer = directCustomers.find((c) => c.id === customerId);
     const pt =
-      customer?.priceType === "A" || customer?.priceType === "B"
+      customer?.priceType === "A" ||
+      customer?.priceType === "B" ||
+      customer?.priceType === "N"
         ? customer.priceType
         : null;
     setDirectCustomerPriceType(pt);
@@ -711,7 +738,9 @@ export const SalesReturns = () => {
     if (ct === "registered" && customerId) {
       const customer = directCustomers.find((c) => c.id === customerId);
       setDirectCustomerPriceType(
-        customer?.priceType === "A" || customer?.priceType === "B"
+        customer?.priceType === "A" ||
+          customer?.priceType === "B" ||
+          customer?.priceType === "N"
           ? customer.priceType
           : null,
       );
@@ -972,6 +1001,12 @@ export const SalesReturns = () => {
         value: item.partNo,
         label: item.partNo,
         description: item.name,
+        ...buildPartSearchableSelectFields({
+          master_part_no: item.masterPartNo,
+          part_no: item.partNo,
+          masterPartNo: item.masterPartNo,
+          partNo: item.partNo,
+        }),
       })),
     ],
     [availableItems],
@@ -2170,6 +2205,9 @@ export const SalesReturns = () => {
                     <TableHead className="text-xs w-[88px] text-center">
                       Price B
                     </TableHead>
+                    <TableHead className="text-xs w-[88px] text-center">
+                      Price N
+                    </TableHead>
                     <TableHead className="text-xs w-[120px] text-right">
                       Unit price
                     </TableHead>
@@ -2187,6 +2225,7 @@ export const SalesReturns = () => {
                     const part = availableItems.find((p) => p.id === line.partId);
                     const priceAValue = part?.priceA ?? null;
                     const priceBValue = part?.priceB ?? null;
+                    const priceNValue = part?.priceN ?? null;
                     const returnUnitCost = part
                       ? resolveDirectReturnUnitCost(part.avgCost, part.cost)
                       : line.unitCostSnapshot ?? 0;
@@ -2324,6 +2363,37 @@ export const SalesReturns = () => {
                               }
                             >
                               {priceBValue.toLocaleString()}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {priceNValue == null ? (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant={
+                                line.selectedPriceType === "N"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              size="sm"
+                              className="h-8 w-full min-w-0 px-1 text-xs"
+                              onClick={() =>
+                                setDirectLines((prev) =>
+                                  prev.map((row) =>
+                                    row.id === line.id
+                                      ? {
+                                          ...row,
+                                          selectedPriceType: "N",
+                                          unitPrice: String(priceNValue),
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            >
+                              {priceNValue.toLocaleString()}
                             </Button>
                           )}
                         </TableCell>

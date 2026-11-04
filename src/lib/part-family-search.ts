@@ -1,5 +1,9 @@
 import type { SearchableSelectOption } from "@/components/ui/searchable-select";
 import type { PartIdentityFields } from "@/lib/part-identity";
+import {
+  getUiMasterPartFromDb,
+  getUiPartNoFromDb,
+} from "@/lib/part-identity";
 
 export type PartFamilySearchRow = PartIdentityFields & {
   id?: string;
@@ -130,10 +134,12 @@ export function buildPartSearchableSelectFields(
   part: PartFamilySearchRow,
 ): Pick<PartSearchableSelectOption, "familyKey" | "uiPartNo" | "uiMasterPart"> {
   const keys = getPartIdentityKeys(part);
+  const uiPartNo = getUiPartNoFromDb(part) || undefined;
+  const uiMasterPart = getUiMasterPartFromDb(part) || undefined;
   return {
     familyKey: keys.join("::") || undefined,
-    uiPartNo: keys[0] || undefined,
-    uiMasterPart: keys[1] || keys[0] || undefined,
+    uiPartNo,
+    uiMasterPart,
   };
 }
 

@@ -1,5 +1,12 @@
-import { useState, useMemo, useRef, useEffect } from "react";
-import { Search, Plus, RefreshCw, Trash } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,1175 +30,553 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
-interface Item {
-  id: string;
-  masterPartNo: string;
-  partNo: string;
-  brand: string;
-  description: string;
-  category: string;
-  subCategory: string;
-  application: string;
-  status: string;
-  images: string[];
-}
-
-interface Model {
+interface ModelRow {
   id: string;
   name: string;
   qtyUsed: number;
   partId: string;
+  partNo: string;
+  masterPartNo: string;
+  description: string;
+  brand: string;
+  application: string;
 }
+
+const emptyForm = {
+  partId: "",
+  name: "",
+  qtyUsed: "1",
+};
 
 export const ModelsPage = () => {
   const { canCreate, canEdit, canDelete } = usePageActions("partentry.models");
-  // Unified search state - single field for all search types
-  const [unifiedSearch, setUnifiedSearch] = useState("");
-  const [selectedPart, setSelectedPart] = useState<Item | null>(null);
-  const [showUnifiedDropdown, setShowUnifiedDropdown] = useState(false);
-  const [unifiedSearchResults, setUnifiedSearchResults] = useState<Item[]>([]);
-  const [modelSearchResults, setModelSearchResults] = useState<
-    Array<{ modelName: string; part: Item }>
-  >([]);
-  const [searchType, setSearchType] = useState<
-    "model" | "part" | "master" | "mixed"
-  >("mixed");
-  const [manualSearchScope, setManualSearchScope] = useState<
-    "all" | "model" | "part" | "master" | "brand"
-  >("all");
-  const [loadingUnifiedSearch, setLoadingUnifiedSearch] = useState(false);
-  const unifiedDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Models state
-  const [models, setModels] = useState<Model[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [models, setModels] = useState<ModelRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Inline editing states
-  const [editingModelId, setEditingModelId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editQty, setEditQty] = useState("");
-
-  // Add new model inline state
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [newModelName, setNewModelName] = useState("");
-  const [newModelQty, setNewModelQty] = useState("");
-
-  // Delete state
-  const [deleteModelOpen, setDeleteModelOpen] = useState(false);
-  const [modelToDelete, setModelToDelete] = useState<Model | null>(null);
-
-  // State for parts fetched from API
-  const [parts, setParts] = useState<Item[]>([]);
+  const [partOptions, setPartOptions] = useState<SearchableSelectOption[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
 
-  // Fetch initial parts on mount
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<ModelRow | null>(null);
+  const [form, setForm] = useState(emptyForm);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [modelToDelete, setModelToDelete] = useState<ModelRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
-    const fetchInitialParts = async () => {
-      setLoadingParts(true);
-      try {
-        const response = await apiClient.getParts({
-          limit: 100000, // Effectively no limit for faster initial load
-          page: 1,
-        });
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-        if (response.error) {
-          setParts([]);
-        } else {
-          const responseData = response.data as any;
-          let partsData: any[] = [];
-
-          if (Array.isArray(responseData)) {
-            partsData = responseData;
-          } else if (responseData && Array.isArray(responseData.data)) {
-            partsData = responseData.data;
-          }
-
-          // Transform API data to Item format
-          // SWAPPED: partNo shows master_part_no (actual Part No), masterPartNo shows part_no (Master Part No)
-          const transformedParts: Item[] = partsData.map((p: any) => ({
-            id: p.id,
-            masterPartNo: p.part_no || p.masterPartNo || "",
-            partNo: p.master_part_no || p.partNo || "",
-            brand: p.brand_name || p.brand || "",
-            description: p.description || "",
-            category: p.category_name || p.category || "",
-            subCategory: p.subcategory_name || p.subcategory || "",
-            application: p.application_name || p.application || "",
-            status: p.status || "active",
-            images: [],
-          }));
-
-          setParts(transformedParts);
-        }
-      } catch (error: any) {
-        setParts([]);
-      } finally {
-        setLoadingParts(false);
-      }
-    };
-
-    fetchInitialParts();
-  }, []);
-
-  // Detect search type based on input pattern and try both searches
-
-  // Unified search - smart detection and appropriate results
-  // Unified search - smart detection and appropriate results
-  // Unified search - smart detection and appropriate results
-  // Unified search - smart detection and appropriate results
-  useEffect(() => {
-    const performUnifiedSearch = async () => {
-      // Don't search for empty or very short strings
-      if (!unifiedSearch || unifiedSearch.trim().length < 1) {
-        setUnifiedSearchResults([]);
-        setModelSearchResults([]);
-        if (manualSearchScope === "all") {
-          setSearchType("mixed");
-        } else {
-          setSearchType(manualSearchScope as any);
-        }
-        setLoadingUnifiedSearch(false);
-        return;
-      }
-
-      setLoadingUnifiedSearch(true);
-      const searchTerm = unifiedSearch.trim();
-
-      // Update local search type for UI feedback
-      const looksLikeModel =
-        /^\d+[a-z]+$/i.test(searchTerm) || /^[a-z]+\d+$/i.test(searchTerm);
-
-      if (manualSearchScope !== "all") {
-        setSearchType(manualSearchScope as any);
-      } else {
-        if (looksLikeModel) {
-          setSearchType("model");
-        } else if (searchTerm.length > 10) {
-          setSearchType("master");
-        } else {
-          setSearchType("mixed");
-        }
-      }
-
-      // FALLBACK SEARCH FUNCTION
-      const performLegacySearch = async () => {
-        try {
-          const allResults: Item[] = [];
-          const modelResults: Array<{ modelName: string; part: Item }> = [];
-          const processedPartIds = new Set<string>();
-
-          // Search parts using standard API
-          const apiResponse = await apiClient.getParts({
-            search: searchTerm,
-            limit: 50,
-            page: 1,
-          });
-
-          if (!apiResponse.error) {
-            const responseData = apiResponse.data as any;
-            let partsData: any[] = [];
-
-            if (Array.isArray(responseData)) {
-              partsData = responseData;
-            } else if (responseData && Array.isArray(responseData.data)) {
-              partsData = responseData.data;
-            }
-
-            // Fetch detailed information for parts in parallel to get their models
-            // attributes. The standard list API doesn't return models, so we must fetch details.
-            const detailedPartsPromises = partsData
-              .slice(0, 40)
-              .map(async (p: any) => {
-                if (processedPartIds.has(p.id)) return null;
-
-                try {
-                  // We MUST fetch individual part details to see the 'models' array!
-                  const detailResponse = await apiClient.getPart(p.id);
-                  if (!detailResponse.error) {
-                    return (detailResponse as any).data || detailResponse;
-                  }
-                  return p;
-                } catch (e) {
-                  return p;
-                }
-              });
-
-            const detailedParts = await Promise.all(detailedPartsPromises);
-
-            // Transform results
-            detailedParts.forEach((p: any) => {
-              if (!p || processedPartIds.has(p.id)) return;
-
-              const item = {
-                id: p.id,
-                masterPartNo: p.part_no || p.masterPartNo || p.partNo || "",
-                partNo: p.master_part_no || p.partNo || "",
-                brand: p.brand_name || p.brand || p.brand?.name || "",
-                description: p.description || "",
-                category:
-                  p.category_name || p.category || p.category?.name || "",
-                subCategory:
-                  p.subcategory_name ||
-                  p.subcategory ||
-                  p.subcategory?.name ||
-                  "",
-                application:
-                  p.application_name ||
-                  p.application ||
-                  p.application?.name ||
-                  "",
-                status: p.status || "active",
-                images: [],
-              };
-
-              // Filter based on scope if needed
-              if (
-                manualSearchScope === "part" &&
-                !item.partNo.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-                return;
-              if (
-                manualSearchScope === "brand" &&
-                !item.brand.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-                return;
-
-              allResults.push(item);
-              processedPartIds.add(p.id);
-
-              // Check if it matches model pattern
-              if (
-                (manualSearchScope === "all" && looksLikeModel) ||
-                manualSearchScope === "model"
-              ) {
-                if (p.models && Array.isArray(p.models)) {
-                  p.models.forEach((m: any) => {
-                    // Check if model name contains search term
-                    // OR if we are just showing all models for a part that matched differently?
-                    // User expects: Search "140G" -> Show parts for 140G.
-                    if (
-                      m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                    ) {
-                      modelResults.push({ modelName: m.name, part: item });
-                    }
-                  });
-                }
-              }
-            });
-          }
-
-          // Sort models: Exact matches first, then starts-with, then others
-          modelResults.sort((a, b) => {
-            const lowerTerm = searchTerm.toLowerCase();
-            const aName = a.modelName.toLowerCase();
-            const bName = b.modelName.toLowerCase();
-
-            // 1. Exact match priority
-            if (aName === lowerTerm && bName !== lowerTerm) return -1;
-            if (bName === lowerTerm && aName !== lowerTerm) return 1;
-
-            // 2. Starts-with priority
-            const aStarts = aName.startsWith(lowerTerm);
-            const bStarts = bName.startsWith(lowerTerm);
-            if (aStarts && !bStarts) return -1;
-            if (bStarts && !aStarts) return 1;
-
-            return aName.localeCompare(bName);
-          });
-
-          if (manualSearchScope === "model") {
-            setModelSearchResults(modelResults);
-            setUnifiedSearchResults([]);
-          } else if (
-            manualSearchScope === "part" ||
-            manualSearchScope === "brand" ||
-            manualSearchScope === "master"
-          ) {
-            setModelSearchResults([]);
-            setUnifiedSearchResults(allResults);
-          } else {
-            // ALL / Auto
-            if (modelResults.length > 0) {
-              setModelSearchResults(modelResults);
-              if (modelResults.length > 0 && looksLikeModel) {
-                setUnifiedSearchResults([]);
-                setSearchType("model");
-              } else {
-                setUnifiedSearchResults(allResults);
-              }
-            } else {
-              setModelSearchResults([]);
-              setUnifiedSearchResults(allResults);
-            }
-          }
-        } catch (err) {
-          console.error("Legacy search failed", err);
-          setUnifiedSearchResults([]);
-        } finally {
-          setLoadingUnifiedSearch(false);
-        }
-      };
-
-      try {
-        // Try Advanced Search API First
-        const response = await apiClient.get(
-          `/advanced-search/search?q=${encodeURIComponent(searchTerm)}&type=${manualSearchScope}&limit=100`,
-        );
-
-        if (response.error) {
-          // If 404 or error, fallback to legacy
-          console.warn(
-            "Advanced search failed, falling back to legacy",
-            response.error,
-          );
-          performLegacySearch();
-          return;
-        }
-
-        const data = (response as any).data || response;
-        if (!data || (!data.exact && !data.related)) {
-          // Invalid response structure, fallback
-          performLegacySearch();
-          return;
-        }
-
-        const exactMatches = data.exact || [];
-        const relatedMatches = data.related || [];
-
-        // Use Sets to prevent duplicates
-        const modelResults: Array<{ modelName: string; part: Item }> = [];
-        const partResults: Item[] = [];
-        const processedPartIds = new Set<string>();
-
-        const processItem = (item: any, isModel: boolean) => {
-          const part: Item = {
-            id: item.partId,
-            masterPartNo: item.masterPartNo || "",
-            partNo: item.partNo || "",
-            brand: item.brand || "",
-            description: item.description || "",
-            category: item.category || "",
-            subCategory: item.subcategory || "",
-            application: item.application || "",
-            status: item.status || "active",
-            images: [],
-          };
-
-          if (isModel) {
-            modelResults.push({ modelName: item.modelName, part });
-          } else if (!processedPartIds.has(item.partId)) {
-            partResults.push(part);
-            processedPartIds.add(item.partId);
-          }
-        };
-
-        // Process results
-        exactMatches.forEach((item: any) =>
-          processItem(item, item.type === "model"),
-        );
-        relatedMatches.forEach((item: any) => {
-          // Avoid duplicates in model results
-          if (item.type === "model") {
-            if (
-              !modelResults.some(
-                (m) =>
-                  m.modelName === item.modelName && m.part.id === item.partId,
-              )
-            ) {
-              processItem(item, true);
-            }
-          } else {
-            processItem(item, false);
-          }
-        });
-
-        // Determine display logic based on SCOPE
-        if (manualSearchScope === "model") {
-          setModelSearchResults(modelResults);
-          setUnifiedSearchResults([]);
-        } else if (
-          manualSearchScope === "part" ||
-          manualSearchScope === "brand" ||
-          manualSearchScope === "master"
-        ) {
-          setModelSearchResults([]);
-          setUnifiedSearchResults(partResults);
-        } else {
-          // Auto / All
-          if (modelResults.length > 0) {
-            setModelSearchResults(modelResults);
-            if (modelResults.length > 0 && looksLikeModel) {
-              setUnifiedSearchResults([]);
-              setSearchType("model");
-            } else {
-              setUnifiedSearchResults(partResults);
-            }
-          } else {
-            setModelSearchResults([]);
-            setUnifiedSearchResults(partResults);
-          }
-        }
-        setLoadingUnifiedSearch(false);
-      } catch (error) {
-        console.error("Search error, falling back:", error);
-        performLegacySearch();
-      }
-    };
-
-    const timeoutId = setTimeout(() => {
-      performUnifiedSearch();
-    }, 150);
-
-    return () => clearTimeout(timeoutId);
-  }, [unifiedSearch, manualSearchScope]);
-
-  // Get models for selected part
-  const partModels = useMemo(() => {
-    if (!selectedPart) return [];
-    return models.filter((model) => model.partId === selectedPart.id);
-  }, [models, selectedPart]);
-
-  // Fetch models when a part is selected
-  useEffect(() => {
-    const fetchModels = async () => {
-      if (!selectedPart) {
-        setModels([]);
-        return;
-      }
-
-      setLoadingModels(true);
-      try {
-        const response = await apiClient.getPart(selectedPart.id);
-
-        if (response.error) {
-          toast({
-            title: "Error",
-            description: response.error || "Failed to fetch models",
-            variant: "destructive",
-          });
-          setModels([]);
-        } else {
-          // The API client returns the response object directly
-          // Backend returns: { id, part_no, models: [...], ... }
-          // So models are directly on the response object
-          const responseData = (response as any).data || response;
-          const apiModels = responseData?.models || [];
-
-          const transformedModels: Model[] = apiModels.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            qtyUsed: m.qty_used || m.qtyUsed || 1,
-            partId: selectedPart.id,
-          }));
-
-          setModels(transformedModels);
-        }
-      } catch (error: any) {
+  const loadModels = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.getModels({
+        search: debouncedSearch || undefined,
+        page: 1,
+        limit: 500,
+      });
+      if (response.error) {
         toast({
           title: "Error",
-          description: error.message || "Failed to fetch models",
+          description: response.error || "Failed to load models",
           variant: "destructive",
         });
         setModels([]);
-      } finally {
-        setLoadingModels(false);
+        setTotal(0);
+        return;
       }
-    };
 
-    fetchModels();
-  }, [selectedPart]);
+      const payload = (response as any).data ?? response;
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
 
-  // Close dropdowns when clicking outside
+      setModels(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name || ""),
+          qtyUsed: Number(row.qtyUsed ?? row.qty_used ?? 1) || 1,
+          partId: String(row.partId || row.part_id || ""),
+          partNo: String(row.partNo || row.part_no || ""),
+          masterPartNo: String(row.masterPartNo || row.master_part_no || ""),
+          description: String(row.description || ""),
+          brand: String(row.brand || ""),
+          application: String(row.application || ""),
+        })),
+      );
+      setTotal(Number(payload?.total ?? rows.length) || rows.length);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to load models",
+        variant: "destructive",
+      });
+      setModels([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch]);
+
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        unifiedDropdownRef.current &&
-        !unifiedDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowUnifiedDropdown(false);
-      }
-    };
+    loadModels();
+  }, [loadModels]);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+  const loadPartOptions = useCallback(async (query?: string) => {
+    setLoadingParts(true);
+    try {
+      const response = await apiClient.getParts({
+        search: query?.trim() || undefined,
+        limit: 80,
+        page: 1,
+      });
+      if (response.error) {
+        setPartOptions([]);
+        return;
+      }
+
+      const payload = (response as any).data ?? response;
+      const partsData = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+
+      setPartOptions(
+        partsData.map((p: any) => {
+          const uiPartNo = String(p.master_part_no || p.partNo || "").trim();
+          const uiMasterPart = String(p.part_no || p.masterPartNo || "").trim();
+          const brand = String(p.brand_name || p.brand || "").trim();
+          const description = String(p.description || "").trim();
+          return {
+            value: String(p.id),
+            label: uiPartNo || uiMasterPart || String(p.id),
+            description: [brand, description].filter(Boolean).join(" · ") || undefined,
+            uiPartNo,
+            uiMasterPart,
+            familyKey: uiMasterPart || undefined,
+          } satisfies SearchableSelectOption;
+        }),
+      );
+    } catch {
+      setPartOptions([]);
+    } finally {
+      setLoadingParts(false);
+    }
   }, []);
 
-  const handleSelectPart = (part: Item) => {
-    setSelectedPart(part);
-    setUnifiedSearch(part.partNo);
-    setShowUnifiedDropdown(false);
-    setUnifiedSearchResults([]);
-    // Models will be fetched automatically via useEffect
+  const openAdd = async () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setDialogOpen(true);
+    await loadPartOptions();
   };
 
-  // Handle Enter key for unified search
-  const handleUnifiedSearchKeyDown = async (
-    e: React.KeyboardEvent<HTMLInputElement>,
-  ) => {
-    if (e.key === "Enter" && unifiedSearch && unifiedSearch.trim()) {
-      // If there's exactly one result, select it
-      if (unifiedSearchResults.length === 1) {
-        handleSelectPart(unifiedSearchResults[0]);
-      } else if (unifiedSearchResults.length > 0) {
-        // If multiple results, select the first one
-        handleSelectPart(unifiedSearchResults[0]);
+  const openEdit = (row: ModelRow) => {
+    setEditing(row);
+    setForm({
+      partId: row.partId,
+      name: row.name,
+      qtyUsed: String(row.qtyUsed || 1),
+    });
+    setPartOptions([
+      {
+        value: row.partId,
+        label: row.partNo || row.masterPartNo || row.partId,
+        description: [row.brand, row.description].filter(Boolean).join(" · ") || undefined,
+        uiPartNo: row.partNo,
+        uiMasterPart: row.masterPartNo,
+      },
+    ]);
+    setDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    const name = form.name.trim();
+    const qtyUsed = Math.max(1, parseInt(form.qtyUsed, 10) || 1);
+
+    if (!name) {
+      toast({
+        title: "Validation",
+        description: "Model name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!editing && !form.partId) {
+      toast({
+        title: "Validation",
+        description: "Select a part for the model",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editing) {
+        const response = await apiClient.updateModel(editing.id, {
+          name,
+          qtyUsed,
+        });
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        const payload = (response as any).data ?? response;
+        const renamedCount = Number(payload?.renamedCount || 0);
+        const nameChanged = Boolean(payload?.nameChanged);
+        toast({
+          title: "Model updated",
+          description: nameChanged
+            ? `Renamed on ${renamedCount} part${renamedCount === 1 ? "" : "s"}`
+            : undefined,
+        });
       } else {
-        // Try to find part by exact match
-        try {
-          const params: any = {
-            master_part_no: unifiedSearch.trim(),
-            limit: 1,
-          };
-
-          const response = await apiClient.getParts(params);
-          if (!response.error && response.data) {
-            const responseData = response.data as any;
-            let partsData: any[] = [];
-
-            if (Array.isArray(responseData)) {
-              partsData = responseData;
-            } else if (responseData && Array.isArray(responseData.data)) {
-              partsData = responseData.data;
-            }
-
-            if (partsData.length > 0) {
-              const part = partsData[0];
-              const transformedPart: Item = {
-                id: part.id,
-                masterPartNo: part.part_no || part.masterPartNo || "",
-                partNo: part.master_part_no || part.partNo || "",
-                brand: part.brand_name || part.brand || "",
-                description: part.description || "",
-                category: part.category_name || part.category || "",
-                subCategory: part.subcategory_name || part.subcategory || "",
-                application: part.application_name || part.application || "",
-                status: part.status || "active",
-                images: [],
-              };
-              handleSelectPart(transformedPart);
-            }
-          }
-        } catch (error) {}
+        const response = await apiClient.createModel({
+          partId: form.partId,
+          name,
+          qtyUsed,
+        });
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        toast({ title: "Model added" });
       }
+      setDialogOpen(false);
+      setEditing(null);
+      setForm(emptyForm);
+      await loadModels();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to save model",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Save models to backend
-  const saveModelsToBackend = async (updatedModels: Model[]) => {
-    if (!selectedPart) return;
-
+  const handleDelete = async () => {
+    if (!modelToDelete) return;
+    setDeleting(true);
     try {
-      // Transform models to API format
-      const modelsForApi = updatedModels.map((m) => ({
-        name: m.name,
-        qty_used: m.qtyUsed,
-      }));
-
-      const response = await apiClient.updatePart(selectedPart.id, {
-        models: modelsForApi,
-      });
-
+      const response = await apiClient.deleteModel(modelToDelete.id);
       if (response.error) {
         throw new Error(response.error);
       }
-
-      return true;
-    } catch (error: any) {
-      throw error;
-    }
-  };
-
-  // Inline Add Model
-  const handleStartAddModel = () => {
-    setIsAddingNew(true);
-    setNewModelName("");
-    setNewModelQty("1");
-  };
-
-  const handleSaveNewModel = async () => {
-    if (!selectedPart || !newModelName.trim()) return;
-
-    const newModel: Model = {
-      id: Date.now().toString(), // Temporary ID, will be replaced by backend
-      name: newModelName.trim(),
-      qtyUsed: parseInt(newModelQty) || 1,
-      partId: selectedPart.id,
-    };
-
-    const updatedModels = [...models, newModel];
-
-    try {
-      await saveModelsToBackend(updatedModels);
-      // Refresh models from backend to get the actual IDs
-      const response = await apiClient.getPart(selectedPart.id);
-      if (!response.error) {
-        const responseData = (response as any).data || response;
-        const apiModels = responseData?.models || [];
-        const transformedModels: Model[] = apiModels.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          qtyUsed: m.qty_used || m.qtyUsed || 1,
-          partId: selectedPart.id,
-        }));
-        setModels(transformedModels);
-      }
-      setNewModelName("");
-      setNewModelQty("");
-      setIsAddingNew(false);
-      toast({ title: "Model added successfully" });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save model",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCancelAddModel = () => {
-    setIsAddingNew(false);
-    setNewModelName("");
-    setNewModelQty("");
-  };
-
-  // Inline Edit Model
-  const handleStartEdit = (model: Model) => {
-    setEditingModelId(model.id);
-    setEditName(model.name);
-    setEditQty(model.qtyUsed.toString());
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingModelId || !editName.trim()) return;
-
-    const updatedModels = models.map((m) =>
-      m.id === editingModelId
-        ? { ...m, name: editName.trim(), qtyUsed: parseInt(editQty) || 1 }
-        : m,
-    );
-
-    try {
-      await saveModelsToBackend(updatedModels);
-      setModels(updatedModels);
-      setEditingModelId(null);
-      setEditName("");
-      setEditQty("");
-      toast({ title: "Model updated successfully" });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update model",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingModelId(null);
-    setEditName("");
-    setEditQty("");
-  };
-
-  // Delete Model
-  const handleDeleteModel = async () => {
-    if (!modelToDelete) return;
-
-    const updatedModels = models.filter((m) => m.id !== modelToDelete.id);
-
-    try {
-      await saveModelsToBackend(updatedModels);
-      setModels(updatedModels);
+      toast({ title: "Model deleted" });
+      setDeleteOpen(false);
       setModelToDelete(null);
-      setDeleteModelOpen(false);
-      toast({ title: "Model deleted successfully" });
+      await loadModels();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to delete model",
+        description: error?.message || "Failed to delete model",
         variant: "destructive",
       });
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const openDeleteModel = (model: Model) => {
-    setModelToDelete(model);
-    setDeleteModelOpen(true);
-  };
-
-  const handleRefresh = async () => {
-    // Cancel any unsaved new entry
-    if (isAddingNew) {
-      setIsAddingNew(false);
-      setNewModelName("");
-      setNewModelQty("");
-    }
-    // Cancel any editing
-    if (editingModelId) {
-      setEditingModelId(null);
-      setEditName("");
-      setEditQty("");
-    }
-
-    // Re-fetch models from backend
-    if (selectedPart) {
-      setLoadingModels(true);
-      try {
-        const response = await apiClient.getPart(selectedPart.id);
-        if (response.error) {
-          toast({
-            title: "Error",
-            description: response.error || "Failed to refresh models",
-            variant: "destructive",
-          });
-        } else {
-          // The API client returns the response object directly
-          const responseData = (response as any).data || response;
-          const apiModels = responseData?.models || [];
-          const transformedModels: Model[] = apiModels.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            qtyUsed: m.qty_used || m.qtyUsed || 1,
-            partId: selectedPart.id,
-          }));
-          setModels(transformedModels);
-          toast({ title: "Data refreshed" });
-        }
-      } catch (error: any) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to refresh models",
-          variant: "destructive",
-        });
-      } finally {
-        setLoadingModels(false);
-      }
-    } else {
-      toast({ title: "Data refreshed" });
-    }
-  };
+  const selectedPartLabel = useMemo(() => {
+    if (!editing) return undefined;
+    return editing.partNo || editing.masterPartNo || undefined;
+  }, [editing]);
 
   return (
     <div className="h-full flex flex-col overflow-auto">
-      {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="w-1 h-8 bg-primary rounded-full" />
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Models Management
-            </h1>
+            <h1 className="text-2xl font-bold text-foreground">Models</h1>
             <p className="text-sm text-muted-foreground">
-              Select a part to view its models and quantity used
+              All machine models linked to parts — add or update anytime
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Model Selection Card */}
-      <div className="bg-card rounded-xl border border-border p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="w-1 h-6 bg-primary rounded-full" />
-          <h2 className="text-lg font-semibold text-foreground">
-            Model Selection
-          </h2>
-        </div>
-
-        {/* Search Scope Selector */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-foreground mb-1.5">
-            Search By
-          </label>
-          <Select
-            value={manualSearchScope}
-            onValueChange={(v: any) => setManualSearchScope(v)}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => loadModels()}
+            disabled={loading}
           >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Select search scope" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All (Auto-Detect)</SelectItem>
-              <SelectItem value="model">Machine Model</SelectItem>
-              <SelectItem value="part">Part Number</SelectItem>
-              <SelectItem value="master">Master Part Number</SelectItem>
-              <SelectItem value="brand">Brand</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Unified Search Field - Single field for all search types */}
-        <div ref={unifiedDropdownRef} className="relative">
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Search <span className="text-destructive">*</span>
-            <span className="text-muted-foreground text-xs ml-2">
-              (Model, Part No, Master Part No, Description, Brand - e.g., 140g,
-              X770651)
-            </span>
-          </label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by model name, part number, master part number, description, or brand..."
-              value={unifiedSearch}
-              onChange={(e) => {
-                setUnifiedSearch(e.target.value);
-                setShowUnifiedDropdown(true);
-                if (e.target.value !== selectedPart?.partNo) {
-                  setSelectedPart(null);
-                }
-              }}
-              onKeyDown={handleUnifiedSearchKeyDown}
-              onFocus={() => setShowUnifiedDropdown(true)}
-              className={cn(
-                "pl-10 h-10 part-code-font font-mono",
-                showUnifiedDropdown && "ring-2 ring-primary border-primary",
-              )}
-            />
-          </div>
-
-          {/* Unified Search Results Dropdown */}
-          {showUnifiedDropdown && (
-            <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-80 overflow-auto">
-              {loadingUnifiedSearch ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground text-center">
-                  Searching...
-                </div>
-              ) : (manualSearchScope === "model" || searchType === "model") &&
-                modelSearchResults.length > 0 ? (
-                // Show models when searching for models
-                <>
-                  <div className="px-4 py-2 text-xs font-semibold text-primary bg-muted/50 border-b border-border">
-                    Models matching "{unifiedSearch}" (
-                    {modelSearchResults.length} results)
-                  </div>
-                  {modelSearchResults.map((result, idx) => (
-                    <button
-                      key={`${result.part.id}-${result.modelName}-${idx}`}
-                      onClick={() => handleSelectPart(result.part)}
-                      className={cn(
-                        "w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border last:border-b-0",
-                        selectedPart?.id === result.part.id && "bg-muted",
-                      )}
-                    >
-                      <p className="font-medium text-foreground text-sm">
-                        <span className="text-primary">
-                          Model: {result.modelName}
-                        </span>
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1 part-code-font font-mono">
-                        Part No: {result.part.partNo}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {result.part.description
-                          ?.replace(/\s*\(Grade:\s*[A-Z0-9]+\)/gi, "")
-                          .trim() || ""}
-                        {result.part.application &&
-                          ` (${result.part.application})`}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1 part-code-font font-mono">
-                        Master Part: {result.part.masterPartNo} &nbsp;&nbsp;
-                        Brand: {result.part.brand}
-                      </p>
-                    </button>
-                  ))}
-                </>
-              ) : manualSearchScope === "model" &&
-                unifiedSearch &&
-                unifiedSearch.length >= 1 &&
-                modelSearchResults.length === 0 ? (
-                // Show "no models found" when searching for models specifically
-                <div className="px-4 py-3 text-sm text-muted-foreground">
-                  No models found matching "{unifiedSearch}". Try a different
-                  model name.
-                </div>
-              ) : unifiedSearchResults.length > 0 ? (
-                // Show parts when searching for part numbers or master part numbers
-                <>
-                  {searchType === "master" && (
-                    <div className="px-4 py-2 text-xs font-semibold text-primary bg-muted/50 border-b border-border">
-                      Master Part Numbers matching "{unifiedSearch}"
-                    </div>
-                  )}
-                  {searchType === "part" && (
-                    <div className="px-4 py-2 text-xs font-semibold text-primary bg-muted/50 border-b border-border">
-                      Part Numbers matching "{unifiedSearch}"
-                    </div>
-                  )}
-                  {unifiedSearchResults.map((part) => (
-                    <button
-                      key={part.id}
-                      onClick={() => handleSelectPart(part)}
-                      className={cn(
-                        "w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border last:border-b-0",
-                        selectedPart?.id === part.id && "bg-muted",
-                      )}
-                    >
-                      <p className="font-medium text-foreground text-sm part-code-font font-mono">
-                        {searchType === "master"
-                          ? `Master Part: ${part.masterPartNo}`
-                          : `Part No: ${part.partNo}`}
-                      </p>
-                      {searchType === "master" && (
-                        <p className="text-sm text-muted-foreground mt-1 part-code-font font-mono">
-                          Part No: {part.partNo}
-                        </p>
-                      )}
-                      <p className="text-sm text-muted-foreground">
-                        {part.description
-                          ?.replace(/\s*\(Grade:\s*[A-Z0-9]+\)/gi, "")
-                          .trim() || ""}
-                        {part.application && ` (${part.application})`}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Brand: {part.brand} &nbsp;&nbsp; Category:{" "}
-                        {part.category || "-"}
-                      </p>
-                    </button>
-                  ))}
-                </>
-              ) : unifiedSearch && unifiedSearch.length >= 2 ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground">
-                  No results found. Try a different search term (model name,
-                  part number, master part number, description, or brand).
-                </div>
-              ) : null}
-            </div>
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          {canCreate && (
+            <Button size="sm" className="gap-1.5" onClick={openAdd}>
+              <Plus className="w-4 h-4" />
+              Add Model
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Models Table */}
-      {selectedPart && (
-        <div className="mt-6 bg-card rounded-xl border border-border p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-6 bg-primary rounded-full" />
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Models for <span className="part-code-font font-mono">{selectedPart.partNo}</span>
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {selectedPart.description}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {canCreate && (
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleStartAddModel}
-                  disabled={isAddingNew}
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Model
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={handleRefresh}
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </Button>
-            </div>
-          </div>
+      <div className="bg-card rounded-xl border border-border p-4 mb-4">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search model, part no, master part, brand…"
+            className="pl-10 h-9"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          {loading ? "Loading…" : `${total} model${total === 1 ? "" : "s"}`}
+        </p>
+      </div>
 
-          <div className="border border-border rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <ListNumberHeader />
-                  <TableHead className="font-semibold">Model</TableHead>
-                  <TableHead className="font-semibold text-center w-40">
-                    Qty. Used
-                  </TableHead>
-                  <TableHead className="font-semibold text-center w-32">
-                    Actions
-                  </TableHead>
+      <div className="bg-card rounded-xl border border-border overflow-hidden flex-1 min-h-0">
+        <div className="overflow-auto max-h-[calc(100vh-260px)]">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <ListNumberHeader />
+                <TableHead className="font-semibold">Model</TableHead>
+                <TableHead className="font-semibold text-center w-28">
+                  Qty Used
+                </TableHead>
+                <TableHead className="font-semibold">Part No | Master Part</TableHead>
+                <TableHead className="font-semibold">Description</TableHead>
+                <TableHead className="font-semibold">Brand</TableHead>
+                <TableHead className="font-semibold text-center w-28">
+                  Actions
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="inline-flex items-center gap-2 text-muted-foreground text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading models…
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {/* Add New Model Row */}
-                {isAddingNew && (
-                  <TableRow>
-                    <TableCell />
+              ) : models.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="py-12 text-center text-sm text-muted-foreground"
+                  >
+                    {debouncedSearch
+                      ? `No models match "${debouncedSearch}".`
+                      : 'No models yet. Click "Add Model" to create one.'}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                models.map((row, index) => (
+                  <TableRow key={row.id}>
+                    <ListNumberCell index={index} total={models.length} />
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-center">{row.qtyUsed}</TableCell>
                     <TableCell>
-                      <Input
-                        placeholder="Enter model name..."
-                        value={newModelName}
-                        onChange={(e) => setNewModelName(e.target.value)}
-                        className="h-9"
-                        autoFocus
+                      <PartIdentityBadges
+                        partNo={row.partNo}
+                        masterPart={row.masterPartNo}
                       />
                     </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        placeholder="1"
-                        value={newModelQty}
-                        onChange={(e) => setNewModelQty(e.target.value)}
-                        className="h-9 text-center"
-                      />
+                    <TableCell className="text-sm text-muted-foreground max-w-[280px] truncate">
+                      {row.description || "—"}
                     </TableCell>
+                    <TableCell className="text-sm">{row.brand || "—"}</TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-center gap-2">
-                        <Button
-                          size="sm"
-                          className="h-7 px-3 text-xs"
-                          onClick={handleSaveNewModel}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-3 text-xs"
-                          onClick={handleCancelAddModel}
-                        >
-                          Cancel
-                        </Button>
+                      <div className="flex items-center justify-center gap-1">
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => openEdit(row)}
+                            title="Edit model"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setModelToDelete(row);
+                              setDeleteOpen(true);
+                            }}
+                            title="Delete model"
+                          >
+                            <Trash className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                )}
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
-                {/* Existing Models */}
-                {loadingModels ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="text-center text-muted-foreground py-8"
-                    >
-                      Loading models...
-                    </TableCell>
-                  </TableRow>
-                ) : partModels.length > 0 ? (
-                  partModels.map((model, index) => (
-                    <TableRow key={model.id}>
-                      <ListNumberCell index={index} total={partModels.length} />
-                      <TableCell>
-                        {editingModelId === model.id ? (
-                          <Input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="h-9"
-                            autoFocus
-                          />
-                        ) : (
-                          <span
-                            className="font-medium cursor-pointer hover:text-primary transition-colors"
-                            onClick={() => canEdit && handleStartEdit(model)}
-                          >
-                            {model.name}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingModelId === model.id ? (
-                          <Input
-                            type="number"
-                            value={editQty}
-                            onChange={(e) => setEditQty(e.target.value)}
-                            className="h-9 text-center"
-                          />
-                        ) : (
-                          <span className="flex justify-center">
-                            {model.qtyUsed}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-center gap-2">
-                          {editingModelId === model.id ? (
-                            <>
-                              <Button
-                                size="sm"
-                                className="h-7 px-3 text-xs"
-                                onClick={handleSaveEdit}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-3 text-xs"
-                                onClick={handleCancelEdit}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            canDelete && (
-                              <button
-                                onClick={() => openDeleteModel(model)}
-                                className="p-1.5 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                              >
-                                <Trash className="w-4 h-4" />
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : !isAddingNew ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="text-center text-muted-foreground py-8"
-                    >
-                      No models found for this part. Click "Add Model" to create
-                      one.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditing(null);
+            setForm(emptyForm);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Update Model" : "Add Model"}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? "Changing the model name renames it on every part that uses this model. Qty used updates only this part."
+                : "Link a machine model to a part with quantity used."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Part</Label>
+              {editing ? (
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+                  <PartIdentityBadges
+                    partNo={editing.partNo}
+                    masterPart={editing.masterPartNo}
+                  />
+                  {editing.description ? (
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      {editing.description}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <SearchableSelect
+                  options={partOptions}
+                  value={form.partId || undefined}
+                  selectedLabel={selectedPartLabel}
+                  placeholder={loadingParts ? "Loading parts…" : "Select part"}
+                  onSearchChange={(q) => {
+                    void loadPartOptions(q);
+                  }}
+                  onValueChange={(v) =>
+                    setForm((prev) => ({ ...prev, partId: v }))
+                  }
+                  requireSearchAbove={Number.MAX_SAFE_INTEGER}
+                  maxDisplayedOptions={80}
+                  selectedDisplayLabelOnly
+                />
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="model-name">Model name</Label>
+              <Input
+                id="model-name"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="e.g. 140G"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="model-qty">Qty used</Label>
+              <Input
+                id="model-qty"
+                type="number"
+                min={1}
+                value={form.qtyUsed}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, qtyUsed: e.target.value }))
+                }
+                className="w-32"
+              />
+            </div>
           </div>
 
-          {/* Reset Button */}
-          <div className="flex justify-center mt-4">
+          <DialogFooter>
             <Button
               variant="outline"
-              size="sm"
-              className="px-6"
-              onClick={handleRefresh}
+              onClick={() => setDialogOpen(false)}
+              disabled={saving}
             >
-              Reset
+              Cancel
             </Button>
-          </div>
-        </div>
-      )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                "Update"
+              ) : (
+                "Add"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* Delete Confirmation */}
-      <AlertDialog open={deleteModelOpen} onOpenChange={setDeleteModelOpen}>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Model</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{modelToDelete?.name}"? This
-              action cannot be undone.
+              Delete model "{modelToDelete?.name}" from part{" "}
+              {modelToDelete?.partNo || modelToDelete?.masterPartNo || ""}?
+              This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteModel}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+              disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {deleting ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

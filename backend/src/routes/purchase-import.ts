@@ -2180,6 +2180,7 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
         origin: true,
         priceA: true,
         priceB: true,
+        priceN: true,
         Brand: { select: { name: true } },
         MasterPart: { select: { masterPartNo: true } },
       },
@@ -2301,6 +2302,7 @@ router.get("/part-details/:partId", async (req: Request, res: Response) => {
           weight: roundWeight(part.weight || 0),
           priceA: part.priceA ?? 0,
           priceB: part.priceB ?? 0,
+          priceN: part.priceN ?? 0,
         },
         currentStock,
         lastPurchases,
@@ -5432,6 +5434,7 @@ type ReceivePurchaseOrderItemInput = {
   fcRate?: number;
   priceA?: number;
   priceB?: number;
+  priceN?: number;
   weight?: number;
 };
 
@@ -5716,6 +5719,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
                 description: true,
                 priceA: true,
                 priceB: true,
+                priceN: true,
                 MasterPart: { select: { masterPartNo: true } },
                 Brand: { select: { name: true } },
                 origin: true,
@@ -5813,6 +5817,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         savedAdditionalQty > 0;
       const partPriceA = Number(poItem.Part?.priceA || 0);
       const partPriceB = Number(poItem.Part?.priceB || 0);
+      const partPriceN = Number(poItem.Part?.priceN || 0);
 
       if (useSavedAmounts) {
         // Keep explicit 0 — do not fall back to orderQty (0 means nothing received).
@@ -5849,6 +5854,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
           totalWeight: roundWeight((poItem as any).totalWeight || 0),
           priceA: partPriceA,
           priceB: partPriceB,
+          priceN: partPriceN,
           orderQty,
           unitCost: Number(poItem.unitCost) || 0,
           receivedQty: receiveQty,
@@ -5906,6 +5912,7 @@ router.get("/purchase-orders/:id", async (req: Request, res: Response) => {
         totalWeight: roundWeight(weight * orderQty),
         priceA: partPriceA,
         priceB: partPriceB,
+        priceN: partPriceN,
         orderQty,
         unitCost: roundPurchasePrice(poItem.unitCost),
         receivedQty: Number(poItem.receivedQty) || 0,
@@ -6131,6 +6138,7 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         fcRate?: number;
         priceA?: number;
         priceB?: number;
+        priceN?: number;
         weight?: number;
       }
     >();
@@ -6140,17 +6148,19 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       fcRate: number;
       priceA?: number;
       priceB?: number;
+      priceN?: number;
       weight?: number;
     }> = [];
     const partPriceUpdates = new Map<
       string,
-      { priceA?: number; priceB?: number }
+      { priceA?: number; priceB?: number; priceN?: number }
     >();
 
     const queuePartPriceUpdate = (
       partId: string,
       priceA?: number,
       priceB?: number,
+      priceN?: number,
     ) => {
       if (!partId) return;
       const normalizedA =
@@ -6161,11 +6171,21 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         priceB !== undefined && Number.isFinite(Number(priceB))
           ? Math.max(0, Number(priceB))
           : undefined;
-      if (normalizedA === undefined && normalizedB === undefined) return;
+      const normalizedN =
+        priceN !== undefined && Number.isFinite(Number(priceN))
+          ? Math.max(0, Number(priceN))
+          : undefined;
+      if (
+        normalizedA === undefined &&
+        normalizedB === undefined &&
+        normalizedN === undefined
+      )
+        return;
       const existing = partPriceUpdates.get(partId) || {};
       partPriceUpdates.set(partId, {
         priceA: normalizedA ?? existing.priceA,
         priceB: normalizedB ?? existing.priceB,
+        priceN: normalizedN ?? existing.priceN,
       });
     };
 
@@ -6185,16 +6205,27 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         row.priceB !== undefined && Number.isFinite(Number(row.priceB))
           ? Math.max(0, Number(row.priceB) || 0)
           : undefined;
+      const priceN =
+        row.priceN !== undefined && Number.isFinite(Number(row.priceN))
+          ? Math.max(0, Number(row.priceN) || 0)
+          : undefined;
       const weight =
         row.weight !== undefined && Number.isFinite(Number(row.weight))
           ? roundWeight(Math.max(0, Number(row.weight) || 0))
           : undefined;
 
       if (itemId && existingItemIds.has(itemId)) {
-        receiveByItemId.set(itemId, { receiveQty, fcRate, priceA, priceB, weight });
+        receiveByItemId.set(itemId, {
+          receiveQty,
+          fcRate,
+          priceA,
+          priceB,
+          priceN,
+          weight,
+        });
         const poItem = order.PurchaseOrderItem.find((item) => item.id === itemId);
         if (poItem) {
-          queuePartPriceUpdate(String(poItem.partId), priceA, priceB);
+          queuePartPriceUpdate(String(poItem.partId), priceA, priceB, priceN);
         }
         continue;
       }
@@ -6207,9 +6238,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
         fcRate: fcRate ?? 0,
         priceA,
         priceB,
+        priceN,
         weight,
       });
-      queuePartPriceUpdate(partId, priceA, priceB);
+      queuePartPriceUpdate(partId, priceA, priceB, priceN);
     }
 
     if (receiveByItemId.size === 0 && newItems.length === 0) {
@@ -6324,9 +6356,10 @@ router.post("/purchase-orders/:id/receive", async (req: Request, res: Response) 
       }
 
       for (const [partId, prices] of partPriceUpdates.entries()) {
-        const updateData: { priceA?: number; priceB?: number } = {};
+        const updateData: { priceA?: number; priceB?: number; priceN?: number } = {};
         if (prices.priceA !== undefined) updateData.priceA = prices.priceA;
         if (prices.priceB !== undefined) updateData.priceB = prices.priceB;
+        if (prices.priceN !== undefined) updateData.priceN = prices.priceN;
         if (Object.keys(updateData).length === 0) continue;
         await tx.part.update({
           where: { id: partId },

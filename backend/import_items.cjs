@@ -89,7 +89,7 @@ async function importItems() {
             cost: cost || 0,
             priceA: priceA,  // Only import Price A
             priceB: priceB,  // Only import Price B
-            // Do NOT set priceM - keep it null/default
+            // Do NOT set priceN - keep it null/default
             uom: "PCS", // Default unit
             weight: weight || 0,
             status: "active",

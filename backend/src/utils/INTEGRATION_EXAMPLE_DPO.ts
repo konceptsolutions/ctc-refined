@@ -110,7 +110,7 @@ router.post('/direct-purchase-orders', async (req: Request, res: Response) => {
               purchasePrice: item.purchase_price || 0,
               priceA: item.price_a ?? null,
               priceB: item.price_b ?? null,
-              priceM: item.price_m ?? null,
+              priceN: item.price_n ?? null,
               weight: item.weight ?? null,
               amount: item.amount || (item.purchase_price * item.quantity),
               // ⭐ NEW: Store the calculated landed cost

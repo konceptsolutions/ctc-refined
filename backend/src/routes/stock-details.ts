@@ -47,7 +47,7 @@ router.get("/:partId", async (req: Request, res: Response) => {
 
         // 3. Get Cost Data (Raw Query for reliability as seen in other endpoints)
         const partCosts: any[] = await prisma.$queryRaw`
-      SELECT cost, "purchasePrice", "avgCost", "priceA", "priceB", "priceM"
+      SELECT cost, "purchasePrice", "avgCost", "priceA", "priceB", "priceN"
       FROM "Part" 
       WHERE id = ${partId}
     `;
@@ -56,7 +56,7 @@ router.get("/:partId", async (req: Request, res: Response) => {
         const avgCost = rawPartData.avgCost || 0;
         const priceA = rawPartData.priceA || part.priceA || 0;
         const priceB = rawPartData.priceB || part.priceB || 0;
-        const priceM = rawPartData.priceM || part.priceM || 0;
+        const priceN = rawPartData.priceN || part.priceN || 0;
 
         // 4. Construct Clean Response
         const response = {
@@ -70,7 +70,7 @@ router.get("/:partId", async (req: Request, res: Response) => {
             avg_cost: avgCost,
             priceA: priceA,
             priceB: priceB,
-            priceM: priceM
+            priceN: priceN
         };
 
         res.json(response);

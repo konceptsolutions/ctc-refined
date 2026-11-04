@@ -81,8 +81,8 @@ interface PriceItem {
   newPriceA: number | ""; // Allow empty string - no auto-fill
   priceB: number;
   newPriceB: number | ""; // Allow empty string - no auto-fill
-  priceM: number;
-  newPriceM: number | ""; // Allow empty string for Price M when not set
+  priceN: number;
+  newPriceN: number | ""; // Allow empty string for Price N when not set
   quantity: number;
   selected: boolean;
   modified: boolean;
@@ -94,17 +94,17 @@ interface PriceItem {
       cost?: number;
       priceA?: number;
       priceB?: number;
-      priceM?: number;
+      priceN?: number;
     };
     previousPrice?: {
       cost?: number;
       priceA?: number;
       priceB?: number;
-      priceM?: number;
+      priceN?: number;
     };
   };
   createdAt?: string; // Creation date and time
-  update_price_m_fix?: boolean; // Internal flag for Price M fix
+  update_price_n_fix?: boolean; // Internal flag for Price N fix
 }
 
 const sampleItems: PriceItem[] = [];
@@ -249,7 +249,7 @@ export const PricingCosting = () => {
     applyToCost: false,
     applyToPriceA: true,
     applyToPriceB: true,
-    applyToPriceM: true,
+    applyToPriceN: true,
   });
 
   // New landed cost form state
@@ -709,7 +709,7 @@ export const PricingCosting = () => {
         const displayData = data;
 
         const priceItems: PriceItem[] = displayData.map((item: any) => {
-          const priceM = item.price_m ?? item.priceM ?? null;
+          const priceN = item.price_n ?? item.priceN ?? null;
           // Check existing items first, then API response, then localStorage
           let latestFromApi = null;
           if (item.lastUpdated?.timestamp) {
@@ -735,8 +735,8 @@ export const PricingCosting = () => {
                   ? "priceA"
                   : apiLastPriceField === "price_b"
                     ? "priceB"
-                    : apiLastPriceField === "price_m"
-                      ? "priceM"
+                    : apiLastPriceField === "price_n"
+                      ? "priceN"
                       : apiLastPriceField || "priceA";
               const numericValue = Number(apiLastUpdateValueRaw);
               latestFromApi = {
@@ -786,8 +786,8 @@ export const PricingCosting = () => {
             newPriceA: "", // No auto-fill - empty by default
             priceB: item.price_b ?? item.priceB ?? 0,
             newPriceB: "", // No auto-fill - empty by default
-            priceM: priceM ?? 0, // Display value - show 0 if null
-            newPriceM: "", // No auto-fill - empty by default
+            priceN: priceN ?? 0, // Display value - show 0 if null
+            newPriceN: "", // No auto-fill - empty by default
             quantity: Number(
               item.qty ?? item.stock ?? item.current_stock ?? 0,
             ),
@@ -1322,7 +1322,7 @@ export const PricingCosting = () => {
   // Handle individual price changes
   const handlePriceChange = (
     id: string,
-    field: "newCost" | "newPriceA" | "newPriceB" | "newPriceM",
+    field: "newCost" | "newPriceA" | "newPriceB" | "newPriceN",
     value: number | "",
   ) => {
     setItems((prev) =>
@@ -1340,8 +1340,8 @@ export const PricingCosting = () => {
             typeof updated.newPriceB === "string"
               ? item.priceB
               : updated.newPriceB;
-          const newPriceMNum =
-            typeof updated.newPriceM === "string" ? 0 : updated.newPriceM;
+          const newPriceNNum =
+            typeof updated.newPriceN === "string" ? 0 : updated.newPriceN;
           updated.modified =
             (typeof updated.newCost !== "string" &&
               updated.newCost !== item.cost) ||
@@ -1349,8 +1349,8 @@ export const PricingCosting = () => {
               updated.newPriceA !== item.priceA) ||
             (typeof updated.newPriceB !== "string" &&
               updated.newPriceB !== item.priceB) ||
-            (typeof updated.newPriceM !== "string" &&
-              newPriceMNum !== item.priceM);
+            (typeof updated.newPriceN !== "string" &&
+              newPriceNNum !== item.priceN);
           return updated;
         }
         return item;
@@ -1385,7 +1385,7 @@ export const PricingCosting = () => {
         newCost: "", // Reset to empty - no auto-fill
         newPriceA: "", // Reset to empty - no auto-fill
         newPriceB: "", // Reset to empty - no auto-fill
-        newPriceM: "", // Reset to empty - no auto-fill
+        newPriceN: "", // Reset to empty - no auto-fill
         modified: false,
         selected: false,
       })),
@@ -1406,14 +1406,14 @@ export const PricingCosting = () => {
       typeof item.newPriceA === "string" ? item.priceA : item.newPriceA;
     const newPriceBNum =
       typeof item.newPriceB === "string" ? item.priceB : item.newPriceB;
-    const newPriceMNum =
-      typeof item.newPriceM === "string" ? 0 : item.newPriceM;
+    const newPriceNNum =
+      typeof item.newPriceN === "string" ? 0 : item.newPriceN;
 
     const hasChanges =
       (typeof item.newCost !== "string" && item.newCost !== item.cost) ||
       (typeof item.newPriceA !== "string" && item.newPriceA !== item.priceA) ||
       (typeof item.newPriceB !== "string" && item.newPriceB !== item.priceB) ||
-      (typeof item.newPriceM !== "string" && newPriceMNum !== item.priceM);
+      (typeof item.newPriceN !== "string" && newPriceNNum !== item.priceN);
 
     if (!hasChanges) {
       toast({
@@ -1447,18 +1447,18 @@ export const PricingCosting = () => {
         priceUpdates.priceB = item.newPriceB;
         updatedAmounts.priceB = item.newPriceB;
       }
-      const newPriceMValue =
-        typeof item.newPriceM === "string" && item.newPriceM === ""
+      const newPriceNValue =
+        typeof item.newPriceN === "string" && item.newPriceN === ""
           ? null
-          : typeof item.newPriceM === "number"
-            ? item.newPriceM
+          : typeof item.newPriceN === "number"
+            ? item.newPriceN
             : 0;
       if (
-        typeof item.newPriceM !== "string" &&
-        newPriceMValue !== item.priceM
+        typeof item.newPriceN !== "string" &&
+        newPriceNValue !== item.priceN
       ) {
-        priceUpdates.priceM = newPriceMValue;
-        updatedAmounts.priceM = newPriceMValue;
+        priceUpdates.priceN = newPriceNValue;
+        updatedAmounts.priceN = newPriceNValue;
       }
 
       if (Object.keys(priceUpdates).length > 0) {
@@ -1474,7 +1474,7 @@ export const PricingCosting = () => {
         cost: item.cost, // Always store the previous cost
         priceA: item.priceA, // Always store the previous priceA
         priceB: item.priceB, // Always store the previous priceB
-        priceM: item.priceM, // Always store the previous priceM
+        priceN: item.priceN, // Always store the previous priceN
       };
 
       // Update the item with last update info
@@ -1484,14 +1484,14 @@ export const PricingCosting = () => {
         cost: typeof item.newCost !== "string" ? item.newCost : item.cost,
         priceA:
           typeof item.newPriceA !== "string" ? item.newPriceA : item.priceA,
-        update_price_m_fix: true, // Internal flag
+        update_price_n_fix: true, // Internal flag
         priceB:
           typeof item.newPriceB !== "string" ? item.newPriceB : item.priceB,
-        priceM: newPriceMValue ?? 0,
+        priceN: newPriceNValue ?? 0,
         newCost: "", // Reset to empty after update
         newPriceA: "", // Reset to empty after update
         newPriceB: "", // Reset to empty after update
-        newPriceM: "", // Reset to empty after update
+        newPriceN: "", // Reset to empty after update
         modified: false,
         lastUpdated: {
           timestamp: now.toISOString(),
@@ -1594,18 +1594,18 @@ export const PricingCosting = () => {
         ) {
           priceUpdates.priceB = item.newPriceB;
         }
-        // Handle newPriceM - convert empty string to null, otherwise use the numeric value
-        const newPriceMValue =
-          typeof item.newPriceM === "string" && item.newPriceM === ""
+        // Handle newPriceN - convert empty string to null, otherwise use the numeric value
+        const newPriceNValue =
+          typeof item.newPriceN === "string" && item.newPriceN === ""
             ? null
-            : typeof item.newPriceM === "number"
-              ? item.newPriceM
+            : typeof item.newPriceN === "number"
+              ? item.newPriceN
               : 0;
         if (
-          typeof item.newPriceM !== "string" &&
-          newPriceMValue !== item.priceM
+          typeof item.newPriceN !== "string" &&
+          newPriceNValue !== item.priceN
         ) {
-          priceUpdates.priceM = newPriceMValue;
+          priceUpdates.priceN = newPriceNValue;
         }
 
         if (Object.keys(priceUpdates).length > 0) {
@@ -1649,7 +1649,7 @@ export const PricingCosting = () => {
       "Cost",
       "Price A",
       "Price B",
-      "Price M",
+      "Price N",
       "Margin %",
     ];
     const csvContent = [
@@ -1666,7 +1666,7 @@ export const PricingCosting = () => {
           item.cost,
           item.priceA,
           item.priceB,
-          item.priceM,
+          item.priceN,
           margin,
         ].join(",");
       }),
@@ -1795,11 +1795,11 @@ export const PricingCosting = () => {
           newPriceB: bulkPercentage.applyToPriceB
             ? Math.round(item.priceB * multiplier * 100) / 100
             : item.newPriceB,
-          newPriceM: bulkPercentage.applyToPriceM
-            ? item.priceM > 0
-              ? Math.round(item.priceM * multiplier * 100) / 100
+          newPriceN: bulkPercentage.applyToPriceN
+            ? item.priceN > 0
+              ? Math.round(item.priceN * multiplier * 100) / 100
               : ""
-            : item.newPriceM,
+            : item.newPriceN,
         };
 
         // Check if modified - empty strings are not considered changes
@@ -1810,8 +1810,8 @@ export const PricingCosting = () => {
             updated.newPriceA !== updated.priceA) ||
           (typeof updated.newPriceB !== "string" &&
             updated.newPriceB !== updated.priceB) ||
-          (typeof updated.newPriceM !== "string" &&
-            updated.newPriceM !== updated.priceM);
+          (typeof updated.newPriceN !== "string" &&
+            updated.newPriceN !== updated.priceN);
 
         return updated;
       }),
@@ -1829,7 +1829,7 @@ export const PricingCosting = () => {
       applyToCost: false,
       applyToPriceA: true,
       applyToPriceB: true,
-      applyToPriceM: true,
+      applyToPriceN: true,
     });
   };
 
@@ -2165,8 +2165,8 @@ export const PricingCosting = () => {
                             item.newPriceA !== item.priceA) ||
                           (typeof item.newPriceB !== "string" &&
                             item.newPriceB !== item.priceB) ||
-                          (typeof item.newPriceM !== "string" &&
-                            item.newPriceM !== item.priceM);
+                          (typeof item.newPriceN !== "string" &&
+                            item.newPriceN !== item.priceN);
 
                         return (
                           <TableRow
@@ -2270,8 +2270,8 @@ export const PricingCosting = () => {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {item.priceM > 0
-                                ? formatCurrency(item.priceM)
+                              {item.priceN > 0
+                                ? formatCurrency(item.priceN)
                                 : "Rs 0.00"}
                             </TableCell>
                             <TableCell className="bg-primary/5">
@@ -2280,13 +2280,13 @@ export const PricingCosting = () => {
                                   type="number"
                                   step="0.01"
                                   value={
-                                    item.newPriceM === "" ? "" : item.newPriceM
+                                    item.newPriceN === "" ? "" : item.newPriceN
                                   }
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     handlePriceChange(
                                       item.id,
-                                      "newPriceM",
+                                      "newPriceN",
                                       val === "" ? "" : parseFloat(val) || 0,
                                     );
                                   }}
@@ -3233,20 +3233,20 @@ export const PricingCosting = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox
-                    id="applyToPriceM"
-                    checked={bulkPercentage.applyToPriceM}
+                    id="applyToPriceN"
+                    checked={bulkPercentage.applyToPriceN}
                     onCheckedChange={(checked) =>
                       setBulkPercentage((prev) => ({
                         ...prev,
-                        applyToPriceM: !!checked,
+                        applyToPriceN: !!checked,
                       }))
                     }
                   />
                   <Label
-                    htmlFor="applyToPriceM"
+                    htmlFor="applyToPriceN"
                     className="text-sm font-normal cursor-pointer"
                   >
-                    Price M
+                    Price N
                   </Label>
                 </div>
               </div>
@@ -3506,13 +3506,13 @@ export const PricingCosting = () => {
                           </span>
                         </div>
                       )}
-                    {selectedItemForUpdate.lastUpdated.amount.priceM !==
+                    {selectedItemForUpdate.lastUpdated.amount.priceN !==
                       undefined && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Price M:</span>
+                          <span className="text-muted-foreground">Price N:</span>
                           <span className="font-medium text-success">
                             {formatCurrency(
-                              selectedItemForUpdate.lastUpdated.amount.priceM,
+                              selectedItemForUpdate.lastUpdated.amount.priceN,
                             )}
                           </span>
                         </div>
@@ -3578,7 +3578,7 @@ export const PricingCosting = () => {
                       if (f === "cost") return "Cost";
                       if (f === "priceA" || f === "price_a") return "Price A";
                       if (f === "priceB" || f === "price_b") return "Price B";
-                      if (f === "priceM" || f === "price_m") return "Price M";
+                      if (f === "priceN" || f === "price_n") return "Price N";
                       return f || "Price";
                     })();
                     const dateObj = entry.date ? new Date(entry.date) : null;
@@ -3721,7 +3721,7 @@ export const PricingCosting = () => {
                         <TableHead className="text-right">Cost</TableHead>
                         <TableHead className="text-right">Price A</TableHead>
                         <TableHead className="text-right">Price B</TableHead>
-                        <TableHead className="text-right">Price M</TableHead>
+                        <TableHead className="text-right">Price N</TableHead>
                         <TableHead>Updated</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3802,20 +3802,20 @@ export const PricingCosting = () => {
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {updateInfo?.amount?.priceM !== undefined ? (
+                              {updateInfo?.amount?.priceN !== undefined ? (
                                 <div>
                                   <div className="text-muted-foreground line-through text-xs">
                                     {formatCurrency(
-                                      updateInfo.previousPrice?.priceM ||
-                                      item.priceM,
+                                      updateInfo.previousPrice?.priceN ||
+                                      item.priceN,
                                     )}
                                   </div>
                                   <div className="text-success font-medium">
-                                    {formatCurrency(updateInfo.amount.priceM)}
+                                    {formatCurrency(updateInfo.amount.priceN)}
                                   </div>
                                 </div>
                               ) : (
-                                formatCurrency(item.priceM)
+                                formatCurrency(item.priceN)
                               )}
                             </TableCell>
                             <TableCell>

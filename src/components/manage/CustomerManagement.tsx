@@ -63,7 +63,7 @@ interface Customer {
   accountOpeningDate?: string | null;
   accountClosingDate?: string | null;
   canDelete?: boolean;
-  priceType?: "A" | "B" | "M" | null;
+  priceType?: "A" | "B" | "N" | null;
   accountId?: string | null; // Account ID for this customer
   code?: string | null;
   accountHead?: string | null;
@@ -1192,7 +1192,7 @@ export const CustomerManagement = () => {
                     <SelectItem value="none">None</SelectItem>
                     <SelectItem value="A">Price A</SelectItem>
                     <SelectItem value="B">Price B</SelectItem>
-                    <SelectItem value="M">Price M</SelectItem>
+                    <SelectItem value="N">Price N</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

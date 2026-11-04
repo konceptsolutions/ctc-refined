@@ -97,7 +97,7 @@ interface PartFormData {
   avgCost: string;
   priceA: string;
   priceB: string;
-  priceM: string;
+  priceN: string;
   origin: string;
   grade: string;
   status: string;
@@ -124,7 +124,7 @@ const initialFormData: PartFormData = {
   avgCost: "",
   priceA: "",
   priceB: "",
-  priceM: "",
+  priceN: "",
   origin: "",
   grade: "B",
   status: "A",
@@ -223,7 +223,7 @@ export const PartEntryForm = ({
   const [priceAError, setPriceAError] = useState<string>("");
   const [priceBError, setPriceBError] = useState<string>("");
   const [costError, setCostError] = useState<string>("");
-  const [priceMError, setPriceMError] = useState<string>("");
+  const [priceNError, setPriceNError] = useState<string>("");
 
   // Maximum limit: 10 lakhs (10,00,000 = 1,000,000)
   const MAX_PRICE_LIMIT = 1000000;
@@ -1018,9 +1018,9 @@ export const PartEntryForm = ({
                 normalizeAvgPriceValue(selectedPart),
               priceA: priceAValue,
               priceB: priceBValue,
-              priceM:
-                part.price_m && part.price_m !== 0
-                  ? part.price_m.toString()
+              priceN:
+                part.price_n && part.price_n !== 0
+                  ? part.price_n.toString()
                   : "",
               description: part.description || "",
               category: part.category_name || "",
@@ -1048,9 +1048,9 @@ export const PartEntryForm = ({
             const costLimitErr = validateMaxLimit(costValue, "Cost");
             const priceALimitErr = validateMaxLimit(priceAValue, "Price A");
             const priceBLimitErr = validateMaxLimit(priceBValue, "Price B");
-            const priceMLimitErr = validateMaxLimit(
-              part.price_m && part.price_m !== 0 ? part.price_m.toString() : "",
-              "Price M",
+            const priceNLimitErr = validateMaxLimit(
+              part.price_n && part.price_n !== 0 ? part.price_n.toString() : "",
+              "Price N",
             );
             const priceAErr = validatePrice(priceAValue, costValue, "A");
             const priceBErr = validatePrice(priceBValue, costValue, "B");
@@ -1058,7 +1058,7 @@ export const PartEntryForm = ({
             setCostError(costLimitErr);
             setPriceAError(priceALimitErr || priceAErr);
             setPriceBError(priceBLimitErr || priceBErr);
-            setPriceMError(priceMLimitErr);
+            setPriceNError(priceNLimitErr);
             // Update search inputs to match form data (swapped)
             setMasterPartSearch(part.part_no || "");
             setPartSearch(part.master_part_no || "");
@@ -1281,10 +1281,10 @@ export const PartEntryForm = ({
         const cost = updated.cost;
         const priceError = validatePrice(finalValue, cost, "B");
         setPriceBError(limitError || priceError);
-      } else if (field === "priceM") {
-        const formatted = formatPriceValue(value, "Price M");
+      } else if (field === "priceN") {
+        const formatted = formatPriceValue(value, "Price N");
         finalValue = formatted.value;
-        setPriceMError(formatted.error);
+        setPriceNError(formatted.error);
       }
 
       const updated = { ...prev, [field]: finalValue };
@@ -1431,10 +1431,10 @@ export const PartEntryForm = ({
             fullPart.price_b && fullPart.price_b !== 0
               ? fullPart.price_b.toString()
               : prev.priceB,
-          priceM:
-            fullPart.price_m && fullPart.price_m !== 0
-              ? fullPart.price_m.toString()
-              : prev.priceM,
+          priceN:
+            fullPart.price_n && fullPart.price_n !== 0
+              ? fullPart.price_n.toString()
+              : prev.priceN,
           origin: fullPart.origin
             ? String(fullPart.origin).trim()
             : prev.origin,
@@ -1468,22 +1468,22 @@ export const PartEntryForm = ({
           fullPart.price_b && fullPart.price_b !== 0
             ? fullPart.price_b.toString()
             : "";
-        const priceMVal =
-          fullPart.price_m && fullPart.price_m !== 0
-            ? fullPart.price_m.toString()
+        const priceNVal =
+          fullPart.price_n && fullPart.price_n !== 0
+            ? fullPart.price_n.toString()
             : "";
 
         const costLimitErr = validateMaxLimit(costVal, "Cost");
         const priceALimitErr = validateMaxLimit(priceAVal, "Price A");
         const priceBLimitErr = validateMaxLimit(priceBVal, "Price B");
-        const priceMLimitErr = validateMaxLimit(priceMVal, "Price M");
+        const priceNLimitErr = validateMaxLimit(priceNVal, "Price N");
         const priceAErr = validatePrice(priceAVal, costVal, "A");
         const priceBErr = validatePrice(priceBVal, costVal, "B");
 
         setCostError(costLimitErr);
         setPriceAError(priceALimitErr || priceAErr);
         setPriceBError(priceBLimitErr || priceBErr);
-        setPriceMError(priceMLimitErr);
+        setPriceNError(priceNLimitErr);
 
         setImageP1(fullPart.image_p1 || null);
         setImageP2(fullPart.image_p2 || null);
@@ -1625,13 +1625,13 @@ export const PartEntryForm = ({
     const cost = formData.cost.trim();
     const priceA = formData.priceA.trim();
     const priceB = formData.priceB.trim();
-    const priceM = formData.priceM.trim();
+    const priceN = formData.priceN.trim();
 
     // Check maximum limits
     const costLimitErr = validateMaxLimit(cost, "Cost");
     const priceALimitErr = validateMaxLimit(priceA, "Price A");
     const priceBLimitErr = validateMaxLimit(priceB, "Price B");
-    const priceMLimitErr = validateMaxLimit(priceM, "Price M");
+    const priceNLimitErr = validateMaxLimit(priceN, "Price N");
 
     // Check price comparison
     const priceAErr = validatePrice(priceA, cost, "A");
@@ -1640,13 +1640,13 @@ export const PartEntryForm = ({
     setCostError(costLimitErr);
     setPriceAError(priceALimitErr || priceAErr);
     setPriceBError(priceBLimitErr || priceBErr);
-    setPriceMError(priceMLimitErr);
+    setPriceNError(priceNLimitErr);
 
     if (
       costLimitErr ||
       priceALimitErr ||
       priceBLimitErr ||
-      priceMLimitErr ||
+      priceNLimitErr ||
       priceAErr ||
       priceBErr
     ) {
@@ -1654,7 +1654,7 @@ export const PartEntryForm = ({
       if (costLimitErr) errors.push("Cost exceeds 10 Lakhs");
       if (priceALimitErr) errors.push("Price A exceeds 10 Lakhs");
       if (priceBLimitErr) errors.push("Price B exceeds 10 Lakhs");
-      if (priceMLimitErr) errors.push("Price M exceeds 10 Lakhs");
+      if (priceNLimitErr) errors.push("Price N exceeds 10 Lakhs");
       if (priceAErr) errors.push("Price A cannot be less than Cost");
       if (priceBErr) errors.push("Price B cannot be less than Cost");
 
@@ -1841,7 +1841,7 @@ export const PartEntryForm = ({
     setPriceAError("");
     setPriceBError("");
     setCostError("");
-    setPriceMError("");
+    setPriceNError("");
 
     toast({
       title: "Success",
@@ -4428,16 +4428,16 @@ export const PartEntryForm = ({
                   type="number"
                   step="0.01"
                   max={MAX_PRICE_LIMIT}
-                  value={formatNumericValue(formData.priceM)}
-                  onChange={(e) => handleInputChange("priceM", e.target.value)}
+                  value={formatNumericValue(formData.priceN)}
+                  onChange={(e) => handleInputChange("priceN", e.target.value)}
                   className={cn(
                     "h-8 text-xs",
-                    priceMError &&
+                    priceNError &&
                     "border-destructive focus-visible:ring-destructive",
                   )}
                 />
-                {priceMError && (
-                  <p className="text-xs text-destructive mt-1">{priceMError}</p>
+                {priceNError && (
+                  <p className="text-xs text-destructive mt-1">{priceNError}</p>
                 )}
               </div>
             </div>

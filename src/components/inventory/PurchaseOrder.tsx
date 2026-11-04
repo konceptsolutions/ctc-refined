@@ -85,7 +85,7 @@ interface PurchaseOrderItem {
   salePrice: number;
   priceA?: number;
   priceB?: number;
-  priceM?: number;
+  priceN?: number;
   cost: number;
   amount: number;
   remarks: string;
@@ -466,7 +466,7 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
                   <TableHead className="text-xs text-primary-foreground text-right">Purchase Price</TableHead>
                   <TableHead className="text-xs text-primary-foreground text-right">Price A</TableHead>
                   <TableHead className="text-xs text-primary-foreground text-right">Price B</TableHead>
-                  <TableHead className="text-xs text-primary-foreground text-right">Price M</TableHead>
+                  <TableHead className="text-xs text-primary-foreground text-right">Price N</TableHead>
                   <TableHead className="text-xs text-primary-foreground text-right">Amount</TableHead>
                   <TableHead className="text-xs text-primary-foreground">Remarks</TableHead>
                 </TableRow>
@@ -488,7 +488,7 @@ const ViewOrderDialog = ({ open, onOpenChange, order, statusColors, formatCurren
                       <TableCell className="text-sm text-right">{formatCurrency(item.purchasePrice || 0)}</TableCell>
                       <TableCell className="text-sm text-right">{formatCurrency(item.priceA || 0)}</TableCell>
                       <TableCell className="text-sm text-right">{formatCurrency(item.priceB || 0)}</TableCell>
-                      <TableCell className="text-sm text-right">{formatCurrency(item.priceM || 0)}</TableCell>
+                      <TableCell className="text-sm text-right">{formatCurrency(item.priceN || 0)}</TableCell>
                       <TableCell className="text-sm text-right">{formatCurrency(item.amount || item.cost || ((item.quantity || item.receivedQty || 0) * (item.purchasePrice || 0)))}</TableCell>
                       <TableCell className="text-sm">{item.remarks || "-"}</TableCell>
                     </TableRow>
@@ -612,7 +612,7 @@ interface ReceiveItemForm {
   salePrice: number;
   priceA: number;
   priceB: number;
-  priceM: number;
+  priceN: number;
   quantity: number;
   receivedQty: number;
   cost: number;
@@ -982,7 +982,7 @@ export const PurchaseOrder = () => {
         // Load receive items data from localStorage for this order
         const receiveItemsKey = `po_receive_items_${po.id}`;
         const savedReceiveItems = localStorage.getItem(receiveItemsKey);
-        let receiveItemsMap: Record<string, { rackId?: string; shelfId?: string; priceA?: number; priceB?: number; priceM?: number }> = {};
+        let receiveItemsMap: Record<string, { rackId?: string; shelfId?: string; priceA?: number; priceB?: number; priceN?: number }> = {};
 
         if (savedReceiveItems) {
           try {
@@ -995,7 +995,7 @@ export const PurchaseOrder = () => {
                     shelfId: savedItem.shelfId,
                     priceA: savedItem.priceA,
                     priceB: savedItem.priceB,
-                    priceM: savedItem.priceM,
+                    priceN: savedItem.priceN,
                   };
                 }
               });
@@ -1030,7 +1030,7 @@ export const PurchaseOrder = () => {
             shelfId: savedItem.shelfId,
             priceA: savedItem.priceA || part?.price || 0,
             priceB: savedItem.priceB || 0,
-            priceM: savedItem.priceM || 0,
+            priceN: savedItem.priceN || 0,
           };
         });
 
@@ -1357,7 +1357,7 @@ export const PurchaseOrder = () => {
           salePrice: 0, // Empty, user must enter
           priceA: 0, // Empty (Cost Price), user must enter
           priceB: 0, // Empty, user must enter
-          priceM: 0, // Empty, user must enter
+          priceN: 0, // Empty, user must enter
           quantity: item.quantity,
           receivedQty: receivedQty,
           cost: 0,
@@ -1726,7 +1726,7 @@ export const PurchaseOrder = () => {
         shelfId: item.shelfId,
         priceA: item.priceA,
         priceB: item.priceB,
-        priceM: item.priceM,
+        priceN: item.priceN,
         purchasePrice: item.purchasePrice,
       }));
       localStorage.setItem(receiveItemsKey, JSON.stringify(receiveItemsData));
@@ -1827,7 +1827,7 @@ export const PurchaseOrder = () => {
     let lastPurchasePrice = 0;
     let lastPriceA = 0;
     let lastPriceB = 0;
-    let lastPriceM = 0;
+    let lastPriceN = 0;
 
     if (lastReceivedItem && lastReceivedOrder) {
       // Get rack and shelf from the last received order item
@@ -1840,7 +1840,7 @@ export const PurchaseOrder = () => {
       lastPurchasePrice = lastReceivedItem.purchasePrice || lastReceivedItem.cost || 0;
       lastPriceA = lastReceivedItem.priceA || 0;
       lastPriceB = lastReceivedItem.priceB || 0;
-      lastPriceM = lastReceivedItem.priceM || 0;
+      lastPriceN = lastReceivedItem.priceN || 0;
     } else {
       // Fallback to current item's rack and shelf
       const rack = racks.find(r => r.id === item.rackId);
@@ -1867,7 +1867,7 @@ export const PurchaseOrder = () => {
       lastPurchasePrice,
       lastPriceA,
       lastPriceB,
-      lastPriceM,
+      lastPriceN,
       lastReceiveDate,
       purchaseHistory: history.slice(0, 5), // Show last 5 purchases
     };
@@ -2426,7 +2426,7 @@ export const PurchaseOrder = () => {
                     <TableHead className="text-xs text-center">Sale Price</TableHead>
                     <TableHead className="text-xs text-center">Cost Price</TableHead>
                     <TableHead className="text-xs text-center">Price B</TableHead>
-                    <TableHead className="text-xs text-center">Price M</TableHead>
+                    <TableHead className="text-xs text-center">Price N</TableHead>
                     <TableHead className="text-xs text-center">Qty</TableHead>
                     <TableHead className="text-xs text-center">Received Qty</TableHead>
                     <TableHead className="text-xs text-center">Rack</TableHead>
@@ -2501,8 +2501,8 @@ export const PurchaseOrder = () => {
                         <TableCell className="text-center">
                           <Input
                             type="number"
-                            value={item.priceM || ""}
-                            onChange={(e) => handleUpdateReceiveItem(item.id, "priceM", parseFloat(e.target.value) || 0)}
+                            value={item.priceN || ""}
+                            onChange={(e) => handleUpdateReceiveItem(item.id, "priceN", parseFloat(e.target.value) || 0)}
                             className="h-8 w-20 text-center mx-auto"
                             onClick={(e) => e.stopPropagation()}
                             placeholder=""
@@ -2756,7 +2756,7 @@ export const PurchaseOrder = () => {
                       salePrice: receiveItem.salePrice,
                       priceA: receiveItem.priceA,
                       priceB: receiveItem.priceB,
-                      priceM: receiveItem.priceM,
+                      priceN: receiveItem.priceN,
                       amount: receiveItem.amount,
                       cost: receiveItem.cost,
                       remarks: receiveRemarks || "",
@@ -2878,8 +2878,8 @@ export const PurchaseOrder = () => {
                   </div>
 
                   <div>
-                    <p className="text-xs text-muted-foreground">Price M</p>
-                    <p className="text-sm font-medium">{selectedItemDetails.lastPriceM?.toLocaleString() || "0"}</p>
+                    <p className="text-xs text-muted-foreground">Price N</p>
+                    <p className="text-sm font-medium">{selectedItemDetails.lastPriceN?.toLocaleString() || "0"}</p>
                   </div>
                 </>
               )}

@@ -106,6 +106,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
 import { printSalesQuotationPdf } from "@/utils/printSalesQuotationPdf";
@@ -523,11 +524,11 @@ interface InlineItemRow {
   qty: number;
   priceA?: number; // Editable Price A / Avg Price (transfer-out)
   priceB?: number; // Editable Price B / Purchase Price (transfer-out)
-  priceM?: number; // Editable Price M
+  priceN?: number; // Editable Price N
   /** PO unit cost for transfer-out / stock-out lines */
   poUnitCost?: number;
   unitPrice?: number; // Actual price used for this line (can be custom)
-  selectedPriceType?: "A" | "B" | "M" | "U"; // U = Unit Cost (PO) on transfer-out
+  selectedPriceType?: "A" | "B" | "N" | "U"; // U = Unit Cost (PO) on transfer-out
   selectedRackId?: string;
   selectedLocationId?: string; // PartRackShelf ID
   selectedLocationIds?: string[]; // Multiple PartRackShelf IDs
@@ -553,7 +554,7 @@ type InquiryConversionDraft = {
     purchasePrice?: number;
     priceA?: number;
     priceB?: number;
-    priceM?: number;
+    priceN?: number;
     partNo?: string;
     description?: string;
     location?: string;
@@ -765,7 +766,7 @@ export const SalesInvoice = ({
     useState(false);
   const [selectedCustomerName, setSelectedCustomerName] = useState<string>("");
   const [customerPriceType, setCustomerPriceType] = useState<
-    "A" | "B" | "M" | null
+    "A" | "B" | "N" | null
   >(null);
   const [selectedCustomerCategory, setSelectedCustomerCategory] = useState<
     string | null
@@ -810,9 +811,16 @@ export const SalesInvoice = ({
   const [partImageModalIndex, setPartImageModalIndex] = useState(0);
   const [partImageModalTitle, setPartImageModalTitle] = useState("");
   const [partPriceLastUpdatedByPartId, setPartPriceLastUpdatedByPartId] =
-    useState<Record<string, { priceA: string | null; priceB: string | null }>>(
-      {},
-    );
+    useState<
+      Record<
+        string,
+        {
+          priceA: string | null;
+          priceB: string | null;
+          priceN?: string | null;
+        }
+      >
+    >({});
   const loadedPartPriceDatesRef = useRef<Set<string>>(new Set());
 
   const openPartImageModal = useCallback(
@@ -1088,7 +1096,7 @@ export const SalesInvoice = ({
     category?: string;
     priceA?: string;
     priceB?: string;
-    priceM?: string;
+    priceN?: string;
     quantity?: number;
     images?: string[];
     grade?: string;
@@ -1174,18 +1182,18 @@ export const SalesInvoice = ({
         .map((item, idx) => {
           const priceA = Number(item.priceA || 0) || undefined;
           const priceB = Number(item.priceB || 0) || undefined;
-          const priceM = Number(item.priceM || 0) || undefined;
+          const priceN = Number(item.priceN || 0) || undefined;
           const unitPrice =
             priceA ??
             priceB ??
-            priceM ??
+            priceN ??
             (Number(item.purchasePrice || 0) || undefined);
-          const selectedPriceType: "A" | "B" | "M" | undefined = priceA
+          const selectedPriceType: "A" | "B" | "N" | undefined = priceA
             ? "A"
             : priceB
               ? "B"
-              : priceM
-                ? "M"
+              : priceN
+                ? "N"
                 : undefined;
           return {
             id:
@@ -1198,7 +1206,7 @@ export const SalesInvoice = ({
             qty: Number(item.quantity) || 1,
             priceA,
             priceB,
-            priceM,
+            priceN,
             unitPrice,
             selectedPriceType,
             partNoFallback: item.partNo,
@@ -1219,12 +1227,12 @@ export const SalesInvoice = ({
           price:
             Number(item.priceA || 0) ||
             Number(item.priceB || 0) ||
-            Number(item.priceM || 0) ||
+            Number(item.priceN || 0) ||
             Number(item.purchasePrice || 0) ||
             0,
           priceA: Number(item.priceA || 0) || undefined,
           priceB: Number(item.priceB || 0) || undefined,
-          priceM: Number(item.priceM || 0) || undefined,
+          priceN: Number(item.priceN || 0) || undefined,
           stockQty: 0,
           reservedQty: 0,
           availableQty: 0,
@@ -1677,7 +1685,7 @@ export const SalesInvoice = ({
       qty: 0,
       priceA: undefined,
       priceB: undefined,
-      priceM: undefined,
+      priceN: undefined,
        unitPrice: undefined,
       selectedPriceType: undefined,
     };
@@ -1887,8 +1895,8 @@ export const SalesInvoice = ({
     if (item.selectedPriceType === "B") {
       return item.priceB ?? part.priceB ?? 0;
     }
-    if (item.selectedPriceType === "M") {
-      return item.priceM ?? part.priceM ?? 0;
+    if (item.selectedPriceType === "N") {
+      return item.priceN ?? part.priceN ?? 0;
     }
     return 0;
   };
@@ -1926,6 +1934,14 @@ export const SalesInvoice = ({
     return v != null ? v : null;
   };
 
+  const getInlinePriceNValue = (
+    item: InlineItemRow,
+    part: PartItem | null | undefined,
+  ): number | null => {
+    const v = item.priceN ?? part?.priceN;
+    return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+  };
+
   const formatInlinePriceButton = (val: number) => val.toFixed(0);
 
   const formatInvoiceMoney = (val: number) =>
@@ -1936,6 +1952,7 @@ export const SalesInvoice = ({
   const lineUnitCostLabel = "Unit Cost";
   const linePriceALabel = isTransferOut ? "Avg Price" : "Price A";
   const linePriceBLabel = isTransferOut ? "Purchase Price" : "Price B";
+  const linePriceNLabel = "Price N";
 
   const handleLineModelAssociationClick = useCallback(
     async (lineItemId: string, modelName: string, application?: string) => {
@@ -2053,30 +2070,30 @@ export const SalesInvoice = ({
               if (isTransferOut) {
                 updated.priceA = 0;
                 updated.priceB = 0;
-                updated.priceM = 0;
+                updated.priceN = 0;
                 updated.poUnitCost = undefined;
                 updated.selectedPriceType = "A";
                 updated.unitPrice = 0;
               } else {
                 updated.priceA = part.priceA || 0;
                 updated.priceB = part.priceB || 0;
-                updated.priceM = part.priceM || 0;
+                updated.priceN = part.priceN || 0;
 
                 // Auto-select price type: customer's assigned type takes priority
                 if (customerPriceType === "A" && part.priceA) {
                   updated.selectedPriceType = "A";
                 } else if (customerPriceType === "B" && part.priceB) {
                   updated.selectedPriceType = "B";
-                } else if (customerPriceType === "M" && part.priceM) {
-                  updated.selectedPriceType = "M";
+                } else if (customerPriceType === "N" && part.priceN) {
+                  updated.selectedPriceType = "N";
                 } else if (customerPriceType) {
                   updated.selectedPriceType = customerPriceType;
                 } else if (part.priceA) {
                   updated.selectedPriceType = "A";
                 } else if (part.priceB) {
                   updated.selectedPriceType = "B";
-                } else if (part.priceM) {
-                  updated.selectedPriceType = "M";
+                } else if (part.priceN) {
+                  updated.selectedPriceType = "N";
                 }
                 updated.unitPrice = getDerivedUnitPrice(updated, part);
               }
@@ -2108,7 +2125,7 @@ export const SalesInvoice = ({
             updated.descriptionFallback = "";
             updated.priceA = 0;
             updated.priceB = 0;
-            updated.priceM = 0;
+            updated.priceN = 0;
           }
 
           // If price type was changed explicitly, update unit price to match that selection
@@ -2328,7 +2345,7 @@ export const SalesInvoice = ({
         category?: string;
         priceA?: string;
         priceB?: string;
-        priceM?: string;
+        priceN?: string;
         quantity?: number;
         images?: string[];
         grade?: string;
@@ -2345,7 +2362,7 @@ export const SalesInvoice = ({
 
       const priceA = parseFloat(String(part.priceA ?? "")) || 0;
       const priceB = parseFloat(String(part.priceB ?? "")) || 0;
-      const priceM = parseFloat(String(part.priceM ?? "")) || 0;
+      const priceN = parseFloat(String(part.priceN ?? "")) || 0;
       const stockQty = Number(part.quantity ?? 0) || 0;
       const brandName = String(part.brand || "").trim();
       const partNo = String(part.partNo || "").trim();
@@ -2360,7 +2377,7 @@ export const SalesInvoice = ({
         price: priceA || 0,
         priceA: priceA || undefined,
         priceB: priceB || undefined,
-        priceM: priceM || undefined,
+        priceN: priceN || undefined,
         stockQty,
         reservedQty: 0,
         availableQty: stockQty,
@@ -2410,37 +2427,37 @@ export const SalesInvoice = ({
           if (isTransferOut) {
             updated.priceA = 0;
             updated.priceB = 0;
-            updated.priceM = 0;
+            updated.priceN = 0;
             updated.poUnitCost = undefined;
             updated.selectedPriceType = "A";
             updated.unitPrice = 0;
           } else {
             updated.priceA = mappedPart.priceA || 0;
             updated.priceB = mappedPart.priceB || 0;
-            updated.priceM = mappedPart.priceM || 0;
+            updated.priceN = mappedPart.priceN || 0;
 
             if (customerPriceType === "A" && mappedPart.priceA) {
               updated.selectedPriceType = "A";
             } else if (customerPriceType === "B" && mappedPart.priceB) {
               updated.selectedPriceType = "B";
-            } else if (customerPriceType === "M" && mappedPart.priceM) {
-              updated.selectedPriceType = "M";
+            } else if (customerPriceType === "N" && mappedPart.priceN) {
+              updated.selectedPriceType = "N";
             } else if (customerPriceType) {
               updated.selectedPriceType = customerPriceType;
             } else if (mappedPart.priceA) {
               updated.selectedPriceType = "A";
             } else if (mappedPart.priceB) {
               updated.selectedPriceType = "B";
-            } else if (mappedPart.priceM) {
-              updated.selectedPriceType = "M";
+            } else if (mappedPart.priceN) {
+              updated.selectedPriceType = "N";
             }
 
             if (updated.selectedPriceType === "A") {
               updated.unitPrice = mappedPart.priceA || 0;
             } else if (updated.selectedPriceType === "B") {
               updated.unitPrice = mappedPart.priceB || 0;
-            } else if (updated.selectedPriceType === "M") {
-              updated.unitPrice = mappedPart.priceM || 0;
+            } else if (updated.selectedPriceType === "N") {
+              updated.unitPrice = mappedPart.priceN || 0;
             } else {
               updated.unitPrice = 0;
             }
@@ -2503,7 +2520,7 @@ export const SalesInvoice = ({
         category?: string;
         priceA?: string;
         priceB?: string;
-        priceM?: string;
+        priceN?: string;
         quantity?: number;
         images?: string[];
         grade?: string;
@@ -2532,7 +2549,7 @@ export const SalesInvoice = ({
         category?: string;
         priceA?: string;
         priceB?: string;
-        priceM?: string;
+        priceN?: string;
         quantity?: number;
         images?: string[];
         grade?: string;
@@ -2613,7 +2630,7 @@ export const SalesInvoice = ({
           qty: addQty,
           priceA: isTransferOut ? 0 : (existingPart?.priceA ?? 0),
           priceB: isTransferOut ? 0 : (existingPart?.priceB ?? 0),
-          priceM: isTransferOut ? 0 : (existingPart?.priceM ?? 0),
+          priceN: isTransferOut ? 0 : (existingPart?.priceN ?? 0),
           unitPrice: isTransferOut ? 0 : undefined,
           selectedPriceType: isTransferOut ? "A" : undefined,
           partNoFallback: assocRow.partNo || "",
@@ -2629,24 +2646,24 @@ export const SalesInvoice = ({
             newItem.selectedPriceType = "A";
           } else if (customerPriceType === "B" && existingPart.priceB) {
             newItem.selectedPriceType = "B";
-          } else if (customerPriceType === "M" && existingPart.priceM) {
-            newItem.selectedPriceType = "M";
+          } else if (customerPriceType === "N" && existingPart.priceN) {
+            newItem.selectedPriceType = "N";
           } else if (customerPriceType) {
             newItem.selectedPriceType = customerPriceType;
           } else if (existingPart.priceA) {
             newItem.selectedPriceType = "A";
           } else if (existingPart.priceB) {
             newItem.selectedPriceType = "B";
-          } else if (existingPart.priceM) {
-            newItem.selectedPriceType = "M";
+          } else if (existingPart.priceN) {
+            newItem.selectedPriceType = "N";
           }
 
           if (newItem.selectedPriceType === "A") {
             newItem.unitPrice = newItem.priceA ?? existingPart.priceA ?? 0;
           } else if (newItem.selectedPriceType === "B") {
             newItem.unitPrice = newItem.priceB ?? existingPart.priceB ?? 0;
-          } else if (newItem.selectedPriceType === "M") {
-            newItem.unitPrice = newItem.priceM ?? existingPart.priceM ?? 0;
+          } else if (newItem.selectedPriceType === "N") {
+            newItem.unitPrice = newItem.priceN ?? existingPart.priceN ?? 0;
           } else {
             newItem.unitPrice = existingPart.priceA ?? 0;
           }
@@ -2765,7 +2782,7 @@ export const SalesInvoice = ({
               price: p.price_a ?? p.cost ?? 0,
               priceA: p.price_a ?? null,
               priceB: p.price_b ?? null,
-              priceM: p.price_m ?? null,
+              priceN: p.price_n ?? null,
               stockQty: p.stock || 0,
               reservedQty: p.reserved_stock || 0,
               availableQty: (p.stock || 0) - (p.reserved_stock || 0),
@@ -3307,7 +3324,7 @@ export const SalesInvoice = ({
     const pt = selectedRegisteredCustomer?.priceType;
     if (pt === "A") return "Price A";
     if (pt === "B") return "Price B";
-    if (pt === "M") return "Price M";
+    if (pt === "N") return "Price N";
     return null;
   }, [selectedRegisteredCustomer]);
 
@@ -3751,8 +3768,10 @@ export const SalesInvoice = ({
     () => [
       { value: "", label: "All items" },
       ...parts.map((p) => {
-        const master = (p.masterPartNo || "").trim();
+        // PartItem is UI-mapped: partNo = UI Part No, masterPartNo = UI Master Part.
+        // buildPartSearchableSelectFields expects DB-shaped fields.
         const partNo = (p.partNo || "").trim();
+        const master = (p.masterPartNo || "").trim();
         const label =
           master && partNo
             ? `Part no: ${partNo} · Master: ${master}`
@@ -3764,8 +3783,8 @@ export const SalesInvoice = ({
           label,
           description: descParts.length ? descParts.join(" · ") : undefined,
           ...buildPartSearchableSelectFields({
-            partNo: p.partNo,
-            masterPartNo: p.masterPartNo,
+            master_part_no: partNo,
+            part_no: master,
           }),
         };
       }),
@@ -4524,7 +4543,7 @@ export const SalesInvoice = ({
 
     // Check if all items have either a selected price type OR a manual unit price.
     // This allows editing older/custom-priced invoices where unit price may not
-    // exactly match Price A/B/M.
+    // exactly match Price A/B/N.
     const itemsWithoutPrice = savableBeforeSave.filter(
       (i) =>
         !i.isTemporary &&
@@ -4537,7 +4556,7 @@ export const SalesInvoice = ({
         title: "Error",
         description: isTransferOut
           ? "Please select unit cost, avg price, or purchase price, or enter a valid unit price for all items"
-          : "Please select Price A/B/M or enter a valid unit price for all items",
+          : "Please select Price A/B/N or enter a valid unit price for all items",
         variant: "destructive",
       });
       return;
@@ -4688,7 +4707,7 @@ export const SalesInvoice = ({
         const part = item.isTemporary
           ? null
           : getPartForItem(item.selectedPartId);
-        // Prefer explicit unitPrice (custom or A/B/M), otherwise derive from price type
+        // Prefer explicit unitPrice (custom or A/B/N), otherwise derive from price type
         const unitPrice =
           item.unitPrice != null
             ? item.unitPrice
@@ -5225,7 +5244,7 @@ export const SalesInvoice = ({
               price: item.Part.priceA || item.Part.cost || 0,
               priceA: item.Part.priceA || null,
               priceB: item.Part.priceB || null,
-              priceM: item.Part.priceM || null,
+              priceN: item.Part.priceN || null,
               stockQty: item.Part.stockQty || 0,
               reservedQty: item.Part.reservedQty || 0,
               availableQty:
@@ -5276,8 +5295,8 @@ export const SalesInvoice = ({
                 return "A";
               if (part.priceB != null && Math.abs(u - part.priceB) < 0.01)
                 return "B";
-              if (part.priceM != null && Math.abs(u - part.priceM) < 0.01)
-                return "M";
+              if (part.priceN != null && Math.abs(u - part.priceN) < 0.01)
+                return "N";
               return undefined;
             })(),
             useUnlocatedStock: false,
@@ -5534,7 +5553,7 @@ export const SalesInvoice = ({
   }) => {
     setSelectedCustomerId(customer.id);
     setSelectedCustomerName(customer.name);
-    const pt = (customer.priceType as "A" | "B" | "M" | null) || null;
+    const pt = (customer.priceType as "A" | "B" | "N" | null) || null;
     setCustomerPriceType(pt);
     setSelectedCustomerCategory(
       customer.category === "Reseller" || customer.category === "EndUser"
@@ -7050,6 +7069,7 @@ export const SalesInvoice = ({
       const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(fullItems);
       printInvoice = {
         ...invoice,
+        status: fullInv?.status || invoice.status,
         invoiceDate: fullInv?.invoiceDate || invoice.invoiceDate,
         term: fullInv?.term ?? invoice.term,
         customerName: fullInv?.customerName || invoice.customerName,
@@ -7253,10 +7273,16 @@ export const SalesInvoice = ({
       0,
       Number(printInvoice.grandTotal || 0) - Number(printInvoice.paidAmount || 0),
     );
-    // Total Receivable = customer's current outstanding balance.
-    // Bal. B/F = that balance with this invoice's amount excluded.
+    // Total Receivable / Bal. B/F:
+    // - Approved (voucher posted): customer balance includes this invoice →
+    //   Total Receivable = live balance, Bal. B/F = balance − this invoice due.
+    // - Unapproved (no voucher): live balance already excludes this invoice →
+    //   Bal. B/F = live balance, Total Receivable = Bal. B/F + this invoice due.
     const customerCurrentBalanceFromInvoice = Number(
       invoiceMeta.customerBalance ?? NaN,
+    );
+    const previousBalanceFromInvoice = Number(
+      invoiceMeta.previousBalance ?? NaN,
     );
     const customerCurrentBalanceFromState = Number(
       customers.find(
@@ -7271,11 +7297,34 @@ export const SalesInvoice = ({
     )
       ? customerCurrentBalanceFromInvoice
       : customerCurrentBalanceFromState;
+    const invoiceStatus = String(
+      printInvoice.status || invoiceMeta.status || "",
+    ).toLowerCase();
+    const invoiceInLedger = [
+      "approved",
+      "partially_delivered",
+      "delivered",
+      "completed",
+    ].includes(invoiceStatus);
 
-    const totalReceivable = Number.isFinite(customerCurrentBalance)
-      ? customerCurrentBalance
-      : currentAmount;
-    const balBf = totalReceivable - invoiceDue;
+    let balBf: number;
+    let totalReceivable: number;
+    if (Number.isFinite(previousBalanceFromInvoice)) {
+      balBf = previousBalanceFromInvoice;
+      totalReceivable = invoiceInLedger && Number.isFinite(customerCurrentBalance)
+        ? customerCurrentBalance
+        : balBf + invoiceDue;
+    } else if (Number.isFinite(customerCurrentBalance)) {
+      balBf = invoiceInLedger
+        ? customerCurrentBalance - invoiceDue
+        : customerCurrentBalance;
+      totalReceivable = invoiceInLedger
+        ? customerCurrentBalance
+        : customerCurrentBalance + invoiceDue;
+    } else {
+      balBf = 0;
+      totalReceivable = invoiceDue;
+    }
     const currentAmountWords = numberToWords(currentAmount);
     const linesBeforeCurrentAmount =
       (discountAmount > 0 ? 1 : 0) +
@@ -7570,6 +7619,7 @@ export const SalesInvoice = ({
       const mappedItems = mapApiSalesInvoiceItemsToInvoiceItems(fullItems);
       setInvoiceForPrint({
         ...invoice,
+        status: fullInv?.status || invoice.status,
         previousBalance:
           fullInv?.previousBalance != null
             ? Number(fullInv.previousBalance)
@@ -8134,39 +8184,30 @@ export const SalesInvoice = ({
                 <div className="border rounded-lg overflow-x-auto shadow-sm w-full min-w-0">
                   <Table
                     className={cn(
-                      "w-full table-fixed",
-                      isQuotation ? "min-w-[1360px]" : "min-w-[1100px]",
+                      "w-max min-w-full table-fixed",
+                      isQuotation ? "min-w-[1580px]" : "min-w-[1480px]",
                     )}
                   >
                     <colgroup>
-                      <col className="w-[3%]" />
-                      <col
-                        className={
-                          showInquiryViewColumn
-                            ? isQuotation
-                              ? "w-[19%]"
-                              : "w-[20%]"
-                            : isQuotation
-                              ? "w-[22%]"
-                              : "w-[22%]"
-                        }
-                      />
-                      {showInquiryViewColumn ? <col className="w-[3%]" /> : null}
-                      <col className="w-[5%]" />
-                      <col className="w-[4%]" />
-                      <col className="w-[4%]" />
-                      {isQuotation ? <col className="w-[6%]" /> : null}
-                      {isQuotation ? <col className="w-[4%]" /> : null}
-                      {isQuotation ? <col className="w-[5%]" /> : null}
-                      {!isQuotation ? <col className="w-[5%]" /> : null}
-                      <col className="w-[5%]" />
-                      <col className="w-[5%]" />
-                      {isTransferOut ? <col className="w-[6%]" /> : null}
-                      <col className="w-[7%]" />
-                      <col className="w-[7%]" />
-                      <col className="w-[7%]" />
-                      <col className="w-[4%]" />
-                      <col className="w-[4%]" />
+                      <col style={{ width: 44 }} />
+                      <col style={{ width: showInquiryViewColumn ? 260 : 280 }} />
+                      {showInquiryViewColumn ? <col style={{ width: 52 }} /> : null}
+                      <col style={{ width: 72 }} />
+                      <col style={{ width: 52 }} />
+                      <col style={{ width: 56 }} />
+                      {isQuotation ? <col style={{ width: 72 }} /> : null}
+                      {isQuotation ? <col style={{ width: 56 }} /> : null}
+                      {isQuotation ? <col style={{ width: 72 }} /> : null}
+                      {!isQuotation ? <col style={{ width: 64 }} /> : null}
+                      <col style={{ width: 72 }} />
+                      <col style={{ width: 80 }} />
+                      {isTransferOut ? <col style={{ width: 88 }} /> : null}
+                      <col style={{ width: 96 }} />
+                      <col style={{ width: 96 }} />
+                      <col style={{ width: 96 }} />
+                      <col style={{ width: 120 }} />
+                      <col style={{ width: 72 }} />
+                      <col style={{ width: 72 }} />
                     </colgroup>
                     <TableHeader className="hidden md:table-header-group bg-muted/50">
                       <TableRow className="border-b">
@@ -8224,19 +8265,22 @@ export const SalesInvoice = ({
                             {lineUnitCostLabel}
                           </TableHead>
                         ) : null}
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
                           {linePriceALabel}
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
                           {linePriceBLabel}
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
+                          {linePriceNLabel}
+                        </TableHead>
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
                           Location
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
                           Image
                         </TableHead>
-                        <TableHead className="text-center font-bold text-foreground text-sm py-3">
+                        <TableHead className="text-center font-bold text-foreground text-sm py-3 whitespace-nowrap">
                           Action
                         </TableHead>
                       </TableRow>
@@ -8406,7 +8450,23 @@ export const SalesInvoice = ({
                                   </div>
                                 ) : (
                                 <>
-                                <div className="relative">
+                                <div>
+                                  {(() => {
+                                    const searchValue =
+                                      partsSearchTerm[item.id];
+                                    const isSearching =
+                                      searchValue !== undefined &&
+                                      searchValue !== "";
+                                    const selectedPart = item.selectedPartId
+                                      ? getPartForItem(item.selectedPartId)
+                                      : undefined;
+                                    const showSelectedBadges = Boolean(
+                                      selectedPart &&
+                                        !isSearching &&
+                                        !showPartsDropdown[item.id],
+                                    );
+                                    return (
+                                      <div className="relative">
                                   <Input
                                     ref={(el) => {
                                       if (el) inputRefs.current[item.id] = el;
@@ -8415,20 +8475,17 @@ export const SalesInvoice = ({
                                     placeholder="Select part..."
                                     value={(() => {
                                       // If user is typing (search term exists and is not empty), show search term
-                                      const searchValue =
-                                        partsSearchTerm[item.id];
-                                      if (
-                                        searchValue !== undefined &&
-                                        searchValue !== ""
-                                      ) {
+                                      if (isSearching) {
                                         return searchValue;
+                                      }
+
+                                      // Badge overlay shows identity when closed; keep text for focus/edit
+                                      if (showSelectedBadges) {
+                                        return "";
                                       }
 
                                       // Otherwise, if a part is selected, show the part name
                                       if (item.selectedPartId) {
-                                        const selectedPart = getPartForItem(
-                                          item.selectedPartId,
-                                        );
                                         if (selectedPart) {
                                           const partNo =
                                             selectedPart.partNo || "";
@@ -8437,10 +8494,9 @@ export const SalesInvoice = ({
                                           const description =
                                             selectedPart.description || "";
                                           const partLabel =
-                                            masterPartNo &&
-                                            masterPartNo !== partNo
-                                              ? `${partNo} | ${masterPartNo}`
-                                              : partNo;
+                                            partNo && masterPartNo
+                                              ? `${partNo} / ${masterPartNo}`
+                                              : partNo || masterPartNo;
                                           return description
                                             ? `${partLabel} - ${description}`
                                             : partLabel;
@@ -8461,6 +8517,11 @@ export const SalesInvoice = ({
                                       // Otherwise, show empty (placeholder will show)
                                       return "";
                                     })()}
+                                    className={cn(
+                                      "w-full h-10 text-sm",
+                                      showSelectedBadges &&
+                                        "text-transparent caret-transparent",
+                                    )}
                                     onClick={(e) => {
                                       // Always show dropdown when clicking on input
                                       e.stopPropagation();
@@ -8622,8 +8683,26 @@ export const SalesInvoice = ({
                                         }
                                       }, 200);
                                     }}
-                                    className="w-full h-10 text-sm"
                                   />
+                                  {showSelectedBadges && selectedPart ? (
+                                    <div
+                                      className="pointer-events-none absolute inset-0 z-[1] flex items-center gap-1.5 overflow-hidden bg-background px-3 rounded-md"
+                                      aria-hidden
+                                    >
+                                      <PartIdentityBadges
+                                        partNo={selectedPart.partNo}
+                                        masterPart={selectedPart.masterPartNo}
+                                      />
+                                      {selectedPart.description ? (
+                                        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                                          - {selectedPart.description}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                   {item.selectedPartId ? (
                                     <div className="mt-1 text-xs text-muted-foreground flex flex-col gap-0.5">
                                       <span className="font-semibold text-foreground/80">
@@ -9458,18 +9537,69 @@ export const SalesInvoice = ({
                               })()}
                             </TableCell>
 
-                            {/* Mobile: Unit Cost / Avg / Purchase or Price A & B */}
+                            {/* Column 13: Price N (Desktop ONLY) */}
+                            <TableCell className="hidden md:table-cell text-center align-top px-1 min-w-0">
+                              {(() => {
+                                const priceNValue = getInlinePriceNValue(
+                                  item,
+                                  part,
+                                );
+                                if (priceNValue == null) {
+                                  return (
+                                    <span className="text-xs text-muted-foreground">
+                                      -
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <div className="flex flex-col items-center gap-1">
+                                    <Button
+                                      variant={
+                                        item.selectedPriceType === "N"
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      size="sm"
+                                      className="w-full min-w-0 px-2 text-sm h-9"
+                                      onClick={() => {
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "selectedPriceType",
+                                          "N",
+                                        );
+                                        handleUpdateInlineItem(
+                                          item.id,
+                                          "unitPrice",
+                                          priceNValue,
+                                        );
+                                      }}
+                                    >
+                                      {formatInlinePriceButton(priceNValue)}
+                                    </Button>
+                                    {!isTransferOut && (
+                                      <span className="text-[9px] leading-tight text-muted-foreground font-bold">
+                                        {formatPriceLastUpdatedLabel(
+                                          priceDates?.priceN,
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+
+                            {/* Mobile: Unit Cost / Avg / Purchase or Price A & B & N */}
                             <TableCell className="md:hidden block p-0 align-middle">
                               <span className="text-xs font-bold text-muted-foreground block mb-2 uppercase tracking-wider">
                                 {isTransferOut
                                   ? "Unit / Avg / Purchase"
-                                  : "Price A & B"}
+                                  : "Price A, B & N"}
                               </span>
                               <div
                                 className={`grid gap-2 items-center ${
                                   isTransferOut
-                                    ? "grid-cols-3"
-                                    : "grid-cols-2"
+                                    ? "grid-cols-4"
+                                    : "grid-cols-3"
                                 }`}
                               >
                                 {isTransferOut ? (
@@ -9624,6 +9754,55 @@ export const SalesInvoice = ({
                                           <span className="block text-[9px] leading-tight text-muted-foreground font-bold text-center">
                                             {formatPriceLastUpdatedLabel(
                                               priceDates?.priceB,
+                                            )}
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">
+                                        -
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="text-[9px] text-muted-foreground uppercase">
+                                    {linePriceNLabel}
+                                  </span>
+                                  {(() => {
+                                    const val = getInlinePriceNValue(
+                                      item,
+                                      part,
+                                    );
+                                    return val != null ? (
+                                      <>
+                                        <Button
+                                          variant={
+                                            item.selectedPriceType === "N"
+                                              ? "default"
+                                              : "outline"
+                                          }
+                                          size="sm"
+                                          className="w-full h-8 text-[10px]"
+                                          onClick={() => {
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "selectedPriceType",
+                                              "N",
+                                            );
+                                            handleUpdateInlineItem(
+                                              item.id,
+                                              "unitPrice",
+                                              val,
+                                            );
+                                          }}
+                                        >
+                                          {formatInlinePriceButton(val)}
+                                        </Button>
+                                        {!isTransferOut && (
+                                          <span className="block text-[9px] leading-tight text-muted-foreground font-bold text-center">
+                                            {formatPriceLastUpdatedLabel(
+                                              priceDates?.priceN,
                                             )}
                                           </span>
                                         )}
@@ -9949,6 +10128,8 @@ export const SalesInvoice = ({
                         {/* Price A */}
                         <TableCell />
                         {/* Price B */}
+                        <TableCell />
+                        {/* Price N */}
                         <TableCell />
                         {/* Image */}
                         <TableCell />

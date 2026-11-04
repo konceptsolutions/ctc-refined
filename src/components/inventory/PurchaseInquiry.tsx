@@ -36,6 +36,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "@/components/ui/searchable-select";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 import { usePageActions } from "@/permissions/pageActions";
 
 const priceInputValue = (n: number | undefined | null) =>
@@ -57,7 +58,7 @@ const mapApiPartToResult = (p: any): PartResult => ({
   stock: Number(p.current_stock ?? p.currentStock ?? p.stock ?? p.qty ?? 0),
   priceA: Number(p.price_a ?? p.priceA ?? 0),
   priceB: Number(p.price_b ?? p.priceB ?? 0),
-  priceM: Number(p.price_m ?? p.priceM ?? 0),
+  priceN: Number(p.price_n ?? p.priceN ?? 0),
   cost: Number(p.cost ?? 0),
   reOrderLevel: Number(p.reorder_level ?? p.reOrderLevel ?? 0),
   grade: String(p.grade || "A"),
@@ -83,7 +84,7 @@ interface PartResult {
   stock: number;
   priceA: number;
   priceB: number;
-  priceM: number;
+  priceN: number;
   cost: number;
   reOrderLevel: number;
   grade: string;
@@ -161,7 +162,7 @@ const fmtQty = (n: number | undefined | null) =>
 const fmtPartNos = (item: Pick<PartResult, "partNo" | "masterPart">) => {
   const partNo = String(item.partNo || "").trim() || "N/A";
   const masterPart = String(item.masterPart || "").trim() || "N/A";
-  return `${partNo} | ${masterPart}`;
+  return `${partNo} / ${masterPart}`;
 };
 
 const statusBadge = (status: string) => {
@@ -1186,7 +1187,11 @@ export const PurchaseInquiry = ({
                     className="w-full text-left px-3 py-2 hover:bg-muted/60 transition-colors border-b last:border-0"
                     onMouseDown={() => void handleSelectPart(p)}
                   >
-                    <div className="text-xs font-semibold">{p.partNo}</div>
+                    <PartIdentityBadges
+                      partNo={p.partNo}
+                      masterPart={p.masterPart}
+                      className="mb-0.5"
+                    />
                     <div className="text-xs text-muted-foreground">
                       {p.description} &bull; <span className="font-medium">{p.brand}</span>
                     </div>
