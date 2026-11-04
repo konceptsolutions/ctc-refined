@@ -80,7 +80,8 @@ export function InvoicePartDropdownList({
   return (
     <div
       ref={parentRef}
-      className="h-80 w-full overflow-auto overscroll-contain"
+      className="h-80 w-full overflow-auto overscroll-contain bg-popover"
+      style={{ backgroundColor: "hsl(var(--popover))" }}
       onMouseDown={() => {
         // Mark interaction so input onBlur does not close while using the scroller.
         markDropdownMouseDown();
@@ -91,6 +92,7 @@ export function InvoicePartDropdownList({
           height: `${rowVirtualizer.getTotalSize()}px`,
           width: "100%",
           position: "relative",
+          backgroundColor: "hsl(var(--popover))",
         }}
       >
         {rowVirtualizer.getVirtualItems().map((vi) => {
@@ -110,12 +112,16 @@ export function InvoicePartDropdownList({
                 width: "100%",
                 height: `${vi.size}px`,
                 transform: `translateY(${vi.start}px)`,
+                backgroundColor:
+                  idx === safeHighlight
+                    ? undefined
+                    : "hsl(var(--popover))",
               }}
               className={cn(
                 "group px-3 py-2 text-sm cursor-pointer border-b border-border transition-colors",
                 idx === safeHighlight
                   ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent hover:text-accent-foreground",
+                  : "bg-popover hover:bg-accent hover:text-accent-foreground",
               )}
               onMouseEnter={() => {
                 skipScrollOnHighlightRef.current = true;

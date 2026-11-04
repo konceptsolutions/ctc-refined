@@ -150,8 +150,8 @@ export const HsCodesPage = () => {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-auto">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-1 h-8 bg-primary rounded-full" />
           <div>
@@ -173,7 +173,7 @@ export const HsCodesPage = () => {
         </Button>
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-4 mb-4">
+      <div className="bg-card rounded-xl border border-border p-4 mb-4 shrink-0">
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -188,10 +188,14 @@ export const HsCodesPage = () => {
         </p>
       </div>
 
-      <div className="bg-card rounded-xl border border-border overflow-hidden flex-1 min-h-0">
-        <div className="overflow-auto max-h-[calc(100vh-260px)]">
+      <div className="bg-card rounded-xl border border-border overflow-hidden flex-1 min-h-0 flex flex-col">
+        {/*
+          Table wraps itself in overflow-auto; force that wrapper to fill this
+          panel so the list scrolls inside the page instead of growing forever.
+        */}
+        <div className="flex-1 min-h-0 overflow-hidden [&>div]:h-full [&>div]:max-h-full [&>div]:overflow-y-auto [&>div]:overflow-x-auto [&>div]:[scrollbar-gutter:stable]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
               <TableRow className="bg-muted/50">
                 <ListNumberHeader />
                 <TableHead className="font-semibold">HS Code</TableHead>

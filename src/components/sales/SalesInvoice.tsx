@@ -106,6 +106,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InvoiceDeliveryLog } from "./InvoiceDeliveryLog";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import { InvoicePartDropdownList } from "./InvoicePartDropdownList";
+import { getFixedDropdownPosition } from "./fixedDropdownPosition";
 import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 import { printDeliveryChallan, getChallanItemLocation } from "@/lib/printDeliveryChallan";
 import { printSalesInvoicePdf } from "@/utils/printSalesInvoicePdf";
@@ -3710,11 +3711,7 @@ export const SalesInvoice = ({
           const rect = input.getBoundingClientRect();
           setDropdownPosition((prev) => ({
             ...prev,
-            [itemId]: {
-              top: rect.bottom + window.scrollY + 4,
-              left: rect.left + window.scrollX,
-              width: rect.width,
-            },
+            [itemId]: getFixedDropdownPosition(rect),
           }));
         }
       });
@@ -8531,12 +8528,7 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: {
-                                            top:
-                                              rect.bottom + window.scrollY + 4,
-                                            left: rect.left + window.scrollX,
-                                            width: rect.width,
-                                          },
+                                          [item.id]: getFixedDropdownPosition(rect),
                                         }));
                                         // Clear the input to allow searching
                                         if (
@@ -8588,12 +8580,7 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: {
-                                            top:
-                                              rect.bottom + window.scrollY + 4,
-                                            left: rect.left + window.scrollX,
-                                            width: rect.width,
-                                          },
+                                          [item.id]: getFixedDropdownPosition(rect),
                                         }));
                                       }
 
@@ -8638,12 +8625,7 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: {
-                                            top:
-                                              rect.bottom + window.scrollY + 4,
-                                            left: rect.left + window.scrollX,
-                                            width: rect.width,
-                                          },
+                                          [item.id]: getFixedDropdownPosition(rect),
                                         }));
                                       }
                                       setShowPartsDropdown((prev) => ({
@@ -8911,12 +8893,13 @@ export const SalesInvoice = ({
                                           if (el)
                                             dropdownRefs.current[item.id] = el;
                                         }}
-                                        className="fixed z-[9999] bg-card border border-border rounded-md shadow-lg min-w-0"
+                                        className="fixed z-[9999] isolate overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-xl min-w-0"
                                         data-dropdown-item
                                         style={{
                                           top: `${dropdownPosition[item.id].top}px`,
                                           left: `${dropdownPosition[item.id].left}px`,
                                           width: `${dropdownPosition[item.id].width}px`,
+                                          backgroundColor: "hsl(var(--popover))",
                                         }}
                                         onMouseDown={(e) => {
                                           // Mark that we're clicking on dropdown
