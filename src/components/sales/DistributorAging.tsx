@@ -13,12 +13,24 @@ import {
 } from "@/components/ui/table";
 import { ListNumberHeader, ListNumberCell } from "@/components/ui/list-table-number";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Download, Printer, CalendarIcon } from "lucide-react";
+import {
+  Search,
+  Download,
+  CalendarIcon,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PrintPdfButton } from "@/components/ui/PrintPdfButton";
 import { openPrintHtml } from "@/utils/printUtils";
@@ -26,6 +38,7 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
+import { isAdminRole } from "@/utils/auth";
 
 interface OverdueInvoiceRow {
   id: string;
@@ -46,12 +59,17 @@ const formatTermDisplay = (term: string) => {
 
 export const DistributorAging = () => {
   const { canExport, canPrint } = usePageActions("sales.distributor-aging");
+  const isAdmin = isAdminRole();
   const [agingData, setAgingData] = useState<OverdueInvoiceRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"due_date" | "due_amount" | "invoice_date">("due_date");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [isMarkPaidOpen, setIsMarkPaidOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] =
+    useState<OverdueInvoiceRow | null>(null);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -93,6 +111,48 @@ export const DistributorAging = () => {
     () => filteredData.reduce((sum, row) => sum + Number(row.due_amount || 0), 0),
     [filteredData],
   );
+
+  const openMarkPaidDialog = (invoice: OverdueInvoiceRow) => {
+    const status = String(invoice.payment_status || "").trim().toLowerCase();
+    if (!["unpaid", "partial"].includes(status)) return;
+    setSelectedInvoice(invoice);
+    setIsMarkPaidOpen(true);
+  };
+
+  const handleMarkAsPaid = async () => {
+    if (!selectedInvoice) return;
+
+    setMarkingPaid(true);
+    try {
+      const response = await apiClient.markInvoiceAsPaid(selectedInvoice.id);
+
+      if ((response as any)?.error) {
+        toast({
+          title: "Error",
+          description:
+            (response as any).error || "Failed to mark invoice as paid",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsMarkPaidOpen(false);
+      setSelectedInvoice(null);
+      toast({
+        title: "Invoice Marked as Paid",
+        description: `${selectedInvoice.invoice_no} payment status updated to paid.`,
+      });
+      await fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to mark invoice as paid",
+        variant: "destructive",
+      });
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
 
   const handleExport = () => {
     const headers = ["Customer", "Invoice Number", "Invoice Date", "Term", "Due Date", "Due Amount", "Payment Status"];
@@ -305,42 +365,147 @@ export const DistributorAging = () => {
                   <TableHead className="font-semibold">Due Date</TableHead>
                   <TableHead className="text-right font-semibold">Due Amount</TableHead>
                   <TableHead className="font-semibold">Payment Status</TableHead>
+                  {isAdmin ? (
+                    <TableHead className="text-center font-semibold">Action</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell
+                      colSpan={isAdmin ? 9 : 8}
+                      className="text-center py-8 text-muted-foreground"
+                    >
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell
+                      colSpan={isAdmin ? 9 : 8}
+                      className="text-center py-8 text-muted-foreground"
+                    >
                       No overdue unpaid invoices found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredData.map((item, index) => (
-                    <TableRow key={item.id} className="hover:bg-muted/30">
-                      <ListNumberCell index={index} total={filteredData.length} />
-                      <TableCell className="font-medium text-foreground">{item.customer}</TableCell>
-                      <TableCell>{item.invoice_no}</TableCell>
-                      <TableCell>{formatUiDate(new Date(item.invoice_date))}</TableCell>
-                      <TableCell>{formatTermDisplay(item.term)}</TableCell>
-                      <TableCell>{formatUiDate(new Date(item.due_date))}</TableCell>
-                      <TableCell className="text-right font-semibold">
-                        Rs. {Number(item.due_amount || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="capitalize">{item.payment_status}</TableCell>
-                    </TableRow>
-                  ))
+                  filteredData.map((item, index) => {
+                    const status = String(item.payment_status || "")
+                      .trim()
+                      .toLowerCase();
+                    const canMarkPaid =
+                      isAdmin &&
+                      (status === "unpaid" || status === "partial");
+                    return (
+                      <TableRow key={item.id} className="hover:bg-muted/30">
+                        <ListNumberCell
+                          index={index}
+                          total={filteredData.length}
+                        />
+                        <TableCell className="font-medium text-foreground">
+                          {item.customer}
+                        </TableCell>
+                        <TableCell>{item.invoice_no}</TableCell>
+                        <TableCell>
+                          {formatUiDate(new Date(item.invoice_date))}
+                        </TableCell>
+                        <TableCell>{formatTermDisplay(item.term)}</TableCell>
+                        <TableCell>
+                          {formatUiDate(new Date(item.due_date))}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          Rs. {Number(item.due_amount || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="capitalize">
+                          {item.payment_status}
+                        </TableCell>
+                        {isAdmin ? (
+                          <TableCell className="text-center">
+                            {canMarkPaid ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                onClick={() => openMarkPaidDialog(item)}
+                                title="Mark as Paid"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Mark as Paid Dialog (admin only — status sync, no voucher) */}
+      <Dialog open={isMarkPaidOpen} onOpenChange={setIsMarkPaidOpen}>
+        <DialogContent className="max-w-md bg-background">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              Mark Invoice as Paid
+            </DialogTitle>
+          </DialogHeader>
+          {selectedInvoice && (
+            <div className="space-y-4">
+              <div className="bg-muted/30 p-3 rounded-lg text-sm space-y-1">
+                <p>
+                  <span className="text-muted-foreground">Invoice:</span>{" "}
+                  {selectedInvoice.invoice_no}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Customer:</span>{" "}
+                  {selectedInvoice.customer}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Current Status:</span>{" "}
+                  <span className="font-medium capitalize">
+                    {selectedInvoice.payment_status}
+                  </span>
+                </p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use this when payment was already received through an RV voucher
+                but the invoice still shows as unpaid or partially paid. This
+                only updates the invoice payment status — no voucher will be
+                created.
+              </p>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  onClick={() => void handleMarkAsPaid()}
+                  disabled={markingPaid}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {markingPaid ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    "Mark as Paid"
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsMarkPaidOpen(false)}
+                  disabled={markingPaid}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

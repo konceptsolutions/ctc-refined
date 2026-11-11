@@ -3711,7 +3711,10 @@ export const SalesInvoice = ({
           const rect = input.getBoundingClientRect();
           setDropdownPosition((prev) => ({
             ...prev,
-            [itemId]: getFixedDropdownPosition(rect),
+            [itemId]: getFixedDropdownPosition(rect, {
+              minWidth: 480,
+              maxWidth: 640,
+            }),
           }));
         }
       });
@@ -8182,12 +8185,12 @@ export const SalesInvoice = ({
                   <Table
                     className={cn(
                       "w-max min-w-full table-fixed",
-                      isQuotation ? "min-w-[1580px]" : "min-w-[1480px]",
+                      isQuotation ? "min-w-[1720px]" : "min-w-[1620px]",
                     )}
                   >
                     <colgroup>
                       <col style={{ width: 44 }} />
-                      <col style={{ width: showInquiryViewColumn ? 260 : 280 }} />
+                      <col style={{ width: showInquiryViewColumn ? 400 : 420 }} />
                       {showInquiryViewColumn ? <col style={{ width: 52 }} /> : null}
                       <col style={{ width: 72 }} />
                       <col style={{ width: 52 }} />
@@ -8528,7 +8531,10 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: getFixedDropdownPosition(rect),
+                                          [item.id]: getFixedDropdownPosition(rect, {
+                                            minWidth: 480,
+                                            maxWidth: 640,
+                                          }),
                                         }));
                                         // Clear the input to allow searching
                                         if (
@@ -8580,7 +8586,10 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: getFixedDropdownPosition(rect),
+                                          [item.id]: getFixedDropdownPosition(rect, {
+                                            minWidth: 480,
+                                            maxWidth: 640,
+                                          }),
                                         }));
                                       }
 
@@ -8625,7 +8634,10 @@ export const SalesInvoice = ({
                                           input.getBoundingClientRect();
                                         setDropdownPosition((prev) => ({
                                           ...prev,
-                                          [item.id]: getFixedDropdownPosition(rect),
+                                          [item.id]: getFixedDropdownPosition(rect, {
+                                            minWidth: 480,
+                                            maxWidth: 640,
+                                          }),
                                         }));
                                       }
                                       setShowPartsDropdown((prev) => ({
@@ -8893,7 +8905,7 @@ export const SalesInvoice = ({
                                           if (el)
                                             dropdownRefs.current[item.id] = el;
                                         }}
-                                        className="fixed z-[9999] isolate overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-xl min-w-0"
+                                        className="fixed z-[9999] isolate overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-xl"
                                         data-dropdown-item
                                         style={{
                                           top: `${dropdownPosition[item.id].top}px`,

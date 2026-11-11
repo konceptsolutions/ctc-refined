@@ -402,6 +402,8 @@ type ImportPurchaseOrderRecord = {
   status: string;
   consignee?: string | null;
   totalAmount: number;
+  fcTotal?: number;
+  totalWeight?: number;
   notes?: string | null;
   itemsCount: number;
   importSaved?: boolean;
@@ -12158,7 +12160,8 @@ const PurchaseOrderTab = ({
               <th className="text-left p-2 border-b">Forwarder</th>
               <th className="text-left p-2 border-b">Est Time Date</th>
               <th className="text-right p-2 border-b">Items</th>
-              <th className={QUOTATION_LC_AMOUNT_COL_CLASS}>Total (LC)</th>
+              <th className="text-right p-2 border-b">Weight</th>
+              <th className={QUOTATION_FC_AMOUNT_COL_CLASS}>Total (FC)</th>
               <th className="text-left p-2 border-b">Status</th>
               <th className="text-center p-2 border-b">Action</th>
             </tr>
@@ -12166,13 +12169,13 @@ const PurchaseOrderTab = ({
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={13} className="p-4 text-center text-muted-foreground">
+                <td colSpan={14} className="p-4 text-center text-muted-foreground">
                   Loading purchase orders...
                 </td>
               </tr>
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={13} className="p-4 text-center text-muted-foreground">
+                <td colSpan={14} className="p-4 text-center text-muted-foreground">
                   No purchase orders yet. Confirm a quotation to create one.
                 </td>
               </tr>
@@ -12201,11 +12204,16 @@ const PurchaseOrderTab = ({
                       : "-"}
                   </td>
                   <td className="p-2 text-right">{row.itemsCount}</td>
-                  <td className={`p-2 text-right ${lcValueClass()}`}>
-                    {Number(row.totalAmount || 0).toLocaleString("en-PK", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
+                  <td className="p-2 text-right tabular-nums">
+                    {formatWeightDisplay(Number(row.totalWeight || 0), {
+                      fixed: true,
                     })}
+                  </td>
+                  <td className={`p-2 text-right ${fcValueClass()}`}>
+                    {formatFcTotal(Number(row.fcTotal || 0))}
+                    {row.quotation?.currency
+                      ? ` ${row.quotation.currency}`
+                      : ""}
                   </td>
                   <td className="p-2">
                     <ImportPurchaseOrderStatusBadge status={row.status} />
@@ -12689,7 +12697,97 @@ const PurchaseOrderTab = ({
                     )
                   : viewItems.map(() => 0);
 
+                const viewItemCount = viewItems.filter((row: any) => {
+                  const partId = String(row.partId || row.part_id || "").trim();
+                  const partNo = String(
+                    row.masterPartNo ||
+                      row.master_part_no ||
+                      row.partNo ||
+                      row.part_no ||
+                      "",
+                  ).trim();
+                  return Boolean(partId || partNo);
+                }).length;
+                const viewQtyTotals = viewItems.reduce(
+                  (
+                    acc: {
+                      orderQty: number;
+                      receiveQty: number;
+                      totalWeight: number;
+                      fcAmount: number;
+                      lcAmount: number;
+                    },
+                    row: any,
+                  ) => {
+                    const orderQty = Number(row.orderQty ?? row.quantity ?? 0);
+                    const receivedQty = Math.max(
+                      0,
+                      Math.floor(
+                        Number(row.receivedQty ?? row.received_qty ?? 0) || 0,
+                      ),
+                    );
+                    const additionalQty = Number(
+                      row.additionalQty ?? row.additional_qty ?? 0,
+                    );
+                    const backQty = Number(row.backQty ?? row.back_qty ?? 0);
+                    const fcRate = Number(row.fcRate ?? row.fc_rate ?? 0);
+                    const lcRate = roundImportWhole(
+                      row.lcRate ?? row.lc_rate ?? row.unit_cost ?? 0,
+                    );
+                    const fcAmount = roundFc(
+                      row.fcAmount ?? row.fc_amount ?? fcRate * orderQty,
+                    );
+                    const lcAmount = roundImportWhole(
+                      row.lcAmount ??
+                        row.lc_amount ??
+                        row.total_cost ??
+                        lcRate * orderQty,
+                    );
+                    const receiveWasRecorded =
+                      viewImportSaved ||
+                      receivedQty > 0 ||
+                      backQty > 0 ||
+                      additionalQty > 0 ||
+                      fcRate > 0;
+                    const varianceReceive = Math.max(
+                      0,
+                      orderQty - backQty + additionalQty,
+                    );
+                    const displayReceived = !receiveWasRecorded
+                      ? orderQty
+                      : backQty > 0 || additionalQty > 0
+                        ? varianceReceive
+                        : receivedQty;
+                    const unitWeight = Number(row.weight || 0);
+                    const storedTotal = Number(
+                      row.totalWeight ?? row.total_weight ?? 0,
+                    );
+                    const lineTotal =
+                      storedTotal > 0 ? storedTotal : unitWeight * orderQty;
+                    acc.orderQty += Number.isFinite(orderQty) ? orderQty : 0;
+                    acc.receiveQty += Number.isFinite(displayReceived)
+                      ? displayReceived
+                      : 0;
+                    acc.totalWeight += Number.isFinite(lineTotal) ? lineTotal : 0;
+                    acc.fcAmount += Number.isFinite(fcAmount) ? fcAmount : 0;
+                    acc.lcAmount += Number.isFinite(lcAmount) ? lcAmount : 0;
+                    return acc;
+                  },
+                  {
+                    orderQty: 0,
+                    receiveQty: 0,
+                    totalWeight: 0,
+                    fcAmount: 0,
+                    lcAmount: 0,
+                  },
+                );
+                const viewTotalOrderQty = viewQtyTotals.orderQty;
+                const viewTotalReceiveQty = viewQtyTotals.receiveQty;
+                const viewTotalWeight = viewQtyTotals.totalWeight;
+                const viewTotalFcAmount = viewQtyTotals.fcAmount;
+                const viewTotalLcAmount = viewQtyTotals.lcAmount;
                 return (
+              <div className="space-y-2">
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/40">
@@ -12707,6 +12805,8 @@ const PurchaseOrderTab = ({
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Rate</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Disc</th>
                       <th className={`text-right p-2 ${lcHeaderClass}`}>LC Amount</th>
+                      <th className="text-right p-2">Weight</th>
+                      <th className="text-right p-2">Total Weight</th>
                       {isInvoiceMode ? (
                         <>
                           <th className="text-right p-2">Unit Exp</th>
@@ -12749,6 +12849,13 @@ const PurchaseOrderTab = ({
                           item.total_cost ??
                           lcRate * orderQty,
                       );
+                      const unitWeight = Number(item.weight || 0);
+                      const lineTotalWeight = (() => {
+                        const stored = Number(
+                          item.totalWeight ?? item.total_weight ?? 0,
+                        );
+                        return stored > 0 ? stored : unitWeight * orderQty;
+                      })();
                       const receiveWasRecorded =
                         viewImportSaved ||
                         receivedQty > 0 ||
@@ -12839,6 +12946,12 @@ const PurchaseOrderTab = ({
                         <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
                           {formatImportPoWhole(lcAmount)}
                         </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {formatWeightDisplay(unitWeight, { fixed: true })}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {formatWeightDisplay(lineTotalWeight, { fixed: true })}
+                        </td>
                         {isInvoiceMode ? (
                           <>
                             <td className="p-2 text-right tabular-nums">
@@ -12928,7 +13041,97 @@ const PurchaseOrderTab = ({
                     );
                     })}
                   </tbody>
+                  {viewItems.length > 0 ? (
+                    <tfoot>
+                      <tr className="bg-muted/40 font-semibold border-t">
+                        <td className="p-2 text-left" colSpan={2}>
+                          Total Items:{" "}
+                          <span className="tabular-nums">{viewItemCount}</span>
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
+                          {viewTotalOrderQty}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {viewTotalReceiveQty}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className={`p-2 text-right tabular-nums ${fcValueClass()}`}>
+                          {formatFcTotal(viewTotalFcAmount)}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className={`p-2 text-right tabular-nums ${lcValueClass()}`}>
+                          {formatImportPoWhole(viewTotalLcAmount)}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2 text-right tabular-nums">
+                          {formatWeightDisplay(viewTotalWeight, { fixed: true })}
+                        </td>
+                        {isInvoiceMode ? (
+                          <>
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                            <td className="p-2" />
+                          </>
+                        ) : null}
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </table>
+              </div>
+              {viewItems.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm px-1">
+                  <div>
+                    <span className="text-muted-foreground">Total Items: </span>
+                    <span className="font-semibold tabular-nums">
+                      {viewItemCount}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total Order Qty: </span>
+                    <span className="font-semibold tabular-nums">
+                      {viewTotalOrderQty}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total Receive Qty: </span>
+                    <span className="font-semibold tabular-nums">
+                      {viewTotalReceiveQty}
+                    </span>
+                  </div>
+                  <div>
+                    <span className={`text-muted-foreground ${fcHeaderClass}`}>
+                      Total FC:{" "}
+                    </span>
+                    <span className={`font-semibold tabular-nums ${fcValueClass()}`}>
+                      {formatFcTotal(viewTotalFcAmount)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className={`text-muted-foreground ${lcHeaderClass}`}>
+                      Total LC:{" "}
+                    </span>
+                    <span className={`font-semibold tabular-nums ${lcValueClass()}`}>
+                      {formatImportPoWhole(viewTotalLcAmount)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total Weight: </span>
+                    <span className="font-semibold tabular-nums">
+                      {formatWeightDisplay(viewTotalWeight, { fixed: true })}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               </div>
                 );
               })()}

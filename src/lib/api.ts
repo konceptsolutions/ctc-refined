@@ -452,6 +452,13 @@ class ApiClient {
     });
   }
 
+  async getPartsByHsCode(hsCode: string, params?: { limit?: number }) {
+    const queryParams = new URLSearchParams();
+    queryParams.set("hsCode", hsCode.trim());
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    return this.request(`/parts/hs-codes/parts?${queryParams.toString()}`);
+  }
+
   async getModelNames(search?: string) {
     const params = new URLSearchParams();
     if (search?.trim()) params.append("search", search.trim());
@@ -459,13 +466,46 @@ class ApiClient {
     return this.request(`/parts/model-names${query}`);
   }
 
-  async getModels(params?: {
+  async getModelsSummary(params?: {
     search?: string;
     page?: number;
     limit?: number;
   }) {
     const queryParams = new URLSearchParams();
     if (params?.search?.trim()) queryParams.set("search", params.search.trim());
+    if (params?.page) queryParams.set("page", String(params.page));
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    const query = queryParams.toString();
+    return this.request(`/parts/models/summary${query ? `?${query}` : ""}`);
+  }
+
+  async getPartsByModel(modelName: string, params?: { limit?: number }) {
+    const queryParams = new URLSearchParams();
+    queryParams.set("modelName", modelName.trim());
+    if (params?.limit) queryParams.set("limit", String(params.limit));
+    return this.request(`/parts/models/parts?${queryParams.toString()}`);
+  }
+
+  async renameModel(data: { from: string; to: string }) {
+    return this.request("/parts/models/rename", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getModels(params?: {
+    search?: string;
+    modelName?: string;
+    partId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    if (params?.search?.trim()) queryParams.set("search", params.search.trim());
+    if (params?.modelName?.trim()) {
+      queryParams.set("modelName", params.modelName.trim());
+    }
+    if (params?.partId?.trim()) queryParams.set("partId", params.partId.trim());
     if (params?.page) queryParams.set("page", String(params.page));
     if (params?.limit) queryParams.set("limit", String(params.limit));
     const query = queryParams.toString();

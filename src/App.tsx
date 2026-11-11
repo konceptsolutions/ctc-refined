@@ -9,7 +9,6 @@ import Index from "./pages/Index";
 import Parts from "./pages/Parts";
 import ItemsList from "./pages/ItemsList";
 import Attributes from "./pages/Attributes";
-import Models from "./pages/Models";
 import HsCodes from "./pages/HsCodes";
 import Inventory from "./pages/Inventory";
 import Transfer from "./pages/Transfer";
@@ -53,7 +52,14 @@ const App = () => (
             <Route path="/partentry" element={<ProtectedRoute><Parts /></ProtectedRoute>} />
             <Route path="/partentry/itemslist" element={<ProtectedRoute><ItemsList /></ProtectedRoute>} />
             <Route path="/partentry/attributes" element={<ProtectedRoute><Attributes /></ProtectedRoute>} />
-            <Route path="/partentry/models" element={<ProtectedRoute><Models /></ProtectedRoute>} />
+            <Route
+              path="/partentry/models"
+              element={
+                <ProtectedRoute>
+                  <Navigate to="/partentry/attributes" replace />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/partentry/hs-codes" element={<ProtectedRoute><HsCodes /></ProtectedRoute>} />
             <Route path="/partentry/details-search" element={<ProtectedRoute><DetailsPartSearchPage /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />

@@ -6834,7 +6834,15 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
             },
           },
           PurchaseOrderItem: {
-            select: { id: true, fcRate: true, receivedQty: true },
+            select: {
+              id: true,
+              fcRate: true,
+              fcAmount: true,
+              quantity: true,
+              weight: true,
+              totalWeight: true,
+              receivedQty: true,
+            },
           },
         } as any,
       }),
@@ -6951,6 +6959,20 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
             .trim()
             .toLowerCase() === "received" ||
           items.some((item: any) => Number(item.receivedQty || 0) > 0);
+        const itemsFcTotal = items.reduce(
+          (sum: number, item: any) => sum + Number(item.fcAmount || 0),
+          0,
+        );
+        const itemsTotalWeight = items.reduce((sum: number, item: any) => {
+          const stored = Number(item.totalWeight || 0);
+          if (stored > 0) return sum + stored;
+          return (
+            sum +
+            Number(item.weight || 0) * Math.max(0, Number(item.quantity || 0))
+          );
+        }, 0);
+        const fcTotal =
+          Number(po.fcTotal || 0) > 0 ? Number(po.fcTotal) : itemsFcTotal;
         return {
         id: po.id,
         poNumber: po.poNumber,
@@ -6958,6 +6980,8 @@ router.get("/purchase-orders", async (req: Request, res: Response) => {
         status: po.status,
         consignee: po.consignee,
         totalAmount: po.totalAmount,
+        fcTotal: roundFcTotal(fcTotal),
+        totalWeight: roundWeight(itemsTotalWeight),
         notes: po.notes,
         forwarder: po.forwarder ?? null,
         forwarderAccountId: (po as any).forwarderAccountId ?? null,

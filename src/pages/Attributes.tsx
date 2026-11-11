@@ -10,7 +10,7 @@ const Attributes = () => {
 
       <div className="flex-1 flex flex-col overflow-hidden app-content-offset">
         <Header />
-        
+
         {/* Top Navigation Tabs */}
         <PartEntryTopNav />
 
@@ -23,4 +23,4 @@ const Attributes = () => {
   );
 };
 
-export default Attributes; 
+export default Attributes;

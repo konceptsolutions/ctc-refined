@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Pencil, RefreshCw, Search } from "lucide-react";
+import { Eye, Loader2, Pencil, RefreshCw, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +21,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { PartIdentityBadges } from "@/components/parts/PartIdentityBadges";
 import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/api";
 
 interface HsCodeRow {
   hsCode: string;
   partCount: number;
+}
+
+interface HsCodePartRow {
+  id: string;
+  partNo: string;
+  masterPartNo: string;
+  description: string;
+  brand: string;
+  category: string;
+  status: string;
+  uom: string;
 }
 
 export const HsCodesPage = () => {
@@ -42,6 +55,11 @@ export const HsCodesPage = () => {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<HsCodeRow | null>(null);
   const [newHsCode, setNewHsCode] = useState("");
+
+  const [viewOpen, setViewOpen] = useState(false);
+  const [viewing, setViewing] = useState<HsCodeRow | null>(null);
+  const [viewParts, setViewParts] = useState<HsCodePartRow[]>([]);
+  const [loadingViewParts, setLoadingViewParts] = useState(false);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -102,6 +120,50 @@ export const HsCodesPage = () => {
     setEditing(row);
     setNewHsCode(row.hsCode);
     setDialogOpen(true);
+  };
+
+  const openView = async (row: HsCodeRow) => {
+    setViewing(row);
+    setViewOpen(true);
+    setLoadingViewParts(true);
+    setViewParts([]);
+    try {
+      const response = await apiClient.getPartsByHsCode(row.hsCode, {
+        limit: 2000,
+      });
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      const payload = (response as any).data ?? response;
+      const list = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : [];
+      setViewParts(
+        list.map((part: any) => ({
+          id: String(part.id),
+          partNo: String(part.partNo || part.part_no || "").trim(),
+          masterPartNo: String(
+            part.masterPartNo || part.master_part_no || "",
+          ).trim(),
+          description: String(part.description || "").trim(),
+          brand: String(part.brand || part.brand_name || "").trim(),
+          category: String(part.category || part.category_name || "").trim(),
+          status: String(part.status || "active").trim(),
+          uom: String(part.uom || "").trim(),
+        })),
+      );
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to load items for this HS code",
+        variant: "destructive",
+      });
+      setViewParts([]);
+    } finally {
+      setLoadingViewParts(false);
+    }
   };
 
   const handleSave = async () => {
@@ -202,7 +264,7 @@ export const HsCodesPage = () => {
                 <TableHead className="font-semibold text-center w-40">
                   Items
                 </TableHead>
-                <TableHead className="font-semibold text-center w-28">
+                <TableHead className="font-semibold text-center w-36">
                   Actions
                 </TableHead>
               </TableRow>
@@ -237,7 +299,16 @@ export const HsCodesPage = () => {
                     </TableCell>
                     <TableCell className="text-center">{row.partCount}</TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => void openView(row)}
+                          title="View items"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
                         {canEdit && (
                           <Button
                             variant="ghost"
@@ -320,6 +391,113 @@ export const HsCodesPage = () => {
               ) : (
                 "Update"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={viewOpen}
+        onOpenChange={(open) => {
+          setViewOpen(open);
+          if (!open) {
+            setViewing(null);
+            setViewParts([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Items with HS Code</DialogTitle>
+            <DialogDescription>
+              All items currently using{" "}
+              <span className="font-medium text-foreground part-code-font font-mono">
+                {viewing?.hsCode}
+              </span>
+              {!loadingViewParts
+                ? ` (${viewParts.length} item${viewParts.length === 1 ? "" : "s"})`
+                : ""}
+              .
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border">
+            <div className="h-full max-h-[min(60vh,520px)] overflow-auto [scrollbar-gutter:stable]">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card">
+                  <TableRow className="bg-muted/50">
+                    <ListNumberHeader />
+                    <TableHead className="font-semibold">
+                      Part No | Master Part
+                    </TableHead>
+                    <TableHead className="font-semibold">Description</TableHead>
+                    <TableHead className="font-semibold">Brand</TableHead>
+                    <TableHead className="font-semibold text-center w-28">
+                      Status
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loadingViewParts ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-12 text-center">
+                        <div className="inline-flex items-center gap-2 text-muted-foreground text-sm">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading items…
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : viewParts.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="py-12 text-center text-sm text-muted-foreground"
+                      >
+                        No items found for this HS code.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    viewParts.map((part, index) => (
+                      <TableRow key={part.id}>
+                        <ListNumberCell
+                          index={index}
+                          total={viewParts.length}
+                        />
+                        <TableCell>
+                          <PartIdentityBadges
+                            partNo={part.partNo}
+                            masterPart={part.masterPartNo}
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[280px] truncate">
+                          {part.description || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {part.brand || "—"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant={
+                              String(part.status).toLowerCase() === "active"
+                                ? "default"
+                                : "secondary"
+                            }
+                            className="capitalize"
+                          >
+                            {part.status || "active"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

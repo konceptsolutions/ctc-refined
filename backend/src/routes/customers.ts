@@ -167,6 +167,175 @@ async function findCustomerLedgerAccount(
   return preferred;
 }
 
+async function findCustomerOpeningBalanceVoucher(
+  customerId: string,
+  customerName?: string | null,
+) {
+  const byId = await prisma.voucher.findFirst({
+    where: {
+      AND: [
+        { narration: { contains: `(CUST-${customerId})` } },
+        { narration: { contains: "Opening Balance" } },
+      ],
+      status: "posted",
+      deletedAt: null,
+    },
+    include: { VoucherEntry: true },
+  });
+  if (byId) return byId;
+
+  const name = String(customerName || "").trim();
+  if (!name) return null;
+
+  return prisma.voucher.findFirst({
+    where: {
+      narration: {
+        startsWith: `Customer Opening Balance: ${name}`,
+      },
+      status: "posted",
+      deletedAt: null,
+    },
+    include: { VoucherEntry: true },
+  });
+}
+
+async function nextCustomerOpeningBalanceJvNumber(): Promise<string> {
+  const lastVoucher = await prisma.voucher.findFirst({
+    where: { voucherNumber: { startsWith: "JV-" } },
+    orderBy: { voucherNumber: "desc" },
+  });
+  let nextNum = 1;
+  if (lastVoucher) {
+    const match = lastVoucher.voucherNumber.match(/JV-(\d+)/);
+    if (match) nextNum = parseInt(match[1], 10) + 1;
+  }
+  return `JV-${String(nextNum).padStart(4, "0")}`;
+}
+
+/**
+ * Ensure the system JV for a customer's opening balance exists and matches
+ * Customer.openingBalance / date. Rebuilds the receivable currentBalance from
+ * posted ledger entries so phantom balances without vouchers get corrected.
+ */
+async function syncCustomerOpeningBalanceVoucher(opts: {
+  customerId: string;
+  customerName: string;
+  openingBalance: number;
+  date?: Date | null;
+  customerAccountId: string;
+}) {
+  const ownerCapital = await prisma.account.findFirst({
+    where: { code: "501003" },
+  });
+  if (!ownerCapital) {
+    throw new Error(
+      "Owner Capital account (501003) not found. Cannot post opening balance.",
+    );
+  }
+
+  const custAcc = await prisma.account.findUnique({
+    where: { id: opts.customerAccountId },
+    include: { Subgroup: { include: { MainGroup: true } } },
+  });
+  if (!custAcc) {
+    throw new Error("Customer receivable account not found for opening balance");
+  }
+
+  const target = Number(opts.openingBalance || 0);
+  const existing = await findCustomerOpeningBalanceVoucher(
+    opts.customerId,
+    opts.customerName,
+  );
+
+  // Remove prior OB voucher; reverse only Owner Capital (receivable rebuilt below).
+  if (existing) {
+    for (const entry of existing.VoucherEntry) {
+      if (entry.accountId === ownerCapital.id) {
+        // Capital was applied as +(credit - debit); reverse with opposite.
+        await prisma.account.update({
+          where: { id: ownerCapital.id },
+          data: {
+            currentBalance: {
+              increment: Number(entry.debit || 0) - Number(entry.credit || 0),
+            },
+          },
+        });
+      }
+    }
+    await prisma.voucherEntry.deleteMany({ where: { voucherId: existing.id } });
+    await prisma.voucher.delete({ where: { id: existing.id } });
+  }
+
+  if (target !== 0) {
+    const absBalance = Math.abs(target);
+    const isPositive = target > 0;
+    const voucherNumber = await nextCustomerOpeningBalanceJvNumber();
+    const voucherDate = opts.date ? new Date(opts.date) : new Date();
+
+    const customerEntry = {
+      id: crypto.randomUUID(),
+      accountId: custAcc.id,
+      accountName: `${custAcc.code}-${custAcc.name}`,
+      description: `Customer Opening Balance: ${opts.customerName} - ${absBalance}`,
+      debit: isPositive ? absBalance : 0,
+      credit: isPositive ? 0 : absBalance,
+      sortOrder: 0,
+      customerId: opts.customerId,
+    };
+    const capitalEntry = {
+      id: crypto.randomUUID(),
+      accountId: ownerCapital.id,
+      accountName: `${ownerCapital.code}-${ownerCapital.name}`,
+      description: `Customer Opening Balance: ${opts.customerName} - ${absBalance}`,
+      debit: isPositive ? 0 : absBalance,
+      credit: isPositive ? absBalance : 0,
+      sortOrder: 1,
+      customerId: opts.customerId,
+    };
+
+    await prisma.voucher.create({
+      data: {
+        id: crypto.randomUUID(),
+        voucherNumber,
+        type: "journal",
+        date: voucherDate,
+        narration: `Customer Opening Balance: ${opts.customerName} (CUST-${opts.customerId})`,
+        totalDebit: absBalance,
+        totalCredit: absBalance,
+        status: "posted",
+        createdBy: "System",
+        approvedBy: "System",
+        approvedAt: new Date(),
+        isSystemGenerated: true,
+        updatedAt: new Date(),
+        VoucherEntry: { create: [customerEntry, capitalEntry] },
+      },
+    });
+
+    await prisma.account.update({
+      where: { id: ownerCapital.id },
+      data: {
+        currentBalance: {
+          increment: isPositive ? absBalance : -absBalance,
+        },
+      },
+    });
+  }
+
+  const live = await getLiveLedgerBalanceForAccount(custAcc);
+  await prisma.account.update({
+    where: { id: custAcc.id },
+    data: {
+      currentBalance: live,
+      ...(custAcc.customerId !== opts.customerId
+        ? { customerId: opts.customerId }
+        : {}),
+    },
+  });
+
+  return { voucherPosted: target !== 0, balance: live };
+}
+
 // GET /api/customers - Get all customers with filters and pagination
 router.get("/", async (req, res) => {
   try {
@@ -454,7 +623,7 @@ router.post("/", async (req, res) => {
         });
 
         if (!existingAccount) {
-          // Create customer account
+          // Create customer account — balance comes from the OB voucher below.
           const customerAccount = await prisma.account.create({
             data: {
               subgroupId: receivablesSubgroup.id,
@@ -462,7 +631,7 @@ router.post("/", async (req, res) => {
               name: name,
               description: `Customer Receivable: ${name}`,
               openingBalance: 0,
-              currentBalance: parsedOpeningBalance || 0, // Set initial balance if opening balance exists
+              currentBalance: 0,
               status: "Active",
               canDelete: false,
               customerId: customer.id, // Link account to customer
@@ -471,138 +640,43 @@ router.post("/", async (req, res) => {
             },
           });
 
-          // Create journal entry and update balances ONLY if opening balance is not 0
           if (parsedOpeningBalance !== 0) {
-            // Find or create Owner Capital account (501003)
-            let ownerCapitalAccount = await prisma.account.findFirst({
-              where: { code: "501003" },
+            await syncCustomerOpeningBalanceVoucher({
+              customerId: customer.id,
+              customerName: name,
+              openingBalance: parsedOpeningBalance,
+              date: date ? new Date(date) : null,
+              customerAccountId: customerAccount.id,
             });
-
-            if (!ownerCapitalAccount) {
-              // Find Capital subgroup (501)
-              const capitalSubgroup = await prisma.subgroup.findFirst({
-                where: { code: "501" },
-              });
-
-              if (!capitalSubgroup) {
-                throw new Error(
-                  "Capital subgroup (501) not found. Please create accounting structure first.",
-                );
-              }
-
-              // Create Owner Capital account
-              ownerCapitalAccount = await prisma.account.create({
-                data: {
-                  subgroupId: capitalSubgroup.id,
-                  code: "501003",
-                  name: "OWNER CAPITAL",
-                  description:
-                    "Owner Capital account for customer opening balances",
-                  openingBalance: 0,
-                  currentBalance: 0,
-                  status: "Active",
-                  canDelete: false,
-                  id: `acc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                  updatedAt: new Date(),
-                },
-              });
-            }
-
-            // Generate robust voucher number
-            const lastVoucher = await prisma.voucher.findFirst({
-              where: { voucherNumber: { startsWith: "JV-" } },
-              orderBy: { voucherNumber: "desc" },
-            });
-            let nextNum = 1;
-            if (lastVoucher) {
-              const match = lastVoucher.voucherNumber.match(/JV-(\d+)/);
-              if (match) {
-                nextNum = parseInt(match[1], 10) + 1;
-              }
-            }
-            const voucherNumber = `JV-${String(nextNum).padStart(4, "0")}`;
-
-            const absBalance = Math.abs(parsedOpeningBalance);
-            const isPositive = parsedOpeningBalance > 0;
-
-            // Determine entries
-            // If Positive (> 0): Dr Customer (Asset), Cr Owner Capital -> Existing
-            // If Negative (< 0): Dr Owner Capital, Cr Customer (Liability/Advance) -> New
-
-            const customerEntry = {
-              id: crypto.randomUUID(), // Add required ID
-              accountId: customerAccount.id,
-              accountName: `${customerAccount.code}-${customerAccount.name}`,
-              description: `Customer Opening Balance: ${name} - ${absBalance}`,
-              debit: isPositive ? absBalance : 0,
-              credit: isPositive ? 0 : absBalance,
-              sortOrder: 0,
-              customerId: customer.id, // Link entry to customer
-            };
-
-            const capitalEntry = {
-              id: crypto.randomUUID(), // Add required ID
-              accountId: ownerCapitalAccount.id,
-              accountName: `${ownerCapitalAccount.code}-${ownerCapitalAccount.name}`,
-              description: `Customer Opening Balance: ${name} - ${absBalance}`,
-              debit: isPositive ? 0 : absBalance,
-              credit: isPositive ? absBalance : 0,
-              sortOrder: 1,
-              customerId: customer.id, // Link entry to customer
-            };
-
-            // Create JV voucher for opening balance
-            const voucher = await prisma.voucher.create({
-              data: {
-                id: crypto.randomUUID(), // Add required ID
-                voucherNumber,
-                type: "journal",
-                date: date ? new Date(date) : new Date(),
-                narration: `Customer Opening Balance: ${name} (CUST-${customer.id})`,
-                totalDebit: absBalance,
-                totalCredit: absBalance,
-                status: "posted",
-                createdBy: "System",
-                approvedBy: "System",
-                approvedAt: new Date(),
-                isSystemGenerated: true,
-                updatedAt: new Date(), // Add required updatedAt
-                VoucherEntry: {
-                  // Use VoucherEntry instead of entries
-                  create: [customerEntry, capitalEntry],
-                },
-              },
-            });
-
-            // Update account balances
-            await prisma.account.update({
-              where: { id: ownerCapitalAccount.id },
-              data: {
-                currentBalance: {
-                  // If Positive (Cr Capital), balance increases. If Negative (Dr Capital), balance decreases.
-                  increment: isPositive ? absBalance : -absBalance,
-                },
-              },
-            });
-
-            await prisma.account.update({
-              where: { id: customerAccount.id },
-              data: {
-                currentBalance: {
-                  // If Positive (Dr Customer), balance increases. If Negative (Cr Customer), balance decreases (becomes negative).
-                  increment: parsedOpeningBalance,
-                },
-              },
-            });
-          } else {
-            // No opening balance, just create the account
           }
         } else {
+          // Legacy account already existed by name — still post OB if needed.
+          if (existingAccount.customerId !== customer.id) {
+            await prisma.account.update({
+              where: { id: existingAccount.id },
+              data: { customerId: customer.id },
+            });
+          }
+          if (parsedOpeningBalance !== 0) {
+            await syncCustomerOpeningBalanceVoucher({
+              customerId: customer.id,
+              customerName: name,
+              openingBalance: parsedOpeningBalance,
+              date: date ? new Date(date) : null,
+              customerAccountId: existingAccount.id,
+            });
+          }
         }
       } else {
+        console.error(
+          "Customer Receivable subgroup (105) not found; customer account not created",
+        );
       }
     } catch (accountError: any) {
-      // Don't fail customer creation if account creation fails
+      console.error(
+        "Error creating customer account / opening balance voucher:",
+        accountError,
+      );
     }
 
     res.status(201).json({ data: customer });
@@ -774,221 +848,56 @@ router.put("/:id", async (req, res) => {
       }
     }
 
-    if (newOpeningBalance !== oldOpeningBalance) {
+    const oldDateMs = oldCustomer.date
+      ? new Date(oldCustomer.date).getTime()
+      : null;
+    const newDateMs = customer.date ? new Date(customer.date).getTime() : null;
+    const dateChanged = oldDateMs !== newDateMs;
+    const existingObVoucher = await findCustomerOpeningBalanceVoucher(
+      customer.id,
+      oldCustomer.name || customer.name,
+    );
+    const missingObVoucher =
+      Number(newOpeningBalance || 0) !== 0 && !existingObVoucher;
+    const shouldSyncOpeningBalance =
+      newOpeningBalance !== oldOpeningBalance ||
+      dateChanged ||
+      missingObVoucher;
+
+    if (shouldSyncOpeningBalance) {
       try {
         console.log(
-          `Updating Opening Balance for Customer ${oldCustomer.id}: ${oldOpeningBalance} -> ${newOpeningBalance}`,
+          `Syncing Opening Balance for Customer ${customer.id}: ${oldOpeningBalance} -> ${newOpeningBalance}` +
+            (missingObVoucher ? " (missing voucher)" : "") +
+            (dateChanged ? " (date changed)" : ""),
         );
 
-        // A. Find and DELETE Old Voucher
-        // Broad strict search
-        const oldVoucher = await prisma.voucher.findFirst({
-          where: {
-            AND: [
-              { narration: { contains: `(CUST-${oldCustomer.id})` } },
-              { narration: { contains: "Opening Balance" } },
-            ],
-            status: "posted",
-          },
-          include: { VoucherEntry: true }, // Use VoucherEntry instead of entries,
+        const customerAccount = await findCustomerLedgerAccount(customer.id, {
+          accountId,
+          names: [oldCustomer.name, customer.name],
         });
 
-        // Fallback for Legacy (Name based)
-        let voucherToDelete = oldVoucher;
-        if (!voucherToDelete) {
-          voucherToDelete = await prisma.voucher.findFirst({
-            where: {
-              narration: {
-                startsWith: `Customer Opening Balance: ${oldCustomer.name || ""}`,
-              },
-              status: "posted",
-            },
-            include: { VoucherEntry: true }, // Use VoucherEntry instead of entries,
-          });
-        }
-
-        let customerAccountId: string | null = null;
-        let ownerCapitalAccountId: string | null = null;
-
-        if (voucherToDelete) {
-          console.log(
-            "Found old voucher to delete:",
-            voucherToDelete.voucherNumber,
+        if (!customerAccount) {
+          console.error(
+            "Accounts not found for Customer Opening Balance Voucher",
           );
-
-          for (const entry of voucherToDelete.VoucherEntry) {
-            // Use VoucherEntry instead of entries
-            // Reversal Logic
-            if (entry.accountId) {
-              await prisma.account.update({
-                where: { id: entry.accountId },
-                data: {
-                  currentBalance: { increment: entry.credit - entry.debit },
-                },
-              });
-            }
-
-            const desc = entry.description || "";
-            const name = entry.accountName || "";
-
-            // Check OWNER CAPITAL first (this is the more specific check)
-            if (name.includes("OWNER CAPITAL") || name.includes("501003")) {
-              ownerCapitalAccountId = entry.accountId;
-            } else if (
-              oldCustomer.name &&
-              (name.includes(oldCustomer.name) ||
-                desc.includes(oldCustomer.name))
-            ) {
-              // Only match customer if we have a non-empty customer name
-              customerAccountId = entry.accountId;
-            } else if (
-              !customerAccountId &&
-              entry.accountId !== ownerCapitalAccountId
-            ) {
-              // Fallback: if not Owner Capital, assume it's the customer account
-              customerAccountId = entry.accountId;
-            }
-          }
-
-          // HARD DELETE
-          await prisma.voucherEntry.deleteMany({
-            where: { voucherId: voucherToDelete.id },
+        } else {
+          await syncCustomerOpeningBalanceVoucher({
+            customerId: customer.id,
+            customerName: customer.name,
+            openingBalance: Number(newOpeningBalance || 0),
+            date: customer.date,
+            customerAccountId: customerAccount.id,
           });
-          await prisma.voucher.delete({ where: { id: voucherToDelete.id } });
-        }
 
-        // B. Create New Voucher
-        if (newOpeningBalance !== 0) {
-          // Find Accounts - Use accountId from payload (most reliable)
-          console.log("CustomerAccountId from old voucher:", customerAccountId);
-          console.log("AccountId from payload:", accountId);
-
-          // Priority: 1. Payload accountId, 2. Old voucher, 3. Robust FK / name lookup
-          if (!customerAccountId && accountId) {
-            customerAccountId = accountId;
-            console.log("Using accountId from payload:", customerAccountId);
-          }
-
-          if (!customerAccountId) {
-            console.log("Looking up account by customerId / name:", customer.id);
-            const accountByLookup = await findCustomerLedgerAccount(
-              customer.id,
-              {
-                accountId,
-                names: [oldCustomer.name, customer.name],
+          if (oldCustomer.name !== customer.name) {
+            await prisma.account.update({
+              where: { id: customerAccount.id },
+              data: {
+                name: customer.name,
+                description: `Customer Account: ${customer.name}`,
               },
-            );
-            console.log("Account found by lookup:", accountByLookup);
-            if (accountByLookup) {
-              customerAccountId = accountByLookup.id;
-              if (accountByLookup.customerId !== customer.id) {
-                await prisma.account.update({
-                  where: { id: accountByLookup.id },
-                  data: { customerId: customer.id },
-                });
-              }
-            }
-          }
-          const foundCap = await prisma.account.findFirst({
-            where: { code: "501003" },
-          });
-          if (foundCap) ownerCapitalAccountId = foundCap.id;
-
-          if (customerAccountId && ownerCapitalAccountId) {
-            const absBalance = Math.abs(newOpeningBalance);
-            const isPositive = newOpeningBalance > 0;
-
-            const lastVoucher = await prisma.voucher.findFirst({
-              where: { voucherNumber: { startsWith: "JV-" } },
-              orderBy: { voucherNumber: "desc" },
             });
-            let nextNum = 1;
-            if (lastVoucher) {
-              const match = lastVoucher.voucherNumber.match(/JV-(\d+)/);
-              if (match) nextNum = parseInt(match[1], 10) + 1;
-            }
-            const voucherNumber = `JV-${String(nextNum).padStart(4, "0")}`;
-
-            // Fetch fresh account details to ensure we have codes
-            const custAcc = await prisma.account.findUnique({
-              where: { id: customerAccountId },
-            });
-            const capAcc = await prisma.account.findUnique({
-              where: { id: ownerCapitalAccountId },
-            });
-
-            if (custAcc && capAcc) {
-              // Asset (Cust): Dr if Positive.
-              // Equity (Cap): Cr if Positive.
-              const entry1 = {
-                id: crypto.randomUUID(), // Add required ID
-                accountId: customerAccountId,
-                accountName: `${custAcc.code}-${custAcc.name}`,
-                description: `Customer Opening Balance: ${customer.name} - ${absBalance}`,
-                debit: isPositive ? absBalance : 0,
-                credit: isPositive ? 0 : absBalance,
-                sortOrder: 0,
-                customerId: customer.id, // Link entry to customer
-              };
-              const entry2 = {
-                id: crypto.randomUUID(), // Add required ID
-                accountId: ownerCapitalAccountId,
-                accountName: `${capAcc.code}-${capAcc.name}`,
-                description: `Customer Opening Balance: ${customer.name} - ${absBalance}`,
-                debit: isPositive ? 0 : absBalance,
-                credit: isPositive ? absBalance : 0,
-                sortOrder: 1,
-                customerId: customer.id, // Link entry to customer
-              };
-
-              await prisma.voucher.create({
-                data: {
-                  id: crypto.randomUUID(), // Add required ID
-                  voucherNumber,
-                  type: "journal",
-                  date: customer.date ? new Date(customer.date) : new Date(),
-                  narration: `Customer Opening Balance: ${customer.name} (CUST-${customer.id})`,
-                  totalDebit: absBalance,
-                  totalCredit: absBalance,
-                  status: "posted",
-                  createdBy: "System",
-                  approvedBy: "System",
-                  approvedAt: new Date(),
-                  isSystemGenerated: true,
-                  updatedAt: new Date(), // Add required updatedAt
-                  VoucherEntry: { create: [entry1, entry2] }, // Use VoucherEntry instead of entries
-                },
-              });
-
-              // Update Balances
-              await prisma.account.update({
-                where: { id: customerAccountId },
-                data: {
-                  currentBalance: { increment: entry1.debit - entry1.credit },
-                },
-              });
-
-              await prisma.account.update({
-                where: { id: ownerCapitalAccountId },
-                data: {
-                  currentBalance: { increment: entry2.credit - entry2.debit },
-                },
-              });
-
-              if (oldCustomer.name !== customer.name) {
-                await prisma.account.update({
-                  where: { id: customerAccountId },
-                  data: {
-                    name: customer.name,
-                    description: `Customer Account: ${customer.name}`,
-                  },
-                });
-              }
-            }
-          } else {
-            console.error(
-              "Accounts not found for Customer Opening Balance Voucher",
-            );
           }
         }
       } catch (err) {

@@ -72,7 +72,7 @@ export const PERMISSION_CATALOG: PermissionNode[] = [
         { key: "field.partentry.itemslist.price", label: "Price Column", kind: "field" },
       ]),
       page("partentry.attributes", "Attributes", "/partentry/attributes", undefined),
-      page("partentry.models", "Models", "/partentry/models", undefined),
+      page("partentry.models", "Models", "/partentry/attributes", undefined),
       page("partentry.hs-codes", "HS Code", "/partentry/hs-codes", undefined),
       page("partentry.details-search", "Details Search", "/partentry/details-search", undefined),
     ],

@@ -48,6 +48,8 @@ import { toast } from "@/components/ui/use-toast";
 import { apiClient } from "@/lib/api";
 import { formatUiDate } from "@/utils/dateUtils";
 import { cn } from "@/lib/utils";
+import { can } from "@/permissions/can";
+import { ModelsPage } from "@/components/models/ModelsPage";
 
 // Types
 interface Category {
@@ -425,6 +427,8 @@ function ApplicationDialogForm({
 
 export const AttributesPage = () => {
   const { canCreate, canEdit, canDelete } = usePageActions("partentry.attributes");
+  const canViewModels = can("page.partentry.models");
+
   // State
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -1401,8 +1405,15 @@ export const AttributesPage = () => {
         <h1 className="text-xl font-bold text-foreground">Attributes</h1>
       </div>
 
-      {/* Four Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      {/* Attribute columns — Models sits with the other lists */}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-4",
+          canViewModels
+            ? "lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
+            : "lg:grid-cols-4",
+        )}
+      >
         {/* Categories List */}
         <div className="bg-card rounded-xl border border-border flex flex-col">
           <div className="p-4 border-b border-border">
@@ -1776,6 +1787,8 @@ export const AttributesPage = () => {
             ))}
           </div>
         </div>
+
+        {canViewModels ? <ModelsPage variant="column" /> : null}
       </div>
 
       {/* Category Dialog */}

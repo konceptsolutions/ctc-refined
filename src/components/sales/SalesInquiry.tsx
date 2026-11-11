@@ -406,6 +406,7 @@ export const SalesInquiry = ({
   const [partModelsByPartId, setPartModelsByPartId] = useState<
     Record<string, { id: string; name: string; qtyUsed: number }[]>
   >({});
+  const loadingPartModelsRef = useRef<Set<string>>(new Set());
 
   // Cache of stock balances per part: { current_stock, reserved_stock, available_stock, avg_cost }
   const [partStockBalances, setPartStockBalances] = useState<
@@ -730,8 +731,11 @@ export const SalesInquiry = ({
           .map((p: any) => {
             const part = transformPart(p, {});
             if (part.partNo && part.id) idMap[part.partNo] = part.id;
+            // Catalog loads skip models (include_models=false). Only cache when
+            // models are present so empty [] does not block on-demand fetch.
             if (part.id) {
-              modelMapUpdates[part.id] = extractPartModels(p);
+              const models = extractPartModels(p);
+              if (models.length > 0) modelMapUpdates[part.id] = models;
             }
             return part;
           })
@@ -1424,13 +1428,19 @@ export const SalesInquiry = ({
   );
 
   // Lazily fetch machine models for parts referenced by lookup rows so the
-  // Quantity Used column has data to render.
+  // Quantity Used chips have data to render (catalog list omits models).
   useEffect(() => {
     const targets = lookupRows
       .map((r) => r.partId)
-      .filter((pid): pid is string => !!pid && !partModelsByPartId[pid]);
+      .filter(
+        (pid): pid is string =>
+          !!pid &&
+          !(pid in partModelsByPartId) &&
+          !loadingPartModelsRef.current.has(pid),
+      );
     if (targets.length === 0) return;
     let cancelled = false;
+    targets.forEach((pid) => loadingPartModelsRef.current.add(pid));
     (async () => {
       const updates: Record<
         string,
@@ -1441,14 +1451,11 @@ export const SalesInquiry = ({
           try {
             const resp: any = await apiClient.getPart(pid);
             const data = resp?.data || resp;
-            const apiModels = data?.models || [];
-            updates[pid] = apiModels.map((m: any) => ({
-              id: String(m.id ?? `${pid}-${m.name}`),
-              name: String(m.name ?? ""),
-              qtyUsed: Number(m.qty_used ?? m.qtyUsed ?? 0) || 0,
-            }));
+            updates[pid] = extractPartModels(data || {});
           } catch {
             updates[pid] = [];
+          } finally {
+            loadingPartModelsRef.current.delete(pid);
           }
         }),
       );
@@ -1701,17 +1708,25 @@ export const SalesInquiry = ({
         : Array.isArray(response)
           ? response
           : [];
-      const mapped: ModelAssociationItem[] = raw.map((item: any) => ({
-        partId: String(item.part_id || item.partId || ""),
-        masterPart: String(item.master_part_no || item.masterPart || ""),
-        partNo: String(item.part_no || item.partNo || ""),
-        description: String(item.description || ""),
-        brand: String(item.brand_name || item.brand || ""),
-        origin: String(item.origin || "").trim() || undefined,
-        application: String(item.application_name || item.application || ""),
-        model: String(item.model_name || item.model || cleanModel),
-        quantity: Number(item.quantity ?? item.qty_used ?? 0),
-      }));
+      const mapped: ModelAssociationItem[] = raw.map((item: any) => {
+        // API returns DB-oriented names: masterPart=MasterPart.masterPartNo,
+        // partNo=Part.partNo. UI convention is swapped: Part No first, Master second.
+        const uiPartNo = String(
+          item.master_part_no || item.masterPart || "",
+        ).trim();
+        const uiMasterPart = String(item.part_no || item.partNo || "").trim();
+        return {
+          partId: String(item.part_id || item.partId || ""),
+          partNo: uiPartNo,
+          masterPart: uiMasterPart,
+          description: String(item.description || ""),
+          brand: String(item.brand_name || item.brand || ""),
+          origin: String(item.origin || "").trim() || undefined,
+          application: String(item.application_name || item.application || ""),
+          model: String(item.model_name || item.model || cleanModel),
+          quantity: Number(item.quantity ?? item.qty_used ?? 0),
+        };
+      });
       setModelAssociations(mapped);
     } catch {
       setModelAssociations([]);
@@ -1874,14 +1889,20 @@ export const SalesInquiry = ({
         const bestQty = fetchedQty;
 
         // Fetch and transform models as well
-        const apiModels = p?.models || [];
-        const transformedModels = apiModels.map((m: any) => ({
+        const extractedModels = extractPartModels(p || {});
+        const transformedModels = extractedModels.map((m) => ({
           id: m.id,
           name: m.name,
-          qtyUsed: m.qty_used || m.qtyUsed || 1,
+          qtyUsed: m.qtyUsed || 1,
           partId: part.id,
         }));
         setPartModels(transformedModels);
+        if (part.id) {
+          setPartModelsByPartId((prev) => ({
+            ...prev,
+            [part.id!]: extractedModels,
+          }));
+        }
 
         // Format numbers properly
         const formatNumber = (val: any): string => {
@@ -2924,16 +2945,22 @@ export const SalesInquiry = ({
     });
   };
 
-  const lookupModelChips = (partId: string) =>
-    partModelsByPartId[partId] ||
-    (activeLookupRowId &&
-    lookupRows.find((r) => r.id === activeLookupRowId)?.partId === partId
-      ? partModels.map((m) => ({
-          id: String(m.id ?? ""),
-          name: String(m.name ?? ""),
-          qtyUsed: Number(m.qtyUsed ?? 0),
-        }))
-      : []);
+  const lookupModelChips = (partId: string) => {
+    const cached = partModelsByPartId[partId];
+    if (cached && cached.length > 0) return cached;
+    if (
+      activeLookupRowId &&
+      lookupRows.find((r) => r.id === activeLookupRowId)?.partId === partId &&
+      partModels.length > 0
+    ) {
+      return partModels.map((m) => ({
+        id: String(m.id ?? ""),
+        name: String(m.name ?? ""),
+        qtyUsed: Number(m.qtyUsed ?? 0),
+      }));
+    }
+    return cached || [];
+  };
 
   const handleModelAssociationClick = async (modelName: string) => {
     await loadModelAssociations(modelName);
@@ -2978,7 +3005,8 @@ export const SalesInquiry = ({
           const partNo = String(p.part_no || p.partNo || '').trim();
           if (partNo && p.id) {
             idMap[partNo] = p.id;
-            modelMapUpdates[p.id] = extractPartModels(p);
+            const models = extractPartModels(p);
+            if (models.length > 0) modelMapUpdates[p.id] = models;
           }
 
           return {
@@ -4123,9 +4151,6 @@ export const SalesInquiry = ({
                       Reserved
                     </TableHead>
                     <TableHead className="w-[80px] text-center font-bold text-foreground">
-                      In Stock
-                    </TableHead>
-                    <TableHead className="w-[80px] text-center font-bold text-foreground">
                       Available Stock
                     </TableHead>
                     <TableHead className="w-[120px] text-center font-bold text-foreground">
@@ -4501,27 +4526,6 @@ export const SalesInquiry = ({
                             </span>
                           </TableCell>
                           <TableCell className="text-center align-top">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <span
-                                className={cn(
-                                  "text-sm font-bold",
-                                  currentStock > 0
-                                    ? "text-foreground"
-                                    : "text-muted-foreground",
-                                )}
-                              >
-                                {!row.partId
-                                  ? "-"
-                                  : stockLoading
-                                    ? "..."
-                                    : currentStock}
-                              </span>
-                              {row.partId && (
-                                <Package className="w-3.5 h-3.5 text-muted-foreground" />
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center align-top">
                             {!row.partId ? (
                               <span className="text-xs text-muted-foreground">
                                 -
@@ -4790,7 +4794,7 @@ export const SalesInquiry = ({
                             className="border-b bg-muted/20"
                           >
                             <TableCell
-                              colSpan={hidePrices ? 10 : 14}
+                              colSpan={hidePrices ? 9 : 13}
                               className="px-4 pt-0 pb-2"
                             >
                               <div className="flex items-center gap-3">
@@ -4913,7 +4917,6 @@ export const SalesInquiry = ({
                         Application
                       </TableHead>
                       <TableHead className="text-xs text-center w-[80px] px-2">Reserved</TableHead>
-                      <TableHead className="text-xs text-center w-[80px] px-2">In Stock</TableHead>
                       <TableHead className="text-xs text-center w-[80px] px-2">
                         Available Stock
                       </TableHead>
@@ -4945,7 +4948,7 @@ export const SalesInquiry = ({
                     {!selectedPart ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 14}
+                          colSpan={hidePrices ? 9 : 13}
                           className="text-center py-8 text-sm text-muted-foreground italic"
                         >
                           Select a part to view alternate items.
@@ -4954,7 +4957,7 @@ export const SalesInquiry = ({
                     ) : loadingAlternateItems ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 14}
+                          colSpan={hidePrices ? 9 : 13}
                           className="text-center py-8 text-sm text-muted-foreground"
                         >
                           <div className="flex items-center justify-center gap-2">
@@ -4966,7 +4969,7 @@ export const SalesInquiry = ({
                     ) : alternateItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={hidePrices ? 10 : 14}
+                          colSpan={hidePrices ? 9 : 13}
                           className="text-center py-8 text-sm text-muted-foreground italic"
                         >
                           No alternate items found.
@@ -5064,27 +5067,6 @@ export const SalesInquiry = ({
                                 : stockLoading
                                   ? "..."
                                   : reservedStock}
-                            </TableCell>
-                            <TableCell className="text-xs text-center px-2 py-1.5">
-                              <div className="flex items-center justify-center gap-1">
-                                <span
-                                  className={cn(
-                                    "font-bold tabular-nums",
-                                    currentStock > 0
-                                      ? "text-foreground"
-                                      : "text-muted-foreground",
-                                  )}
-                                >
-                                  {!partId
-                                    ? "-"
-                                    : stockLoading
-                                      ? "..."
-                                      : currentStock}
-                                </span>
-                                {partId ? (
-                                  <Package className="w-3 h-3 text-muted-foreground" />
-                                ) : null}
-                              </div>
                             </TableCell>
                             <TableCell className="text-xs text-center px-2 py-1.5">
                               {!partId ? (
@@ -5541,12 +5523,12 @@ export const SalesInquiry = ({
                 />
               </div>
               <div className="rounded-md border bg-card overflow-y-auto flex-1 min-h-0 min-w-0 max-h-[520px]">
-                <Table className="table-fixed">
+                <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
                       <ListNumberHeader className="text-xs w-9 px-2" />
-                      <TableHead className="text-xs w-[22%] px-2">Part</TableHead>
-                      <TableHead className="text-xs w-[28%] px-2">Description</TableHead>
+                      <TableHead className="text-xs w-[30%] px-2">Part</TableHead>
+                      <TableHead className="text-xs w-[26%] px-2">Description</TableHead>
                       <TableHead className="text-xs w-14 px-2">Brand</TableHead>
                       <TableHead className="text-xs w-12 px-2">Model</TableHead>
                       <TableHead className="text-xs text-right w-[3.5rem] px-2 whitespace-nowrap">Qty</TableHead>
@@ -5582,16 +5564,17 @@ export const SalesInquiry = ({
                         <TableRow key={`${item.partId}-${index}`} className="hover:bg-muted/20">
                           <ListNumberCell index={index} total={filteredModelAssociations.length} className="text-xs px-2 py-1.5 whitespace-nowrap" />
                           <TableCell
-                            className="text-xs font-medium px-2 py-1.5 max-w-0"
-                            title={`${item.partNo || "N/A"} / ${item.masterPart || "N/A"}`}
+                            className="text-xs font-medium px-2 py-1.5 overflow-hidden min-w-0 align-top"
+                            title={`Part No: ${item.partNo || "—"} / Master Part: ${item.masterPart || "—"}`}
                           >
                             <PartIdentityBadges
                               partNo={item.partNo}
                               masterPart={item.masterPart}
+                              className="flex-wrap max-w-full min-w-0 shrink"
                             />
                           </TableCell>
                           <TableCell
-                            className="text-xs px-2 py-1.5 max-w-0 truncate"
+                            className="text-xs px-2 py-1.5 overflow-hidden min-w-0 truncate align-top"
                             title={item.description || "N/A"}
                           >
                             {item.description || "N/A"}

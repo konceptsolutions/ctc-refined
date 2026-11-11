@@ -34,11 +34,6 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
-import {
-  performedByPayload,
-  StoreOperatorAuthProvider,
-  useStoreOperatorAuth,
-} from "@/hooks/useStoreOperatorAuth";
 import { usePageActions } from "@/permissions/pageActions";
 
 interface VerificationRow {
@@ -101,15 +96,8 @@ const normalizeOptions = (result: any): NamedOption[] => {
     .sort((a: NamedOption, b: NamedOption) => a.name.localeCompare(b.name));
 };
 
-export const StockAnalysis = () => (
-  <StoreOperatorAuthProvider>
-    <StockAnalysisInner />
-  </StoreOperatorAuthProvider>
-);
-
-const StockAnalysisInner = () => {
+export const StockAnalysis = () => {
   const { canEdit } = usePageActions("inventory.stock-analysis");
-  const { requiresOperatorAuth, requestOperatorAuth } = useStoreOperatorAuth();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -317,11 +305,6 @@ const StockAnalysisInner = () => {
 
     try {
       setSavingIds((prev) => ({ ...prev, [item.id]: true }));
-      const operator = await requestOperatorAuth();
-      if (requiresOperatorAuth && !operator) {
-        return;
-      }
-      const by = performedByPayload(operator);
 
       let voucherNumber: string | undefined;
       let nextStock = currentStock;
@@ -336,7 +319,6 @@ const StockAnalysisInner = () => {
             direction: delta > 0 ? "increase" : "decrease",
             quantity: Math.abs(delta),
             verification_date: verifiedAt,
-            ...by,
           },
         );
         if (adjustResult.error) {
@@ -381,7 +363,6 @@ const StockAnalysisInner = () => {
         // Quantity unchanged — save verification date only (no voucher / avg)
         const result = await apiClient.updateStockVerificationDate(item.id, {
           verified_at: verifiedAt,
-          ...by,
         });
         if (result.error) {
           toast.error(result.error);
@@ -407,11 +388,7 @@ const StockAnalysisInner = () => {
         ? ` · stock ${currentStock} → ${nextStock}` +
           (voucherNumber ? ` (${voucherNumber})` : "")
         : "";
-      toast.success(
-        operator?.name
-          ? `Verified ${item.partNo} as ${operator.name}${stockMsg}`
-          : `Verified ${item.partNo}${stockMsg}`,
-      );
+      toast.success(`Verified ${item.partNo}${stockMsg}`);
     } catch (error: any) {
       toast.error(error?.message || "Failed to update verification");
     } finally {
@@ -441,16 +418,10 @@ const StockAnalysisInner = () => {
 
     try {
       setBulkSaving(true);
-      const operator = await requestOperatorAuth();
-      if (requiresOperatorAuth && !operator) {
-        return;
-      }
-      const by = performedByPayload(operator);
       const result = await apiClient.bulkUpdateStockVerificationDates({
         category_id: bulkCategoryId,
         subcategory_id: bulkSubcategoryId || undefined,
         verified_at: bulkDate,
-        ...by,
       });
       if (result.error) {
         toast.error(result.error);
@@ -460,11 +431,7 @@ const StockAnalysisInner = () => {
       const scope = subcategoryName
         ? `${categoryName} / ${subcategoryName}`
         : categoryName;
-      toast.success(
-        operator?.name
-          ? `Updated ${count} item(s) in ${scope} as ${operator.name}`
-          : `Updated ${count} item(s) in ${scope}`,
-      );
+      toast.success(`Updated ${count} item(s) in ${scope}`);
       await fetchItems();
     } catch {
       toast.error("Failed to bulk update verification dates");
@@ -491,26 +458,16 @@ const StockAnalysisInner = () => {
 
     try {
       setSelectedSaving(true);
-      const operator = await requestOperatorAuth();
-      if (requiresOperatorAuth && !operator) {
-        return;
-      }
-      const by = performedByPayload(operator);
       const result = await apiClient.bulkUpdateStockVerificationDates({
         part_ids: ids,
         verified_at: verifiedAt,
-        ...by,
       });
       if (result.error) {
         toast.error(result.error);
         return;
       }
       const count = result.data?.updatedCount ?? 0;
-      toast.success(
-        operator?.name
-          ? `Updated ${count} selected item(s) as ${operator.name}`
-          : `Updated ${count} selected item(s)`,
-      );
+      toast.success(`Updated ${count} selected item(s)`);
       setSelectedIds(new Set());
       await fetchItems();
     } catch {

@@ -41,14 +41,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, CheckCircle2, Loader2 } from "lucide-react";
+import { Search, Bell, Calendar as CalendarIcon, CreditCard, Download, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { format, isValid } from "date-fns";
 import { cn } from "@/lib/utils";
 import { unlockBrowserPrintLayout } from "@/utils/printUtils";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
-import { isAdminRole } from "@/utils/auth";
 import { exportRowsToExcel } from "@/utils/exportUtils";
 
 interface Receivable {
@@ -100,7 +99,6 @@ interface PaymentAccount {
 
 export const ReceivableReminders = () => {
   const { canExport, canEdit } = usePageActions("sales.receivable-reminders");
-  const isAdmin = isAdminRole();
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
   const [loadingReceivables, setLoadingReceivables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -109,7 +107,6 @@ export const ReceivableReminders = () => {
   
   // Dialog states
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [isMarkPaidOpen, setIsMarkPaidOpen] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [isReminderOpen, setIsReminderOpen] = useState(false);
   const [selectedReceivable, setSelectedReceivable] = useState<Receivable | null>(null);
@@ -119,7 +116,6 @@ export const ReceivableReminders = () => {
   const [paymentDate, setPaymentDate] = useState<Date | undefined>(new Date());
   const [paymentAccountId, setPaymentAccountId] = useState("");
   const [recordingPayment, setRecordingPayment] = useState(false);
-  const [markingPaid, setMarkingPaid] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<PaymentAccount[]>([]);
   const [cashAccounts, setCashAccounts] = useState<PaymentAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -407,45 +403,6 @@ export const ReceivableReminders = () => {
       cashAccounts[0]?.id || bankAccounts[0]?.id || "",
     );
     setIsPaymentOpen(true);
-  };
-
-  const openMarkPaidDialog = (receivable: Receivable) => {
-    if (!["unpaid", "partial"].includes(receivable.paymentStatus)) return;
-    setSelectedReceivable(receivable);
-    setIsMarkPaidOpen(true);
-  };
-
-  const handleMarkAsPaid = async () => {
-    if (!selectedReceivable) return;
-
-    setMarkingPaid(true);
-    try {
-      const response = await apiClient.markInvoiceAsPaid(selectedReceivable.id);
-
-      if ((response as any)?.error) {
-        toast({
-          title: "Error",
-          description: (response as any).error || "Failed to mark invoice as paid",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setIsMarkPaidOpen(false);
-      toast({
-        title: "Invoice Marked as Paid",
-        description: `${selectedReceivable.invoiceNo} payment status updated to paid.`,
-      });
-      await loadReceivables();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error?.message || "Failed to mark invoice as paid",
-        variant: "destructive",
-      });
-    } finally {
-      setMarkingPaid(false);
-    }
   };
 
   const openRescheduleDialog = (receivable: Receivable) => {
@@ -954,19 +911,6 @@ export const ReceivableReminders = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
-                        {isAdmin &&
-                          (item.paymentStatus === "unpaid" ||
-                            item.paymentStatus === "partial") && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                              onClick={() => openMarkPaidDialog(item)}
-                              title="Mark as Paid"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </Button>
-                          )}
                         {canEdit && item.balance > 0 && item.status !== "paid" && (
                           <>
                             <Button
@@ -1133,55 +1077,6 @@ export const ReceivableReminders = () => {
                   variant="outline"
                   onClick={() => setIsPaymentOpen(false)}
                   disabled={recordingPayment}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Mark as Paid Dialog (admin only — status sync, no voucher) */}
-      <Dialog open={isMarkPaidOpen} onOpenChange={setIsMarkPaidOpen}>
-        <DialogContent className="max-w-md bg-background">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">Mark Invoice as Paid</DialogTitle>
-          </DialogHeader>
-          {selectedReceivable && (
-            <div className="space-y-4">
-              <div className="bg-muted/30 p-3 rounded-lg text-sm space-y-1">
-                <p><span className="text-muted-foreground">Invoice:</span> {selectedReceivable.invoiceNo}</p>
-                <p><span className="text-muted-foreground">Customer:</span> {selectedReceivable.customerName}</p>
-                <p>
-                  <span className="text-muted-foreground">Current Status:</span>{" "}
-                  <span className="font-medium capitalize">{selectedReceivable.paymentStatus}</span>
-                </p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Use this when payment was already received through an RV voucher but the
-                invoice still shows as unpaid or partially paid. This only updates the
-                invoice payment status — no voucher will be created.
-              </p>
-              <div className="flex gap-3 pt-2">
-                <Button
-                  onClick={() => void handleMarkAsPaid()}
-                  disabled={markingPaid}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  {markingPaid ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Updating...
-                    </>
-                  ) : (
-                    "Mark as Paid"
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsMarkPaidOpen(false)}
-                  disabled={markingPaid}
                 >
                   Cancel
                 </Button>

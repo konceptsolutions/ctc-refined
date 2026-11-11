@@ -34,7 +34,7 @@ export function PartIdentityBadges({
   return (
     <div
       className={cn(
-        "inline-flex flex-nowrap items-center gap-1.5 shrink-0",
+        "inline-flex flex-nowrap items-center gap-1.5",
         className,
       )}
       title={`Part No: ${uiPartNo || "—"} / Master Part: ${uiMasterPart || "—"}`}

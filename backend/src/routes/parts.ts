@@ -2165,6 +2165,66 @@ router.put("/hs-codes", async (req: Request, res: Response) => {
   }
 });
 
+// Parts that use a specific HS code (Part Entry → HS Code → View)
+router.get("/hs-codes/parts", async (req: Request, res: Response) => {
+  try {
+    const hsCode = String(req.query.hsCode || req.query.code || "").trim();
+    if (!hsCode) {
+      return res.status(400).json({ error: "HS code is required" });
+    }
+
+    const limit = Math.min(
+      2000,
+      Math.max(1, parseInt(String(req.query.limit || "1000"), 10) || 1000),
+    );
+
+    const result = await query(
+      `
+      SELECT
+        p.id,
+        p."partNo" AS part_no,
+        mp."masterPartNo" AS master_part_no,
+        p.description,
+        p.status,
+        p.uom,
+        b.name AS brand_name,
+        c.name AS category_name,
+        TRIM(p."hsCode") AS hs_code
+      FROM "Part" p
+      LEFT JOIN "MasterPart" mp ON mp.id = p."masterPartId"
+      LEFT JOIN "Brand" b ON b.id = p."brandId"
+      LEFT JOIN "Category" c ON c.id = p."categoryId"
+      WHERE p."hsCode" IS NOT NULL
+        AND TRIM(p."hsCode") ILIKE $1
+      ORDER BY
+        COALESCE(NULLIF(TRIM(mp."masterPartNo"), ''), p."partNo") ASC,
+        p."partNo" ASC
+      LIMIT $2
+      `,
+      [hsCode, limit],
+    );
+
+    res.json({
+      hsCode,
+      data: result.rows.map((row: any) => ({
+        id: String(row.id),
+        // UI Part No = DB master_part_no; UI Master Part = DB part_no
+        partNo: String(row.master_part_no || "").trim(),
+        masterPartNo: String(row.part_no || "").trim(),
+        description: String(row.description || "").trim(),
+        brand: String(row.brand_name || "").trim(),
+        category: String(row.category_name || "").trim(),
+        status: String(row.status || "").trim() || "active",
+        uom: String(row.uom || "").trim(),
+        hsCode: String(row.hs_code || "").trim(),
+      })),
+      total: result.rows.length,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Distinct model names for part-entry dropdowns
 router.get("/model-names", async (req: Request, res: Response) => {
   try {
@@ -2188,10 +2248,201 @@ router.get("/model-names", async (req: Request, res: Response) => {
   }
 });
 
+// Aggregated model names + item counts (Attributes → Models)
+router.get("/models/summary", async (req: Request, res: Response) => {
+  try {
+    const search = String(req.query.search || "").trim();
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+    const limit = Math.min(
+      500,
+      Math.max(1, parseInt(String(req.query.limit || "200"), 10) || 200),
+    );
+    const skip = (page - 1) * limit;
+
+    const params: any[] = [];
+    let searchSql = "";
+    if (search) {
+      params.push(`%${search}%`);
+      searchSql = `AND TRIM(m.name) ILIKE $${params.length}`;
+    }
+
+    const countResult = await query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM (
+        SELECT TRIM(m.name) AS model_name
+        FROM "Model" m
+        WHERE TRIM(m.name) <> ''
+          ${searchSql}
+        GROUP BY TRIM(m.name)
+      ) t
+      `,
+      params,
+    );
+    const total = Number(countResult.rows[0]?.total || 0);
+
+    const rowsResult = await query(
+      `
+      SELECT
+        TRIM(m.name) AS model_name,
+        COUNT(DISTINCT m."partId")::int AS part_count
+      FROM "Model" m
+      WHERE TRIM(m.name) <> ''
+        ${searchSql}
+      GROUP BY TRIM(m.name)
+      ORDER BY TRIM(m.name) ASC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `,
+      [...params, limit, skip],
+    );
+
+    res.json({
+      data: rowsResult.rows.map((row: any) => ({
+        name: String(row.model_name || "").trim(),
+        partCount: Number(row.part_count || 0),
+      })),
+      total,
+      page,
+      limit,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Parts linked to a model name (View dialog)
+router.get("/models/parts", async (req: Request, res: Response) => {
+  try {
+    const modelName = String(
+      req.query.modelName || req.query.model || req.query.name || "",
+    ).trim();
+    if (!modelName) {
+      return res.status(400).json({ error: "Model name is required" });
+    }
+
+    const limit = Math.min(
+      2000,
+      Math.max(1, parseInt(String(req.query.limit || "1000"), 10) || 1000),
+    );
+
+    const result = await query(
+      `
+      SELECT
+        p.id,
+        p."partNo" AS part_no,
+        mp."masterPartNo" AS master_part_no,
+        p.description,
+        p.status,
+        p.uom,
+        b.name AS brand_name,
+        c.name AS category_name,
+        m."qtyUsed" AS qty_used,
+        TRIM(m.name) AS model_name
+      FROM "Model" m
+      INNER JOIN "Part" p ON p.id = m."partId"
+      LEFT JOIN "MasterPart" mp ON mp.id = p."masterPartId"
+      LEFT JOIN "Brand" b ON b.id = p."brandId"
+      LEFT JOIN "Category" c ON c.id = p."categoryId"
+      WHERE TRIM(m.name) ILIKE $1
+      ORDER BY
+        COALESCE(NULLIF(TRIM(mp."masterPartNo"), ''), p."partNo") ASC,
+        p."partNo" ASC
+      LIMIT $2
+      `,
+      [modelName, limit],
+    );
+
+    res.json({
+      modelName,
+      data: result.rows.map((row: any) => ({
+        id: String(row.id),
+        // UI Part No = DB master_part_no; UI Master Part = DB part_no
+        partNo: String(row.master_part_no || "").trim(),
+        masterPartNo: String(row.part_no || "").trim(),
+        description: String(row.description || "").trim(),
+        brand: String(row.brand_name || "").trim(),
+        category: String(row.category_name || "").trim(),
+        status: String(row.status || "").trim() || "active",
+        uom: String(row.uom || "").trim(),
+        qtyUsed: Number(row.qty_used ?? 1) || 1,
+        modelName: String(row.model_name || "").trim(),
+      })),
+      total: result.rows.length,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rename a model across every part that uses it
+router.put("/models/rename", async (req: Request, res: Response) => {
+  try {
+    const from = String(req.body?.from || req.body?.oldName || "").trim();
+    const to = String(req.body?.to || req.body?.newName || "").trim();
+
+    if (!from) {
+      return res.status(400).json({ error: "Current model name is required" });
+    }
+    if (!to) {
+      return res.status(400).json({ error: "New model name is required" });
+    }
+    if (from.toLowerCase() === to.toLowerCase()) {
+      return res.json({ name: to, updatedCount: 0, unchanged: true });
+    }
+
+    const oldRows = await prisma.model.findMany({
+      where: { name: { equals: from, mode: "insensitive" } },
+      select: { id: true, partId: true },
+    });
+    if (oldRows.length === 0) {
+      return res.status(404).json({ error: "Model not found" });
+    }
+
+    const oldIds = oldRows.map((row) => row.id);
+    const partIds = oldRows.map((row) => row.partId);
+    const conflicts = await prisma.model.findMany({
+      where: {
+        partId: { in: partIds },
+        name: { equals: to, mode: "insensitive" },
+        id: { notIn: oldIds },
+      },
+      select: { partId: true },
+    });
+    if (conflicts.length > 0) {
+      return res.status(400).json({
+        error: `Cannot rename to "${to}": ${conflicts.length} part(s) already have that model`,
+      });
+    }
+
+    const renamed = await prisma.model.updateMany({
+      where: { name: { equals: from, mode: "insensitive" } },
+      data: { name: to },
+    });
+
+    res.json({
+      name: to,
+      from,
+      updatedCount: Number(renamed.count || 0),
+      unchanged: false,
+    });
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return res
+        .status(400)
+        .json({ error: "Model already exists on one or more parts" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // List all part↔model rows (Part Entry → Models)
 router.get("/models", async (req: Request, res: Response) => {
   try {
     const search = String(req.query.search || "").trim();
+    const modelName = String(
+      req.query.modelName || req.query.model || "",
+    ).trim();
+    const partId = String(req.query.partId || req.query.itemId || "").trim();
     const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
     const limit = Math.min(
       500,
@@ -2199,33 +2450,41 @@ router.get("/models", async (req: Request, res: Response) => {
     );
     const skip = (page - 1) * limit;
 
-    const where: Prisma.ModelWhereInput = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            {
-              Part: {
-                OR: [
-                  { partNo: { contains: search, mode: "insensitive" } },
-                  {
-                    MasterPart: {
-                      masterPartNo: { contains: search, mode: "insensitive" },
-                    },
+    const and: Prisma.ModelWhereInput[] = [];
+    if (modelName) {
+      and.push({ name: { equals: modelName, mode: "insensitive" } });
+    }
+    if (partId) {
+      and.push({ partId });
+    }
+    if (search) {
+      and.push({
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          {
+            Part: {
+              OR: [
+                { partNo: { contains: search, mode: "insensitive" } },
+                {
+                  MasterPart: {
+                    masterPartNo: { contains: search, mode: "insensitive" },
                   },
-                  {
-                    description: { contains: search, mode: "insensitive" },
+                },
+                {
+                  description: { contains: search, mode: "insensitive" },
+                },
+                {
+                  Brand: {
+                    name: { contains: search, mode: "insensitive" },
                   },
-                  {
-                    Brand: {
-                      name: { contains: search, mode: "insensitive" },
-                    },
-                  },
-                ],
-              },
+                },
+              ],
             },
-          ],
-        }
-      : {};
+          },
+        ],
+      });
+    }
+    const where: Prisma.ModelWhereInput = and.length ? { AND: and } : {};
 
     const [total, rows] = await Promise.all([
       prisma.model.count({ where }),
