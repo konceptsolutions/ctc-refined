@@ -1,5 +1,5 @@
 import express, { Request, Response } from "express";
-import { AuthRequest, authorizeRoles } from "../middleware/authMiddleware.js";
+import { AuthRequest, requirePermission } from "../middleware/authMiddleware.js";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import prisma from "../config/database.js";
@@ -4820,10 +4820,15 @@ router.post("/invoices/:id/payment", async (req: Request, res: Response) => {
   }
 });
 
-// Admin-only: sync invoice payment status when payment was already received via RV voucher
+// Sync invoice payment status when payment was already received via RV voucher
 router.post(
   "/invoices/:id/mark-paid",
-  authorizeRoles("admin"),
+  requirePermission(
+    "action.sales.receivable-reminders.edit",
+    "page.sales.receivable-reminders",
+    "action.sales.distributor-aging.edit",
+    "page.sales.distributor-aging",
+  ),
   async (req: AuthRequest, res: Response) => {
     try {
       const { id } = req.params;

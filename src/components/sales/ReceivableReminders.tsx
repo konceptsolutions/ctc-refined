@@ -57,7 +57,6 @@ import { unlockBrowserPrintLayout } from "@/utils/printUtils";
 import apiClient from "@/lib/api";
 import { usePageActions } from "@/permissions/pageActions";
 import { exportRowsToExcel } from "@/utils/exportUtils";
-import { isAdminRole } from "@/utils/auth";
 
 interface Receivable {
   id: string;
@@ -108,7 +107,6 @@ interface PaymentAccount {
 
 export const ReceivableReminders = () => {
   const { canExport, canEdit } = usePageActions("sales.receivable-reminders");
-  const isAdmin = isAdminRole();
   const [receivables, setReceivables] = useState<Receivable[]>(mockReceivables);
   const [loadingReceivables, setLoadingReceivables] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -419,7 +417,7 @@ export const ReceivableReminders = () => {
 
   const openMarkPaidDialog = (receivable: Receivable) => {
     const status = String(receivable.paymentStatus || "").trim().toLowerCase();
-    if (!isAdmin || !["unpaid", "partial"].includes(status)) return;
+    if (!canEdit || !["unpaid", "partial"].includes(status)) return;
     setSelectedReceivable(receivable);
     setIsMarkPaidOpen(true);
   };
@@ -996,7 +994,7 @@ export const ReceivableReminders = () => {
                             </Button>
                           </>
                         )}
-                        {isAdmin &&
+                        {canEdit &&
                           (item.paymentStatus === "unpaid" ||
                             item.paymentStatus === "partial") && (
                             <Button
@@ -1026,7 +1024,7 @@ export const ReceivableReminders = () => {
         </CardContent>
       </Card>
 
-      {/* Mark as Paid Dialog (admin only — status sync, no voucher) */}
+      {/* Mark as Paid Dialog (status sync when RV already received — no voucher) */}
       <Dialog open={isMarkPaidOpen} onOpenChange={setIsMarkPaidOpen}>
         <DialogContent className="max-w-md bg-background">
           <DialogHeader>

@@ -1,4 +1,5 @@
 import {
+  PERMISSION_CATALOG,
   findModuleByPath,
   findPageByPath,
   getPresetPermissions,
@@ -273,6 +274,8 @@ export function getFirstAllowedPath(
   if (roleHome && roleHome !== "/login" && canAccessPath(roleHome, effective)) {
     return roleHome;
   }
+  // Prefer common landings, then any granted catalog page (e.g. Recovery → Receivables).
+  // Do not treat self-service password as the only "app" landing.
   const candidates = [
     "/",
     "/partentry",
@@ -286,6 +289,10 @@ export function getFirstAllowedPath(
     "/sales/quotation",
     "/sales/invoice",
     "/sales/returns",
+    "/sales/distributor-aging",
+    "/sales/receivable-reminders",
+    "/sales/customer-receivable",
+    "/sales/sale-profit-report",
     "/purchase-import/inquiry",
     "/accounting",
     "/financial-statements",
@@ -296,6 +303,13 @@ export function getFirstAllowedPath(
   ];
   for (const path of candidates) {
     if (canAccessPath(path, effective)) return path;
+  }
+  for (const mod of PERMISSION_CATALOG) {
+    for (const child of mod.children || []) {
+      if (child.kind !== "page" || !child.path) continue;
+      if (child.key === "page.settings.password") continue;
+      if (hasPermissionKey(effective, child.key)) return child.path;
+    }
   }
   return roleHomeFromJwt() || "/login";
 }
