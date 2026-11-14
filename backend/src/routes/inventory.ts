@@ -2834,6 +2834,7 @@ router.get("/stock-verification-dates", async (req: Request, res: Response) => {
           partNo: true,
           description: true,
           stockVerifiedAt: true,
+          stockVerificationRemarks: true,
           avgCost: true,
           cost: true,
           categoryId: true,
@@ -2894,6 +2895,9 @@ router.get("/stock-verification-dates", async (req: Request, res: Response) => {
           stockVerifiedAt: p.stockVerifiedAt
             ? new Date(p.stockVerifiedAt).toISOString()
             : null,
+          stockVerificationRemarks: p.stockVerificationRemarks
+            ? String(p.stockVerificationRemarks)
+            : "",
           currentStock: stockByPart.get(p.id) ?? 0,
           avgCost,
           cost,
@@ -2976,7 +2980,7 @@ router.put(
   async (req: Request, res: Response) => {
     try {
       const { partId } = req.params;
-      const { verified_at } = req.body || {};
+      const { verified_at, remarks, verification_remarks } = req.body || {};
 
       const part = await prisma.part.findUnique({
         where: { id: partId },
@@ -2997,14 +3001,22 @@ router.put(
         stockVerifiedAt = parsed;
       }
 
+      const remarksRaw = remarks ?? verification_remarks;
+      const data: Record<string, unknown> = { stockVerifiedAt };
+      if (remarksRaw !== undefined) {
+        const trimmed = String(remarksRaw ?? "").trim();
+        data.stockVerificationRemarks = trimmed || null;
+      }
+
       const updated = await (prisma.part as any).update({
         where: { id: partId },
-        data: { stockVerifiedAt },
+        data,
         select: {
           id: true,
           partNo: true,
           description: true,
           stockVerifiedAt: true,
+          stockVerificationRemarks: true,
           categoryId: true,
           subcategoryId: true,
           Brand: { select: { name: true } },
@@ -3027,6 +3039,9 @@ router.put(
           stockVerifiedAt: updated.stockVerifiedAt
             ? new Date(updated.stockVerifiedAt).toISOString()
             : null,
+          stockVerificationRemarks: updated.stockVerificationRemarks
+            ? String(updated.stockVerificationRemarks)
+            : "",
         },
       });
     } catch (error: any) {
@@ -3052,6 +3067,8 @@ router.post(
         quantity,
         verification_date,
         store_id,
+        remarks,
+        verification_remarks,
       } = req.body || {};
 
       const dir = String(direction || "").toLowerCase();
@@ -3075,6 +3092,12 @@ router.post(
       if (Number.isNaN(voucherDate.getTime())) {
         return res.status(400).json({ error: "Invalid verification date" });
       }
+
+      const remarksRaw = remarks ?? verification_remarks;
+      const stockVerificationRemarks =
+        remarksRaw === undefined
+          ? undefined
+          : String(remarksRaw ?? "").trim() || null;
 
       const addInventory = dir === "increase";
 
@@ -3415,6 +3438,9 @@ router.post(
             purchasePrice: roundPurchasePrice(rate),
             avgCost: newAvgCost,
             stockVerifiedAt: voucherDate,
+            ...(stockVerificationRemarks !== undefined
+              ? { stockVerificationRemarks }
+              : {}),
             updatedAt: new Date(),
           } as any,
         });
@@ -3449,6 +3475,10 @@ router.post(
           totalAmount,
           currentStock: currentTotalQty,
           stockVerifiedAt: voucherDate.toISOString(),
+          stockVerificationRemarks:
+            stockVerificationRemarks !== undefined
+              ? stockVerificationRemarks || ""
+              : String((part as any).stockVerificationRemarks || ""),
         };
       });
 

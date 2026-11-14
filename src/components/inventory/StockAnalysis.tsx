@@ -46,6 +46,7 @@ interface VerificationRow {
   subcategoryId: string | null;
   subcategory: string;
   stockVerifiedAt: string | null;
+  stockVerificationRemarks?: string;
   currentStock?: number;
   avgCost?: number;
   cost?: number;
@@ -111,6 +112,7 @@ export const StockAnalysis = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dateDrafts, setDateDrafts] = useState<Record<string, string>>({});
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
+  const [remarksDrafts, setRemarksDrafts] = useState<Record<string, string>>({});
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -221,6 +223,13 @@ export const StockAnalysis = () => {
         }
         return next;
       });
+      setRemarksDrafts(() => {
+        const next: Record<string, string> = {};
+        for (const row of rows) {
+          next[row.id] = String(row.stockVerificationRemarks || "");
+        }
+        return next;
+      });
     } catch {
       toast.error("Failed to load stock verification items");
       setItems([]);
@@ -293,6 +302,7 @@ export const StockAnalysis = () => {
 
     const stockChanged = hasQtyInput && newStock !== currentStock;
     const delta = newStock - currentStock;
+    const remarks = String(remarksDrafts[item.id] ?? "").trim();
 
     if (stockChanged) {
       const avgCost = Number(item.avgCost) || 0;
@@ -319,6 +329,7 @@ export const StockAnalysis = () => {
             direction: delta > 0 ? "increase" : "decrease",
             quantity: Math.abs(delta),
             verification_date: verifiedAt,
+            remarks,
           },
         );
         if (adjustResult.error) {
@@ -331,11 +342,16 @@ export const StockAnalysis = () => {
           avgCost?: number;
           unitCost?: number;
           stockVerifiedAt?: string;
+          stockVerificationRemarks?: string;
         };
         voucherNumber = data.voucherNumber;
         nextStock = data.currentStock ?? newStock;
         if (data.avgCost != null) nextAvgCost = Number(data.avgCost);
         if (data.unitCost != null) nextUnitCost = Number(data.unitCost);
+        const nextRemarks =
+          data.stockVerificationRemarks != null
+            ? String(data.stockVerificationRemarks)
+            : remarks;
 
         setItems((prev) =>
           prev.map((row) =>
@@ -346,6 +362,7 @@ export const StockAnalysis = () => {
                   avgCost: nextAvgCost,
                   unitCost: nextUnitCost,
                   stockVerifiedAt: data.stockVerifiedAt || verifiedAt,
+                  stockVerificationRemarks: nextRemarks,
                 }
               : row,
           ),
@@ -359,10 +376,15 @@ export const StockAnalysis = () => {
           ...prev,
           [item.id]: String(nextStock),
         }));
+        setRemarksDrafts((prev) => ({
+          ...prev,
+          [item.id]: nextRemarks,
+        }));
       } else {
-        // Quantity unchanged — save verification date only (no voucher / avg)
+        // Quantity unchanged — save verification date + remarks only
         const result = await apiClient.updateStockVerificationDate(item.id, {
           verified_at: verifiedAt,
+          remarks,
         });
         if (result.error) {
           toast.error(result.error);
@@ -381,6 +403,10 @@ export const StockAnalysis = () => {
         setQtyDrafts((prev) => ({
           ...prev,
           [item.id]: String(Number(updated.currentStock ?? currentStock)),
+        }));
+        setRemarksDrafts((prev) => ({
+          ...prev,
+          [item.id]: String(updated.stockVerificationRemarks || remarks),
         }));
       }
 
@@ -492,7 +518,7 @@ export const StockAnalysis = () => {
     }
   }, [period]);
 
-  const colSpan = canEdit ? 10 : 8;
+  const colSpan = canEdit ? 11 : 9;
 
   return (
     <div className="space-y-4">
@@ -715,6 +741,7 @@ export const StockAnalysis = () => {
               <TableHead>Subcategory</TableHead>
               <TableHead className="text-right">Stock</TableHead>
               <TableHead>Last verified</TableHead>
+              <TableHead className="min-w-[180px]">Verification remarks</TableHead>
               {canEdit && (
                 <TableHead className="min-w-[380px]">Verify / set stock</TableHead>
               )}
@@ -775,6 +802,25 @@ export const StockAnalysis = () => {
                     <Badge variant={item.stockVerifiedAt ? "secondary" : "outline"}>
                       {formatDisplayDate(item.stockVerifiedAt)}
                       </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {canEdit ? (
+                      <Input
+                        className="h-8 min-w-[160px]"
+                        placeholder="Verification remarks"
+                        value={remarksDrafts[item.id] ?? ""}
+                        onChange={(e) =>
+                          setRemarksDrafts((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        {item.stockVerificationRemarks || "—"}
+                      </span>
+                    )}
                   </TableCell>
                   {canEdit && (
                     <TableCell>

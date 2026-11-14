@@ -1243,6 +1243,7 @@ class ApiClient {
     partId: string,
     data: {
       verified_at?: string | null;
+      remarks?: string | null;
       performedBy?: string;
       performedById?: string;
       performedByRole?: string;
@@ -1276,6 +1277,7 @@ class ApiClient {
       quantity: number;
       verification_date: string;
       store_id?: string;
+      remarks?: string | null;
       performedBy?: string;
       performedById?: string;
       performedByRole?: string;
